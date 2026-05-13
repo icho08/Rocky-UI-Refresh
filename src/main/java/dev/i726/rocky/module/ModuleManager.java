@@ -16,10 +16,14 @@ import dev.i726.rocky.utils.EncryptedString;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public final class ModuleManager implements ButtonListener {
         private final List<Module> modules = new ArrayList<>();
+        private final Map<Integer, Long> lastToggleTime = new HashMap<>();
+        private static final long DEBOUNCE_MS = 150;
 
         public ModuleManager() {
                 addModules();
@@ -147,6 +151,11 @@ public final class ModuleManager implements ButtonListener {
         public void onButtonPress(ButtonEvent event) {
                 if (event.action != GLFW.GLFW_PRESS) return;
                 if (SelfDestruct.destruct) return;
+
+                long now = System.currentTimeMillis();
+                long last = lastToggleTime.getOrDefault(event.button, 0L);
+                if (now - last < DEBOUNCE_MS) return;
+                lastToggleTime.put(event.button, now);
 
                 modules.forEach(module -> {
                         int key = getActiveKey(module);

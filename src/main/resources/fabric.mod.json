@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "rocky",
+  "version": "b1.1+1.21.10",
+  "name": "Rocky",
+  "description": "Rocky Minecraft Ghost Client",
+  "authors": [
+    "i523"
+  ],
+  "contact": {
+    "homepage": "https://github.com/i523/rocky",
+    "sources": "https://github.com/i523/rocky"
+  },
+  "license": "GPL-3.0",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.i726.rocky.Main"
+    ]
+  },
+  "mixins": [
+    "client.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "~1.21.10"
+  }
+}

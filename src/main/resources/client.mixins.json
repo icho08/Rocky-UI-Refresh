@@ -1,0 +1,45 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.i726.rocky.mixin",
+  "refmap": "rocky-refmap.json",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "ClientConnectionMixin",
+    "EndCrystalItemMixin",
+    "HandshakeC2SPacketMixin",
+    "ItemStackMixin",
+    "LivingEntityAccessor",
+    "WorldAccessor",
+    "PlayerEntityMixin",
+    "EntityMixin",
+    "LivingEntityRendererMixin"
+  ],
+  "client": [
+    "CameraMixin",
+    "ClientPlayerEntityMixin",
+    "ClientPlayerInteractionManagerAccessor",
+    "ClientPlayerInteractionManagerMixin",
+    "FrustumAccessor",
+    "GameRendererMixin",
+    "HandledScreenMixin",
+
+    "InGameHudMixin",
+    "KeyBindingAccessor",
+    "KeyBindingMixin",
+    "KeyboardMixin",
+    "MinecraftClientAccessor",
+    "MinecraftClientMixin",
+    "MouseHandlerAccessor",
+    "MouseMixin",
+    "OtherClientPlayerEntityAccessor",
+    "ScreenMixin",
+    "ShaderProgramAccessor",
+    "MinecraftVersionMixin",
+    "WorldRendererAccessor",
+    "WorldRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

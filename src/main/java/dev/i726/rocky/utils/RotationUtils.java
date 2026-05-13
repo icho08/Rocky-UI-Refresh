@@ -1,0 +1,87 @@
+package dev.i726.rocky.utils;
+
+import dev.i726.rocky.utils.rotation.Rotation;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.math.*;
+
+import static dev.i726.rocky.Rocky.mc;
+
+public final class RotationUtils {
+
+	public static Vec3d getEyesPos(PlayerEntity player) {
+		return player.getEyePos();
+	}
+
+	public static BlockPos getCameraBlockPos() {
+		return mc.gameRenderer.getCamera().getBlockPos();
+	}
+
+	public static BlockPos getEyesBlockPos() {
+		return new BlockPos((int) getEyesPos(mc.player).x, (int) getEyesPos(mc.player).y, (int) getEyesPos(mc.player).z);
+	}
+
+	public static Vec3d getPlayerLookVec(float yaw, float pitch) {
+		float f = pitch * 0.017453292F;
+		float g = -yaw * 0.017453292F;
+
+		float h = MathHelper.cos(g);
+		float i = MathHelper.sin(g);
+		float j = MathHelper.cos(f);
+		float k = MathHelper.sin(f);
+
+		return new Vec3d((i * j), (-k), (h * j));
+	}
+
+	public static Vec3d getPlayerLookVec(PlayerEntity player) {
+		return getPlayerLookVec(player.getYaw(), player.getPitch());
+	}
+
+	public static Rotation getDiff(Rotation rotation1, Rotation rotation2) {
+		double yaw = Math.abs(Math.max(rotation1.yaw(), rotation2.yaw()) - Math.min(rotation1.yaw(), rotation2.yaw()));
+		double pitch = Math.abs(Math.max(rotation1.pitch(), rotation2.pitch()) - Math.min(rotation1.pitch(), rotation2.pitch()));
+
+		return new Rotation(yaw, pitch);
+	}
+
+	public static Rotation getSmoothRotation(Rotation from, Rotation to, double speed) {
+		return new Rotation(
+				MathHelper.lerpAngleDegrees((float) speed, (float) from.yaw(), (float) to.yaw()),
+				MathHelper.lerpAngleDegrees((float) speed, (float) from.pitch(), (float) to.pitch())
+		);
+	}
+
+	public static double getTotalDiff(Rotation rotation1, Rotation rotation2) {
+		Rotation diff = getDiff(rotation1, rotation2);
+
+		return diff.yaw() + diff.pitch();
+	}
+
+	public static Vec3d getClientLookVec() {
+		return getPlayerLookVec(mc.player);
+	}
+
+	public static Rotation getDirection(Vec3d from, Vec3d to) {
+		double dx = to.x - from.x,
+				dy = to.y - from.y,
+				dz = to.z - from.z,
+				dist = MathHelper.sqrt((float) (dx * dx + dz * dz));
+
+		return new Rotation(MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(dz, dx)) - 90.0), -MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(dy, dist))));
+	}
+
+	public static Rotation getDirection(Entity entity, Vec3d vec) {
+		Vec3d eyes = entity instanceof PlayerEntity player ? getEyesPos(player) : entity.getEntityPos();
+		return getDirection(eyes, vec);
+	}
+
+	public static double getAngleToRotation(Rotation rotation) {
+		double currentYaw = MathHelper.wrapDegrees(mc.player.getYaw());
+		double currentPitch = MathHelper.wrapDegrees(mc.player.getPitch());
+
+		double diffYaw = MathHelper.wrapDegrees(currentYaw - rotation.yaw());
+		double diffPitch = MathHelper.wrapDegrees(currentPitch - rotation.pitch());
+
+		return Math.sqrt(diffYaw * diffYaw + diffPitch * diffPitch);
+	}
+}

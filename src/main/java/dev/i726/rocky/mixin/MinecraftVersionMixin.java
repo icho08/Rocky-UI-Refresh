@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(SharedConstants.class)
 public class MinecraftVersionMixin {
-    @Inject(method = "method_16673", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getProtocolVersion", at = @At("HEAD"), cancellable = true)
     private static void onGetProtocolVersion(CallbackInfoReturnable<Integer> cir) {
         if (Rocky.INSTANCE != null && Rocky.INSTANCE.getModuleManager() != null) {
             VersionSpoof spoofModule = Rocky.INSTANCE.getModuleManager().getModule(VersionSpoof.class);

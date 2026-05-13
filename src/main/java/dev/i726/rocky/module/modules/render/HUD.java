@@ -3,105 +3,140 @@ package dev.i726.rocky.module.modules.render;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.events.HudListener;
 import dev.i726.rocky.gui.ClickGuiScreen;
+import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
-import dev.i726.rocky.module.modules.client.ClickGUI;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import dev.i726.rocky.utils.RenderUtils;
 import dev.i726.rocky.utils.TextRenderer;
-import dev.i726.rocky.utils.Utils;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
 
-import java.awt.*;
+import java.awt.Color;
 import java.util.List;
 
 public final class HUD extends Module implements HudListener {
-        private static final CharSequence hydrogen = EncryptedString.of("Rocky |");
-        private final BooleanSetting info = new BooleanSetting(EncryptedString.of("Info"), true);
-        private final BooleanSetting modules = new BooleanSetting("Modules", true)
-                        .setDescription(EncryptedString.of("Renders module array list"));
 
-        public HUD() {
-                super(EncryptedString.of("HUD"),
+    private final BooleanSetting info    = new BooleanSetting(EncryptedString.of("Info"), true);
+    private final BooleanSetting modules = new BooleanSetting("Modules", true)
+            .setDescription(EncryptedString.of("Renders module array list"));
+
+    public HUD() {
+        super(EncryptedString.of("HUD"),
                 EncryptedString.of("Heads-up display"),
-                                -1,
-                                CategoryManager.GUI);
-                addSettings(info, modules);
+                -1,
+                CategoryManager.GUI);
+        addSettings(info, modules);
+    }
+
+    @Override
+    public void onEnable() {
+        eventManager.add(HudListener.class, this);
+        super.onEnable();
+    }
+
+    @Override
+    public void onDisable() {
+        eventManager.remove(HudListener.class, this);
+        super.onDisable();
+    }
+
+    @Override
+    public void onRenderHud(HudEvent event) {
+        if (mc.currentScreen instanceof ClickGuiScreen) return;
+
+        DrawContext ctx = event.context;
+        Color ac = GuiTheme.accent();
+        int accentArgb = GuiTheme.accentInt();
+
+        // ── 1. Info Bar (top-left) ────────────────────────────────────────────
+        if (info.getValue() && mc.player != null) {
+            String ping = "0ms";
+            if (mc.getNetworkHandler() != null) {
+                PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
+                if (entry != null) ping = entry.getLatency() + "ms";
+            }
+            String fps    = mc.getCurrentFps() + " FPS";
+            String server = mc.getCurrentServerEntry() == null
+                    ? "Singleplayer" : mc.getCurrentServerEntry().address;
+
+            String suffix   = "  |  " + fps + "  |  " + ping + "  |  " + server;
+            int rockyW      = TextRenderer.getWidth("ROCKY");
+            int suffixW     = TextRenderer.getWidth(suffix);
+            int totalW      = rockyW + suffixW;
+
+            int bx = 8, by = 8;
+            int bw = totalW + 20;
+            int bh = 20;
+
+            // Shadow
+            ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 50));
+            // Border
+            ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
+            // Background
+            ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
+            // Left accent bar (3px) — same as panels
+            ctx.fill(bx, by, bx + 3, by + bh, accentArgb);
+            // Top accent fade
+            ctx.fillGradient(bx + 3, by, bx + bw, by + 1,
+                    GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 70),
+                    GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
+
+            // Text
+            int tx = bx + 9;
+            int ty = by + 6;
+            TextRenderer.drawString("ROCKY", ctx, tx, ty, accentArgb);
+            TextRenderer.drawString(suffix, ctx, tx + rockyW, ty, GuiTheme.textPrimary());
         }
 
-        @Override
-        public void onEnable() {
-                eventManager.add(HudListener.class, this);
-                super.onEnable();
+        // ── 2. Module Arraylist (top-right) ──────────────────────────────────
+        if (modules.getValue()) {
+            List<Module> enabledModules = Rocky.INSTANCE.getModuleManager().getModules().stream()
+                    .filter(Module::isEnabled)
+                    .sorted((a, b) -> Integer.compare(
+                            TextRenderer.getWidth(b.getName()),
+                            TextRenderer.getWidth(a.getName())))
+                    .toList();
+
+            int screenW  = mc.getWindow().getScaledWidth();
+            int accentBarW = 3;
+            int paddingX   = 8;
+            int entryH     = 18;
+            int gap        = 2;
+            int startY     = 8;
+
+            for (Module mod : enabledModules) {
+                String name  = mod.getName().toString();
+                int textW    = TextRenderer.getWidth(name);
+                int entryW   = textW + paddingX * 2 + accentBarW;
+
+                int ex = screenW - entryW - 1;
+                int ey = startY;
+                int er = screenW - 1;       // leave 1px screen edge gap
+
+                // Shadow
+                ctx.fill(ex + 2, ey + 2, er + 2, ey + entryH + 2, GuiTheme.rgba(0, 0, 0, 45));
+                // Border
+                ctx.fill(ex - 1, ey - 1, er + 1, ey + entryH + 1, GuiTheme.border());
+                // Background
+                ctx.fill(ex, ey, er, ey + entryH, GuiTheme.panelBg());
+
+                // Right accent bar (3px) — mirror of panel's left bar
+                ctx.fill(er - accentBarW, ey, er, ey + entryH, accentArgb);
+
+                // Top accent fade (left-to-right, fades toward right like the panel header)
+                ctx.fillGradient(ex, ey, er - accentBarW, ey + 1,
+                        GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0),
+                        GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 70));
+
+                // Module name text
+                TextRenderer.drawString(name, ctx,
+                        ex + paddingX, ey + 5,
+                        GuiTheme.textPrimary());
+
+                startY += entryH + gap;
+            }
         }
-
-        @Override
-        public void onDisable() {
-                eventManager.remove(HudListener.class, this);
-                super.onDisable();
-        }
-
-        @Override
-        public void onRenderHud(HudEvent event) {
-                if (mc.currentScreen instanceof ClickGuiScreen) return;
-
-                DrawContext context = event.context;
-                final List<Module> enabledModules = Rocky.INSTANCE.getModuleManager().getModules().stream()
-                                .filter(Module::isEnabled)
-                                .sorted((m1, m2) -> Integer.compare(TextRenderer.getWidth(m2.getName()), TextRenderer.getWidth(m1.getName())))
-                                .toList();
-
-                Color accentStart = new Color(99, 102, 241);
-                Color accentEnd = new Color(139, 92, 246);
-
-                // 1. Info Bar
-                if (info.getValue() && mc.player != null) {
-                        String ping = "0ms";
-                        if (mc.getNetworkHandler() != null) {
-                                PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
-                                if (entry != null) ping = entry.getLatency() + "ms";
-                        }
-                        String fps = mc.getCurrentFps() + " FPS";
-                        String server = mc.getCurrentServerEntry() == null ? "Singleplayer" : mc.getCurrentServerEntry().address;
-                        
-                        String fullText = "ROCKY | " + fps + " | " + ping + " | " + server;
-                        int totalWidth = TextRenderer.getWidth(fullText) + 30;
-                        
-                        // RenderUtils.renderRoundedQuad(context, new Color(10, 10, 20, 180), 10, 10, 10 + totalWidth, 40, 8, 15);
-                        // RenderUtils.renderRoundedOutline(context, new Color(255, 255, 255, 20), 10, 10, 10 + totalWidth, 40, 8, 8, 8, 8, 1, 15);
-                        context.fill(10, 10, 10 + totalWidth, 40, new Color(10, 10, 20, 180).getRGB());
-                        
-                        // Gradient "ROCKY" text
-                        TextRenderer.drawString("ROCKY", context, 20, 16, accentStart.getRGB());
-                        TextRenderer.drawString(" | " + fps + " | " + ping + " | " + server, context, 20 + TextRenderer.getWidth("ROCKY"), 16, Color.WHITE.getRGB());
-                }
-
-                // 2. Module List (Waterfall)
-                if (modules.getValue()) {
-                        int offset = 50;
-                        int screenWidth = mc.getWindow().getScaledWidth();
-                        
-                        for (Module module : enabledModules) {
-                                String name = module.getName().toString();
-                                int modWidth = TextRenderer.getWidth(name);
-                                int x = screenWidth * 2 - modWidth - 30;
-                                
-                                // Background
-                                // RenderUtils.renderRoundedQuad(context, new Color(10, 10, 20, 150), x - 10, offset, screenWidth * 2, offset + 26, 0, 0, 0, 0, 1);
-                                context.fill(x - 10, offset, screenWidth * 2, offset + 26, new Color(10, 10, 20, 150).getRGB());
-                                
-                                // Right accent bar
-                                // RenderUtils.renderGradientRoundedQuad(context, accentStart, accentEnd, screenWidth * 2 - 4, offset, screenWidth * 2, offset + 26, 0, 1);
-                                context.fill(screenWidth * 2 - 4, offset, screenWidth * 2, offset + 26, accentStart.getRGB());
-                                
-                                // Text
-                                TextRenderer.drawString(name, context, x, offset + 4, Color.WHITE.getRGB());
-                                
-                                offset += 28;
-                        }
-                }
-        }
+    }
 }

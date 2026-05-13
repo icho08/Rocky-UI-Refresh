@@ -1,785 +1,502 @@
-import { useState, useMemo } from "react";
-import { Search, Monitor, Swords, Move, Eye, Network, Package, Target, Settings, Zap, X, ChevronDown } from "lucide-react";
+import { useState, useRef, useCallback, useMemo } from "react";
+import { Search, X, GripHorizontal, Minus } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-
-type SettingType = "boolean" | "slider" | "mode" | "minmax";
-
-type Setting = {
-  id: string;
-  label: string;
-  description?: string;
-  type: SettingType;
-  value: boolean | number | string;
-  min?: number;
-  max?: number;
-  step?: number;
-  options?: string[];
-  minValue?: number;
-  maxValue?: number;
-};
 
 type Module = {
   id: string;
   name: string;
-  category: string;
   enabled: boolean;
-  description?: string;
-  settings?: Setting[];
 };
 
-const INITIAL_MODULES: Module[] = [
-  // Automation
+type Category = {
+  name: string;
+  number: number;
+  modules: Module[];
+};
+
+const INITIAL_CATEGORIES: Category[] = [
   {
-    id: "kill-aura", name: "Kill Aura", category: "Automation", enabled: false,
-    description: "Automatically attacks nearby players",
-    settings: [
-      { id: "range", label: "Range", type: "slider", value: 3.5, min: 1, max: 6, step: 0.1 },
-      { id: "cps", label: "CPS", type: "slider", value: 12, min: 1, max: 20, step: 1 },
-      { id: "mode", label: "Mode", type: "mode", value: "Switch", options: ["Switch", "Single", "Multi"] },
-      { id: "sort-targets", label: "Sort Targets", type: "boolean", value: true },
-      { id: "rotate", label: "Rotate", type: "boolean", value: true },
-      { id: "through-walls", label: "Through Walls", type: "boolean", value: false },
-      { id: "only-sprint", label: "Only Sprint", type: "boolean", value: false },
+    name: "AUTOMATION",
+    number: 1,
+    modules: [
+      { id: "kill-aura", name: "Kill Aura", enabled: false },
+      { id: "auto-clicker", name: "Auto Clicker", enabled: false },
+      { id: "fast-use", name: "Fast Use", enabled: false },
+      { id: "auto-tool", name: "Auto Tool", enabled: false },
+      { id: "drag-click", name: "Drag Click", enabled: true },
     ],
   },
   {
-    id: "auto-clicker", name: "Auto Clicker", category: "Automation", enabled: false,
-    description: "Automatically clicks",
-    settings: [
-      { id: "mode", label: "Actions", type: "mode", value: "All", options: ["All", "Left", "Right"] },
-      { id: "delay", label: "Delay (ms)", type: "slider", value: 0, min: 0, max: 1000, step: 1 },
-      { id: "chance", label: "Chance %", type: "slider", value: 100, min: 0, max: 100, step: 1 },
-      { id: "only-weapon", label: "Only Weapon", type: "boolean", value: true, description: "Only left clicks with weapon in hand" },
-      { id: "only-blocks", label: "Only Blocks", type: "boolean", value: true, description: "Only right clicks blocks" },
-      { id: "on-click", label: "On Click", type: "boolean", value: true },
+    name: "MOVEMENT",
+    number: 2,
+    modules: [
+      { id: "auto-xp", name: "Auto XP", enabled: false },
+      { id: "bunny-hop", name: "Bunny Hop", enabled: false },
+      { id: "quick-pearl", name: "Quick Pearl", enabled: true },
+      { id: "fast-break", name: "Fast Break", enabled: false },
+      { id: "freecam", name: "Freecam", enabled: true },
+      { id: "auto-sprint", name: "Auto Sprint", enabled: false },
     ],
   },
   {
-    id: "drag-click", name: "Drag Click", category: "Automation", enabled: false,
-    description: "Simulates drag clicking for high CPS",
-    settings: [
-      { id: "min-cps", label: "Min CPS", type: "slider", value: 14, min: 1, max: 40, step: 1 },
-      { id: "max-cps", label: "Max CPS", type: "slider", value: 22, min: 1, max: 40, step: 1 },
-    ],
-  },
-  // Movement
-  {
-    id: "auto-xp", name: "Auto XP", category: "Movement", enabled: false,
-    description: "Automatically throws and picks up XP bottles",
-  },
-  {
-    id: "bunny-hop", name: "Bunny Hop", category: "Movement", enabled: true,
-    description: "Automatically jumps to maintain speed",
-    settings: [
-      { id: "mode", label: "Mode", type: "mode", value: "Vanilla", options: ["Vanilla", "Hypixel", "Legit"] },
-      { id: "only-sprint", label: "Only While Sprint", type: "boolean", value: true },
+    name: "ESP",
+    number: 2,
+    modules: [
+      { id: "fullbright", name: "Fullbright", enabled: true },
+      { id: "no-view-bobbing", name: "No View Bobbing", enabled: true },
+      { id: "player-esp", name: "Player ESP", enabled: false },
+      { id: "storage-esp", name: "Storage ESP", enabled: false },
+      { id: "chams", name: "Chams", enabled: false },
+      { id: "health-display", name: "Health Display", enabled: false },
+      { id: "armor-display", name: "Armor Display", enabled: false },
     ],
   },
   {
-    id: "quick-pearl", name: "Quick Pearl", category: "Movement", enabled: false,
-    description: "Instantly throws ender pearl on keybind",
-    settings: [
-      { id: "bind", label: "Bind Key", type: "mode", value: "G", options: ["G", "H", "J", "K", "Mouse4", "Mouse5"] },
+    name: "PVP",
+    number: 4,
+    modules: [
+      { id: "aim-assist", name: "Aim Assist", enabled: false },
+      { id: "silent-aim", name: "Silent Aim", enabled: true },
+      { id: "reach", name: "Reach", enabled: false },
+      { id: "hit-swap", name: "Hit Swap", enabled: true },
+      { id: "trigger-bot", name: "Trigger Bot", enabled: true },
+      { id: "auto-w-tap", name: "Auto W-Tap", enabled: false },
+      { id: "no-miss-delay", name: "No Miss Delay", enabled: false },
+      { id: "shield-breaker", name: "Shield Breaker", enabled: false },
+      { id: "jump-reset", name: "Jump Reset", enabled: true },
+      { id: "hitbox-expand", name: "Hitbox Expand", enabled: false },
+      { id: "anti-knockback", name: "Anti Knockback", enabled: false },
     ],
   },
   {
-    id: "fast-break", name: "Fast Break", category: "Movement", enabled: true,
-    description: "Removes block break delay",
-    settings: [
-      { id: "delay", label: "Delay (ticks)", type: "slider", value: 0, min: 0, max: 10, step: 1 },
+    name: "BRIDGING",
+    number: 1,
+    modules: [
+      { id: "bridge-assist", name: "Bridge Assist", enabled: false },
+      { id: "god-bridge", name: "God Bridge", enabled: false },
+      { id: "smart-bridge", name: "Smart Bridge", enabled: true },
     ],
   },
   {
-    id: "freecam", name: "Freecam", category: "Movement", enabled: false,
-    description: "Detaches camera from player body",
-    settings: [
-      { id: "speed", label: "Speed", type: "slider", value: 1.0, min: 0.1, max: 5.0, step: 0.1 },
+    name: "NETWORK",
+    number: 0,
+    modules: [
+      { id: "ping-spoof", name: "Ping Spoof", enabled: false },
+      { id: "fake-lag", name: "Fake Lag", enabled: false },
+      { id: "pack-spoof", name: "Pack Spoof", enabled: false },
+      { id: "version-spoof", name: "Version Spoof", enabled: false },
     ],
   },
   {
-    id: "auto-sprint", name: "Auto Sprint", category: "Movement", enabled: true,
-    description: "Automatically sprints",
-    settings: [
-      { id: "direction", label: "Direction", type: "mode", value: "Forward", options: ["Forward", "Omni"], description: "Forward = vanilla-like, Omni = sprint in any direction" },
-      { id: "keep-in-air", label: "Keep In Air", type: "boolean", value: true, description: "Maintain sprint state while jumping/falling" },
-      { id: "keep-on-sneak", label: "Keep On Sneak", type: "boolean", value: false, description: "Don't release sprint when sneaking" },
-      { id: "stop-on-hurt", label: "Release On Hurt", type: "boolean", value: true, description: "Briefly stop sprinting when taking damage" },
-      { id: "hurt-release", label: "Hurt Release Ticks", type: "slider", value: 5, min: 1, max: 20, step: 1 },
-    ],
-  },
-  // ESP
-  {
-    id: "fullbright", name: "Fullbright", category: "ESP", enabled: false,
-    description: "Makes the world fully bright (Night Vision)",
-  },
-  {
-    id: "no-view-bobbing", name: "No View Bobbing", category: "ESP", enabled: false,
-    description: "Disables camera bobbing animation",
-  },
-  {
-    id: "player-esp", name: "Player ESP", category: "ESP", enabled: false,
-    description: "Draws boxes around players through walls",
-    settings: [
-      { id: "mode", label: "Mode", type: "mode", value: "Box", options: ["Box", "Outline", "Corner"] },
-      { id: "tracers", label: "Tracers", type: "boolean", value: false },
-      { id: "color-health", label: "Health Color", type: "boolean", value: true },
+    name: "GUI",
+    number: 2,
+    modules: [
+      { id: "hud", name: "HUD", enabled: false },
+      { id: "target-hud", name: "Target HUD", enabled: false },
+      { id: "click-gui", name: "Click GUI", enabled: true },
+      { id: "friends", name: "Friends", enabled: true },
+      { id: "self-destruct", name: "Self Destruct", enabled: false },
     ],
   },
   {
-    id: "storage-esp", name: "Storage ESP", category: "ESP", enabled: false,
-    description: "Highlights chests and containers through walls",
-    settings: [
-      { id: "range", label: "Range", type: "slider", value: 20, min: 5, max: 64, step: 1 },
-      { id: "fill", label: "Fill", type: "boolean", value: true },
+    name: "INVENTORY",
+    number: 0,
+    modules: [
+      { id: "double-hand", name: "Double Hand", enabled: false },
+      { id: "auto-totem", name: "Auto Totem", enabled: false },
+      { id: "auto-pot", name: "Auto Pot", enabled: false },
+      { id: "pot-refill", name: "Pot Refill", enabled: false },
+      { id: "totem-swap", name: "Totem Swap", enabled: false },
     ],
   },
   {
-    id: "chams", name: "Chams", category: "ESP", enabled: true,
-    description: "Renders players through walls with flat color",
-    settings: [
-      { id: "mode", label: "Mode", type: "mode", value: "Flat", options: ["Flat", "Textured", "Wireframe"] },
-      { id: "behind", label: "Through Walls", type: "boolean", value: true },
-    ],
-  },
-  {
-    id: "health-display", name: "Health Display", category: "ESP", enabled: false,
-    description: "Shows player health above their heads",
-  },
-  {
-    id: "armor-display", name: "Armor Display", category: "ESP", enabled: false,
-    description: "Shows armor durability on nearby players",
-  },
-  // PvP
-  {
-    id: "aim-assist", name: "Aim Assist", category: "PvP", enabled: false,
-    description: "Smoothly aims at nearby players",
-    settings: [
-      { id: "range", label: "Range", type: "slider", value: 4.5, min: 1, max: 10, step: 0.1 },
-      { id: "fov", label: "FOV", type: "slider", value: 60, min: 5, max: 180, step: 1 },
-      { id: "aim-at", label: "Aim At", type: "mode", value: "Head", options: ["Head", "Chest", "Legs"] },
-      { id: "speed-min", label: "Speed Min", type: "slider", value: 1.5, min: 0.1, max: 10, step: 0.1 },
-      { id: "speed-max", label: "Speed Max", type: "slider", value: 3.5, min: 0.1, max: 10, step: 0.1 },
-      { id: "acceleration", label: "Acceleration", type: "slider", value: 1.0, min: 0.1, max: 2.0, step: 0.1 },
-      { id: "only-weapon", label: "Only Weapon", type: "boolean", value: true },
-      { id: "on-left-click", label: "On Left Click", type: "boolean", value: true },
-      { id: "stop-at-target", label: "Stop at Target", type: "boolean", value: true },
-      { id: "jitter", label: "Jitter", type: "boolean", value: false },
-      { id: "jitter-amount", label: "Jitter Amount", type: "slider", value: 0.5, min: 0.1, max: 2.0, step: 0.1 },
-    ],
-  },
-  {
-    id: "silent-aim", name: "Silent Aim", category: "PvP", enabled: false,
-    description: "Aims at players without moving your camera",
-    settings: [
-      { id: "range", label: "Range", type: "slider", value: 4.0, min: 1, max: 6, step: 0.1 },
-      { id: "fov", label: "FOV", type: "slider", value: 90, min: 5, max: 180, step: 1 },
-    ],
-  },
-  {
-    id: "reach", name: "Reach", category: "PvP", enabled: false,
-    description: "Extends attack reach distance",
-    settings: [
-      { id: "distance", label: "Distance", type: "slider", value: 3.3, min: 3.0, max: 4.5, step: 0.01 },
-      { id: "legit", label: "Legit", type: "boolean", value: true, description: "Varies the reach distance to bypass anti-cheats" },
-      { id: "randomization", label: "Randomization", type: "slider", value: 0.05, min: 0.0, max: 0.2, step: 0.01 },
-    ],
-  },
-  {
-    id: "hit-swap", name: "Hit Swap", category: "PvP", enabled: false,
-    description: "Swaps to sword on hit, then back",
-    settings: [
-      { id: "delay", label: "Swap Delay (ms)", type: "slider", value: 50, min: 0, max: 200, step: 5 },
-    ],
-  },
-  {
-    id: "trigger-bot", name: "Trigger Bot", category: "PvP", enabled: true,
-    description: "Automatically attacks on crosshair",
-    settings: [
-      { id: "delay-mode", label: "Delay Mode", type: "mode", value: "Auto", options: ["Auto", "Manual"], description: "Auto uses game attack cooldown (recommended for 1.9+)" },
-      { id: "sword-delay-min", label: "Sword Delay Min", type: "slider", value: 540, min: 0, max: 1000, step: 1 },
-      { id: "sword-delay-max", label: "Sword Delay Max", type: "slider", value: 550, min: 0, max: 1000, step: 1 },
-      { id: "axe-delay-min", label: "Axe Delay Min", type: "slider", value: 780, min: 0, max: 1000, step: 1 },
-      { id: "axe-delay-max", label: "Axe Delay Max", type: "slider", value: 800, min: 0, max: 1000, step: 1 },
-      { id: "max-reach", label: "Max Reach", type: "slider", value: 3.0, min: 2.5, max: 6.0, step: 0.1 },
-      { id: "miss-chance", label: "Miss Chance %", type: "slider", value: 0, min: 0, max: 30, step: 1 },
-      { id: "target-switch-delay", label: "Target Switch Delay", type: "slider", value: 80, min: 0, max: 500, step: 5 },
-      { id: "weapon-only", label: "Weapon Only", type: "boolean", value: true, description: "Only attacks if holding a weapon" },
-      { id: "check-shield", label: "Check Shield", type: "boolean", value: true },
-      { id: "swing", label: "Swing Hand", type: "boolean", value: true },
-      { id: "aim-jitter", label: "Aim Jitter", type: "boolean", value: true },
-      { id: "respect-hurt-time", label: "Respect Hurt Time", type: "boolean", value: true },
-      { id: "on-left-click", label: "On Left Click", type: "boolean", value: false },
-      { id: "ignore-npcs", label: "Ignore NPCs", type: "boolean", value: true, description: "Prevents attacking fake players/bots" },
-      { id: "same-player", label: "Same Player", type: "boolean", value: false, description: "Only hits the player you are currently attacking" },
-    ],
-  },
-  {
-    id: "auto-w-tap", name: "Auto W-Tap", category: "PvP", enabled: false,
-    description: "Automatically releases W key on attack to W-tap",
-    settings: [
-      { id: "delay", label: "Release Ticks", type: "slider", value: 1, min: 1, max: 5, step: 1 },
-    ],
-  },
-  {
-    id: "no-miss-delay", name: "No Miss Delay", category: "PvP", enabled: false,
-    description: "Removes attack penalty when missing",
-  },
-  {
-    id: "shield-breaker", name: "Shield Breaker", category: "PvP", enabled: false,
-    description: "Disables enemy shields by switching to axe",
-  },
-  {
-    id: "jump-reset", name: "Jump Reset", category: "PvP", enabled: false,
-    description: "Automatically jumps to reset hit cooldown",
-    settings: [
-      { id: "mode", label: "Mode", type: "mode", value: "Auto", options: ["Auto", "Manual"] },
-    ],
-  },
-  {
-    id: "hitbox-expand", name: "Hitbox Expand", category: "PvP", enabled: false,
-    description: "Expands enemy hitboxes client-side",
-    settings: [
-      { id: "size", label: "Expand Size", type: "slider", value: 0.1, min: 0.0, max: 0.5, step: 0.01 },
-    ],
-  },
-  {
-    id: "anti-knockback", name: "Anti Knockback", category: "PvP", enabled: false,
-    description: "Reduces or cancels knockback from attacks",
-    settings: [
-      { id: "horizontal", label: "Horizontal %", type: "slider", value: 100, min: 0, max: 100, step: 1 },
-      { id: "vertical", label: "Vertical %", type: "slider", value: 100, min: 0, max: 100, step: 1 },
-    ],
-  },
-  // Bridging
-  {
-    id: "bridge-assist", name: "Bridge Assist", category: "Bridging", enabled: false,
-    description: "Assists with placing blocks while bridging",
-    settings: [
-      { id: "safe-walk", label: "Safe Walk", type: "boolean", value: true },
-    ],
-  },
-  {
-    id: "god-bridge", name: "God Bridge", category: "Bridging", enabled: false,
-    description: "Automated god bridging",
-  },
-  {
-    id: "smart-bridge", name: "Smart Bridge", category: "Bridging", enabled: false,
-    description: "Intelligent auto-bridging with path detection",
-    settings: [
-      { id: "speed", label: "Speed", type: "slider", value: 1.0, min: 0.5, max: 2.0, step: 0.1 },
-    ],
-  },
-  // Network
-  {
-    id: "ping-spoof", name: "Ping Spoof", category: "Network", enabled: false,
-    description: "Spoofs your ping display in the tab menu",
-    settings: [
-      { id: "ping", label: "Fake Ping (ms)", type: "slider", value: 45, min: 1, max: 999, step: 1 },
-    ],
-  },
-  {
-    id: "fake-lag", name: "Fake Lag", category: "Network", enabled: false,
-    description: "Holds packets to simulate lag on demand",
-    settings: [
-      { id: "delay", label: "Lag Amount (ms)", type: "slider", value: 200, min: 50, max: 2000, step: 10 },
-      { id: "mode", label: "Mode", type: "mode", value: "Hold", options: ["Hold", "Toggle", "Burst"] },
-    ],
-  },
-  {
-    id: "pack-spoof", name: "Pack Spoof", category: "Network", enabled: false,
-    description: "Spoofs your resource pack hash",
-  },
-  {
-    id: "version-spoof", name: "Version Spoof", category: "Network", enabled: false,
-    description: "Spoofs your Minecraft version string",
-    settings: [
-      { id: "version", label: "Version", type: "mode", value: "1.20.1", options: ["1.8.9", "1.12.2", "1.16.5", "1.18.2", "1.19.4", "1.20.1", "1.21"] },
-    ],
-  },
-  // GUI
-  {
-    id: "hud", name: "HUD", category: "GUI", enabled: false,
-    description: "Renders client info on screen (FPS, CPS, ping)",
-    settings: [
-      { id: "show-fps", label: "Show FPS", type: "boolean", value: true },
-      { id: "show-cps", label: "Show CPS", type: "boolean", value: true },
-      { id: "show-ping", label: "Show Ping", type: "boolean", value: true },
-      { id: "show-pos", label: "Show Position", type: "boolean", value: false },
-    ],
-  },
-  {
-    id: "target-hud", name: "Target HUD", category: "GUI", enabled: false,
-    description: "Shows health/armor info for your current target",
-  },
-  {
-    id: "click-gui", name: "Click GUI", category: "GUI", enabled: true,
-    description: "This module panel — opens with RSHIFT",
-    settings: [
-      { id: "bind", label: "Keybind", type: "mode", value: "RSHIFT", options: ["RSHIFT", "RCTRL", "INSERT", "HOME"] },
-    ],
-  },
-  {
-    id: "friends", name: "Friends", category: "GUI", enabled: false,
-    description: "Marks players as friends so modules ignore them",
-    settings: [
-      { id: "anti-attack", label: "Anti Attack", type: "boolean", value: true },
-    ],
-  },
-  {
-    id: "self-destruct", name: "Self Destruct", category: "GUI", enabled: false,
-    description: "Removes the client from memory on trigger",
-    settings: [
-      { id: "bind", label: "Trigger Key", type: "mode", value: "DELETE", options: ["DELETE", "END", "F12"] },
-    ],
-  },
-  // Inventory
-  {
-    id: "double-hand", name: "Double Hand", category: "Inventory", enabled: false,
-    description: "Automatically fills offhand with items",
-    settings: [
-      { id: "item", label: "Item", type: "mode", value: "Totem", options: ["Totem", "Crystal", "Shield", "Gap"] },
-    ],
-  },
-  {
-    id: "auto-totem", name: "Auto Totem", category: "Inventory", enabled: false,
-    description: "Keeps a totem of undying in your offhand",
-    settings: [
-      { id: "hotkey", label: "Only With Key", type: "boolean", value: false },
-      { id: "hp-threshold", label: "HP Threshold", type: "slider", value: 4, min: 1, max: 20, step: 1 },
-    ],
-  },
-  {
-    id: "auto-pot", name: "Auto Pot", category: "Inventory", enabled: false,
-    description: "Automatically drinks potions when HP is low",
-    settings: [
-      { id: "hp-threshold", label: "HP Threshold", type: "slider", value: 10, min: 1, max: 20, step: 1 },
-      { id: "delay", label: "Delay (ms)", type: "slider", value: 50, min: 0, max: 500, step: 10 },
-    ],
-  },
-  {
-    id: "pot-refill", name: "Pot Refill", category: "Inventory", enabled: false,
-    description: "Automatically refills potions from inventory",
-  },
-  {
-    id: "totem-swap", name: "Totem Swap", category: "Inventory", enabled: false,
-    description: "Instantly swaps in a new totem after it activates",
-    settings: [
-      { id: "delay", label: "Swap Delay (ms)", type: "slider", value: 0, min: 0, max: 200, step: 5 },
-    ],
-  },
-  // Crystal
-  {
-    id: "anchor-aura", name: "Anchor Aura", category: "Crystal", enabled: false,
-    description: "Automatically uses respawn anchors as weapons",
-  },
-  {
-    id: "auto-crystal", name: "Auto Crystal", category: "Crystal", enabled: false,
-    description: "Automatically places and breaks crystals",
-    settings: [
-      { id: "place-delay", label: "Place Delay", type: "slider", value: 0, min: 0, max: 20, step: 1 },
-      { id: "break-delay", label: "Break Delay", type: "slider", value: 0, min: 0, max: 20, step: 1 },
-      { id: "place-chance", label: "Place Chance %", type: "slider", value: 100, min: 0, max: 100, step: 1, description: "Randomization" },
-      { id: "break-chance", label: "Break Chance %", type: "slider", value: 100, min: 0, max: 100, step: 1, description: "Randomization" },
-      { id: "stop-on-kill", label: "Stop on Kill", type: "boolean", value: false, description: "Won't crystal if a dead player is nearby" },
-      { id: "fake-punch", label: "Fake Punch", type: "boolean", value: false, description: "Will hit every entity if you miss a hit crystal" },
-      { id: "click-simulation", label: "Click Simulation", type: "boolean", value: false, description: "Makes the CPS HUD think you're legit" },
-      { id: "damage-tick", label: "Damage Tick", type: "boolean", value: false, description: "Times your crystals for a perfect d-tap" },
-      { id: "anti-weakness", label: "Anti-Weakness", type: "boolean", value: false, description: "Silently switches to sword if you have weakness" },
-    ],
-  },
-  {
-    id: "crystal-aura", name: "Crystal Aura", category: "Crystal", enabled: false,
-    description: "Full auto crystal PvP with placement prediction",
-    settings: [
-      { id: "range", label: "Place Range", type: "slider", value: 4.0, min: 1, max: 6, step: 0.1 },
-      { id: "break-range", label: "Break Range", type: "slider", value: 5.0, min: 1, max: 8, step: 0.1 },
-      { id: "rotate", label: "Rotate", type: "boolean", value: true },
-    ],
-  },
-  {
-    id: "crystal-optimizer", name: "Crystal Optimizer", category: "Crystal", enabled: false,
-    description: "Optimizes crystal PvP",
-    settings: [
-      { id: "kill-chance", label: "Kill Chance %", type: "slider", value: 100, min: 0, max: 100, step: 1, description: "Chance to client-kill the crystal" },
-      { id: "kill-delay-min", label: "Kill Delay Min (ms)", type: "slider", value: 0, min: 0, max: 200, step: 1, description: "Random ms wait before client-kill" },
-      { id: "kill-delay-max", label: "Kill Delay Max (ms)", type: "slider", value: 0, min: 0, max: 200, step: 1 },
-      { id: "max-reach", label: "Max Reach", type: "slider", value: 5.0, min: 3.0, max: 8.0, step: 0.1 },
-      { id: "require-tool", label: "Require Tool", type: "boolean", value: true, description: "Only kill if holding a weapon/tool" },
-      { id: "strength-bypass", label: "Strength Bypass", type: "boolean", value: true, description: "Skip weakness check while you have strength" },
-    ],
-  },
-  {
-    id: "double-anchor", name: "Double Anchor", category: "Crystal", enabled: false,
-    description: "Uses two respawn anchors simultaneously",
-  },
-  {
-    id: "hover-totem", name: "Hover Totem", category: "Crystal", enabled: false,
-    description: "Holds totem in hand while crystalling",
-    settings: [
-      { id: "hp-threshold", label: "HP Threshold", type: "slider", value: 6, min: 1, max: 20, step: 1 },
-    ],
-  },
-  {
-    id: "auto-fireball", name: "Auto Fireball", category: "Crystal", enabled: false,
-    description: "Automatically shoots fireballs at targets",
-    settings: [
-      { id: "range", label: "Range", type: "slider", value: 8, min: 2, max: 16, step: 1 },
-      { id: "delay", label: "Delay (ms)", type: "slider", value: 100, min: 50, max: 1000, step: 10 },
-    ],
-  },
-  {
-    id: "auto-trap", name: "Auto Trap", category: "Crystal", enabled: false,
-    description: "Traps players in obsidian boxes",
-    settings: [
-      { id: "range", label: "Range", type: "slider", value: 4, min: 2, max: 6, step: 0.5 },
-      { id: "mode", label: "Mode", type: "mode", value: "Full", options: ["Full", "Partial", "Ceiling"] },
+    name: "CRYSTAL",
+    number: 1,
+    modules: [
+      { id: "anchor-aura", name: "Anchor Aura", enabled: false },
+      { id: "auto-crystal", name: "Auto Crystal", enabled: false },
+      { id: "crystal-aura", name: "Crystal Aura", enabled: false },
+      { id: "crystal-optimizer", name: "Crystal Optimizer", enabled: false },
+      { id: "double-anchor", name: "Double Anchor", enabled: false },
+      { id: "hover-totem", name: "Hover Totem", enabled: false },
+      { id: "auto-fireball", name: "Auto Fireball", enabled: true },
+      { id: "auto-trap", name: "Auto Trap", enabled: false },
     ],
   },
 ];
 
-const CATEGORIES = [
-  { name: "Automation", icon: Settings },
-  { name: "Movement", icon: Move },
-  { name: "ESP", icon: Eye },
-  { name: "PvP", icon: Swords },
-  { name: "Bridging", icon: Monitor },
-  { name: "Network", icon: Network },
-  { name: "GUI", icon: Target },
-  { name: "Inventory", icon: Package },
-  { name: "Crystal", icon: Zap },
-];
+const DEFAULT_POSITIONS: Record<string, { x: number; y: number }> = {
+  AUTOMATION: { x: 20, y: 80 },
+  MOVEMENT: { x: 200, y: 80 },
+  ESP: { x: 380, y: 80 },
+  PVP: { x: 560, y: 80 },
+  BRIDGING: { x: 740, y: 80 },
+  NETWORK: { x: 20, y: 360 },
+  GUI: { x: 200, y: 360 },
+  INVENTORY: { x: 380, y: 360 },
+  CRYSTAL: { x: 620, y: 320 },
+};
 
-function SettingsPanel({ module, onClose, onSettingChange }: {
-  module: Module;
-  onClose: () => void;
-  onSettingChange: (moduleId: string, settingId: string, value: boolean | number | string) => void;
-}) {
+function Toggle({ enabled, onChange }: { enabled: boolean; onChange: () => void }) {
   return (
-    <motion.div
-      initial={{ opacity: 0, x: 20 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: 20 }}
-      transition={{ duration: 0.2 }}
-      className="w-72 border-l border-white/5 bg-[#080808] flex flex-col overflow-hidden"
+    <button
+      onClick={(e) => { e.stopPropagation(); onChange(); }}
+      className={`relative w-9 h-5 rounded-sm flex-shrink-0 transition-all duration-200 focus:outline-none ${
+        enabled
+          ? "bg-cyan-500/20 border border-cyan-500/60 shadow-[0_0_8px_rgba(34,211,238,0.35)]"
+          : "bg-[#252525] border border-white/15"
+      }`}
+      style={{ borderRadius: "3px" }}
     >
-      <div className="flex items-center justify-between px-5 py-4 border-b border-white/5 bg-[#0a0a0a]">
-        <div>
-          <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase mb-0.5">Settings</p>
-          <h3 className="text-sm font-semibold text-cyan-400 tracking-wide">{module.name}</h3>
-        </div>
-        <button
-          onClick={onClose}
-          className="w-7 h-7 flex items-center justify-center text-white/30 hover:text-white/80 hover:bg-white/5 transition-colors"
-          data-testid="button-close-settings"
+      <motion.div
+        className={`absolute top-[3px] w-[11px] h-[11px] rounded-sm transition-colors duration-200 ${
+          enabled
+            ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]"
+            : "bg-[#555]"
+        }`}
+        style={{ borderRadius: "2px" }}
+        animate={{ left: enabled ? "calc(100% - 14px)" : "3px" }}
+        transition={{ type: "spring", stiffness: 600, damping: 35 }}
+      />
+    </button>
+  );
+}
+
+function DraggablePanel({
+  category,
+  position,
+  onPositionChange,
+  onToggle,
+  zIndex,
+  onFocus,
+  searchQuery,
+}: {
+  category: Category;
+  position: { x: number; y: number };
+  onPositionChange: (name: string, pos: { x: number; y: number }) => void;
+  onToggle: (catName: string, moduleId: string) => void;
+  zIndex: number;
+  onFocus: (name: string) => void;
+  searchQuery: string;
+}) {
+  const [minimized, setMinimized] = useState(false);
+  const dragRef = useRef({ dragging: false, startX: 0, startY: 0, origX: 0, origY: 0 });
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    onFocus(category.name);
+    dragRef.current = {
+      dragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      origX: position.x,
+      origY: position.y,
+    };
+
+    const onMove = (me: MouseEvent) => {
+      if (!dragRef.current.dragging) return;
+      onPositionChange(category.name, {
+        x: dragRef.current.origX + me.clientX - dragRef.current.startX,
+        y: dragRef.current.origY + me.clientY - dragRef.current.startY,
+      });
+    };
+    const onUp = () => {
+      dragRef.current.dragging = false;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, [position, category.name, onPositionChange, onFocus]);
+
+  const activeCount = category.modules.filter(m => m.enabled).length;
+
+  const visibleModules = searchQuery
+    ? category.modules.filter(m => m.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : category.modules;
+
+  if (searchQuery && visibleModules.length === 0) return null;
+
+  return (
+    <div
+      className="absolute select-none"
+      style={{ left: position.x, top: position.y, zIndex, width: 168 }}
+      onMouseDown={() => onFocus(category.name)}
+    >
+      {/* Panel */}
+      <div
+        className="border border-white/[0.08] overflow-hidden"
+        style={{
+          background: "rgba(10,10,10,0.97)",
+          boxShadow: "0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04)",
+        }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center gap-0 cursor-grab active:cursor-grabbing border-b border-white/[0.07]"
+          style={{ background: "rgba(255,255,255,0.03)", userSelect: "none" }}
+          onMouseDown={handleMouseDown}
         >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      {module.description && (
-        <div className="px-5 py-3 border-b border-white/5 bg-cyan-950/10">
-          <p className="text-xs text-white/40 font-mono leading-relaxed">{module.description}</p>
-        </div>
-      )}
-
-      <div className="flex-1 overflow-y-auto py-2">
-        {!module.settings || module.settings.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 text-white/20">
-            <Settings className="w-8 h-8 mb-3 opacity-30" />
-            <p className="text-xs font-mono tracking-widest">NO SETTINGS</p>
+          <div
+            className="flex items-center justify-center text-[10px] font-bold font-mono border-r border-white/[0.07] shrink-0"
+            style={{
+              width: 26,
+              height: 28,
+              color: activeCount > 0 ? "#22d3ee" : "rgba(255,255,255,0.3)",
+              background: activeCount > 0 ? "rgba(34,211,238,0.08)" : "transparent",
+            }}
+          >
+            {activeCount}
           </div>
-        ) : (
-          module.settings.map((setting) => (
-            <div key={setting.id} className="px-5 py-3 border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[11px] text-white/60 font-mono">{setting.label}</label>
-                {setting.type === "boolean" && (
-                  <button
-                    data-testid={`toggle-setting-${setting.id}`}
-                    onClick={() => onSettingChange(module.id, setting.id, !(setting.value as boolean))}
-                    className={`w-8 h-4 rounded-full border p-[1px] flex items-center transition-colors ${
-                      setting.value ? "border-cyan-500/50 bg-cyan-900/30" : "border-white/10 bg-black/50"
-                    }`}
+
+          <span
+            className="flex-1 text-[10px] font-mono tracking-[0.15em] px-2.5 py-1.5"
+            style={{ color: "rgba(255,255,255,0.65)", letterSpacing: "0.12em" }}
+          >
+            {category.name}
+          </span>
+
+          <div className="flex items-center">
+            <button
+              className="flex items-center justify-center hover:bg-white/5 transition-colors"
+              style={{ width: 26, height: 28 }}
+              onClick={() => setMinimized(v => !v)}
+            >
+              <Minus className="w-3 h-3" style={{ color: "rgba(255,255,255,0.25)" }} />
+            </button>
+          </div>
+        </div>
+
+        {/* Module list */}
+        <AnimatePresence initial={false}>
+          {!minimized && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.15 }}
+              style={{ overflow: "hidden" }}
+            >
+              {visibleModules.map((module) => (
+                <div
+                  key={module.id}
+                  className="flex items-center justify-between group cursor-pointer"
+                  style={{
+                    padding: "5px 8px 5px 10px",
+                    borderBottom: "1px solid rgba(255,255,255,0.03)",
+                    background: module.enabled
+                      ? "rgba(34,211,238,0.05)"
+                      : "transparent",
+                    borderLeft: module.enabled
+                      ? "2px solid rgba(34,211,238,0.7)"
+                      : "2px solid transparent",
+                    transition: "background 0.15s, border-color 0.15s",
+                  }}
+                  onClick={() => onToggle(category.name, module.id)}
+                  onMouseEnter={e => {
+                    if (!module.enabled) {
+                      (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.03)";
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (!module.enabled) {
+                      (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                    }
+                  }}
+                >
+                  <span
+                    className="text-[11px] font-mono truncate flex-1 mr-2"
+                    style={{
+                      color: module.enabled ? "#22d3ee" : "rgba(255,255,255,0.55)",
+                      fontWeight: module.enabled ? 500 : 400,
+                      textShadow: module.enabled ? "0 0 8px rgba(34,211,238,0.5)" : "none",
+                      transition: "color 0.15s",
+                    }}
                   >
-                    <motion.div
-                      className={`w-2.5 h-2.5 rounded-full ${setting.value ? "bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,1)]" : "bg-white/20"}`}
-                      animate={{ x: setting.value ? 16 : 0 }}
-                      transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    />
-                  </button>
-                )}
-                {setting.type === "slider" && (
-                  <span className="text-[11px] text-cyan-400 font-mono">{Number(setting.value).toFixed(setting.step && setting.step < 1 ? 2 : 0)}</span>
-                )}
-              </div>
-              {setting.description && (
-                <p className="text-[10px] text-white/25 font-mono mb-2 leading-relaxed">{setting.description}</p>
-              )}
-              {setting.type === "slider" && (
-                <input
-                  data-testid={`slider-${setting.id}`}
-                  type="range"
-                  min={setting.min}
-                  max={setting.max}
-                  step={setting.step}
-                  value={setting.value as number}
-                  onChange={(e) => onSettingChange(module.id, setting.id, parseFloat(e.target.value))}
-                  className="w-full h-1 appearance-none bg-white/10 rounded-full cursor-pointer accent-cyan-500"
-                  style={{ accentColor: "#22d3ee" }}
-                />
-              )}
-              {setting.type === "mode" && setting.options && (
-                <div className="relative">
-                  <select
-                    data-testid={`select-${setting.id}`}
-                    value={setting.value as string}
-                    onChange={(e) => onSettingChange(module.id, setting.id, e.target.value)}
-                    className="w-full bg-[#111] border border-white/10 text-white/70 text-[11px] font-mono px-3 py-1.5 appearance-none focus:outline-none focus:border-cyan-500/50 cursor-pointer"
-                  >
-                    {setting.options.map((opt) => (
-                      <option key={opt} value={opt}>{opt}</option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-white/30 pointer-events-none" />
+                    {module.name}
+                  </span>
+                  <Toggle
+                    enabled={module.enabled}
+                    onChange={() => onToggle(category.name, module.id)}
+                  />
                 </div>
-              )}
-            </div>
-          ))
-        )}
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
-    </motion.div>
+    </div>
   );
 }
 
 export default function Home() {
-  const [modules, setModules] = useState<Module[]>(INITIAL_MODULES);
-  const [activeCategory, setActiveCategory] = useState(CATEGORIES[0].name);
+  const [categories, setCategories] = useState<Category[]>(INITIAL_CATEGORIES);
+  const [positions, setPositions] = useState(DEFAULT_POSITIONS);
+  const [zOrders, setZOrders] = useState<Record<string, number>>(() =>
+    Object.fromEntries(INITIAL_CATEGORIES.map((c, i) => [c.name, i + 1]))
+  );
+  const [maxZ, setMaxZ] = useState(INITIAL_CATEGORIES.length + 1);
   const [search, setSearch] = useState("");
-  const [selectedModule, setSelectedModule] = useState<string | null>(null);
+  const [selectedModule, setSelectedModule] = useState<{ cat: string; name: string; desc: string } | null>(null);
 
-  const toggleModule = (id: string) => {
-    setModules(modules.map(m => m.id === id ? { ...m, enabled: !m.enabled } : m));
-  };
+  const handleToggle = useCallback((catName: string, moduleId: string) => {
+    setCategories(prev =>
+      prev.map(cat =>
+        cat.name !== catName ? cat : {
+          ...cat,
+          modules: cat.modules.map(m =>
+            m.id !== moduleId ? m : { ...m, enabled: !m.enabled }
+          ),
+        }
+      )
+    );
+  }, []);
 
-  const handleSettingChange = (moduleId: string, settingId: string, value: boolean | number | string) => {
-    setModules(modules.map(m => {
-      if (m.id !== moduleId) return m;
-      return {
-        ...m,
-        settings: m.settings?.map(s => s.id === settingId ? { ...s, value } : s),
-      };
-    }));
-  };
+  const handlePositionChange = useCallback((name: string, pos: { x: number; y: number }) => {
+    setPositions(prev => ({ ...prev, [name]: pos }));
+  }, []);
 
-  const filteredModules = useMemo(() => {
-    if (search) {
-      return modules.filter(m => m.name.toLowerCase().includes(search.toLowerCase()));
-    }
-    return modules.filter(m => m.category === activeCategory);
-  }, [modules, activeCategory, search]);
+  const handleFocus = useCallback((name: string) => {
+    setMaxZ(prev => {
+      const next = prev + 1;
+      setZOrders(z => ({ ...z, [name]: next }));
+      return next;
+    });
+  }, []);
 
-  const activeCount = modules.filter(m => m.enabled).length;
-  const openModule = selectedModule ? modules.find(m => m.id === selectedModule) : null;
+  const totalActive = useMemo(() =>
+    categories.reduce((acc, cat) => acc + cat.modules.filter(m => m.enabled).length, 0),
+    [categories]
+  );
+
+  const totalModules = useMemo(() =>
+    categories.reduce((acc, cat) => acc + cat.modules.length, 0),
+    [categories]
+  );
+
+  const activeModule = useMemo(() => {
+    if (!selectedModule) return null;
+    const cat = categories.find(c => c.name === selectedModule.cat);
+    return cat?.modules.find(m => m.name === selectedModule.name) ?? null;
+  }, [categories, selectedModule]);
 
   return (
-    <div className="min-h-screen w-full bg-[#050505] text-white flex overflow-hidden selection:bg-cyan-500/30 font-sans relative">
-      <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] bg-cyan-900/10 blur-[150px] pointer-events-none rounded-full" />
-      <div className="absolute bottom-[-20%] right-[-10%] w-[50%] h-[50%] bg-cyan-900/10 blur-[150px] pointer-events-none rounded-full" />
+    <div
+      className="w-full h-screen overflow-hidden relative font-mono"
+      style={{ background: "#080808", userSelect: "none" }}
+    >
+      {/* Subtle background glow */}
+      <div
+        className="absolute pointer-events-none"
+        style={{
+          top: "-20%", left: "-10%", width: "55%", height: "55%",
+          background: "radial-gradient(ellipse, rgba(34,211,238,0.04) 0%, transparent 70%)",
+        }}
+      />
 
-      {/* Sidebar */}
-      <div className="w-64 border-r border-white/5 bg-[#0a0a0a]/80 backdrop-blur-xl flex flex-col z-10 relative shrink-0">
-        <div className="p-6 border-b border-white/5">
-          <h1 className="text-4xl font-bold tracking-widest text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-cyan-600 mb-1" style={{ textShadow: "0 0 20px rgba(34,211,238,0.3)" }}>
+      {/* Top bar */}
+      <div
+        className="absolute top-0 left-0 right-0 flex items-center z-50 border-b"
+        style={{
+          height: 40,
+          background: "rgba(6,6,6,0.98)",
+          borderColor: "rgba(255,255,255,0.07)",
+          backdropFilter: "blur(10px)",
+        }}
+      >
+        {/* Logo */}
+        <div className="px-5 border-r" style={{ borderColor: "rgba(255,255,255,0.07)", height: "100%", display: "flex", alignItems: "center" }}>
+          <span
+            className="text-sm font-bold tracking-[0.25em]"
+            style={{ color: "#22d3ee", textShadow: "0 0 12px rgba(34,211,238,0.5)" }}
+          >
             ROCKY
-          </h1>
-          <p className="text-xs text-cyan-500/50 uppercase tracking-[0.2em] font-mono">Utility Client v2.0</p>
+          </span>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {CATEGORIES.map((cat) => {
-            const Icon = cat.icon;
-            const isActive = !search && activeCategory === cat.name;
-            const catActiveCount = modules.filter(m => m.category === cat.name && m.enabled).length;
-            return (
-              <button
-                key={cat.name}
-                data-testid={`nav-category-${cat.name.toLowerCase()}`}
-                onClick={() => { setActiveCategory(cat.name); setSearch(""); setSelectedModule(null); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-all duration-200 relative group overflow-hidden ${
-                  isActive ? "text-cyan-400" : "text-white/40 hover:text-white/80"
-                }`}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeTab"
-                    className="absolute inset-0 bg-gradient-to-r from-cyan-500/10 to-transparent border-l-2 border-cyan-400"
-                  />
-                )}
-                <Icon className={`w-4 h-4 z-10 ${isActive ? "drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" : ""}`} />
-                <span className="font-medium tracking-wider text-sm z-10">{cat.name.toUpperCase()}</span>
-                {catActiveCount > 0 && (
-                  <span className={`ml-auto text-xs font-mono z-10 ${isActive ? "text-cyan-400" : "text-white/40"}`}>
-                    {catActiveCount}
-                  </span>
-                )}
-              </button>
-            );
-          })}
+        {/* Selected module breadcrumb */}
+        <div className="px-5 flex items-center gap-2 flex-1">
+          {selectedModule ? (
+            <>
+              <span className="text-[11px]" style={{ color: "#22d3ee" }}>{selectedModule.name}</span>
+              <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>—</span>
+              <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.35)" }}>{selectedModule.desc}</span>
+            </>
+          ) : (
+            <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+              Select a module to view details
+            </span>
+          )}
         </div>
 
-        <div className="p-4 border-t border-white/5 bg-black/20">
-          <div className="flex items-center justify-between text-xs font-mono text-white/40 mb-2">
-            <span>ACTIVE MODULES</span>
-            <span className="text-cyan-400">{activeCount} / {modules.length}</span>
-          </div>
-          <div className="h-1 bg-white/5 w-full overflow-hidden">
-            <motion.div
-              className="h-full bg-cyan-500 shadow-[0_0_10px_rgba(34,211,238,0.8)]"
-              initial={{ width: 0 }}
-              animate={{ width: `${(activeCount / modules.length) * 100}%` }}
-              transition={{ duration: 0.3 }}
-            />
-          </div>
+        {/* Search */}
+        <div className="relative mx-4">
+          <Search
+            className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 pointer-events-none"
+            style={{ color: search ? "#22d3ee" : "rgba(255,255,255,0.3)" }}
+          />
+          <input
+            type="text"
+            placeholder="Search modules..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="text-[11px] font-mono pl-8 pr-3 focus:outline-none transition-all"
+            style={{
+              background: "rgba(255,255,255,0.04)",
+              border: `1px solid ${search ? "rgba(34,211,238,0.5)" : "rgba(255,255,255,0.1)"}`,
+              color: "rgba(255,255,255,0.75)",
+              width: 180,
+              height: 26,
+              boxShadow: search ? "0 0 10px rgba(34,211,238,0.1)" : "none",
+            }}
+          />
+          {search && (
+            <button
+              className="absolute right-2 top-1/2 -translate-y-1/2"
+              onClick={() => setSearch("")}
+            >
+              <X className="w-3 h-3" style={{ color: "rgba(255,255,255,0.4)" }} />
+            </button>
+          )}
+        </div>
+
+        {/* Active count */}
+        <div
+          className="px-5 border-l flex items-center gap-2"
+          style={{ borderColor: "rgba(255,255,255,0.07)", height: "100%" }}
+        >
+          <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.3)" }}>
+            {totalActive} active
+          </span>
+          <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.15)" }}>/</span>
+          <span className="text-[11px]" style={{ color: "rgba(255,255,255,0.2)" }}>
+            {totalModules} total
+          </span>
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col z-10 relative min-w-0">
-        <div className="h-20 border-b border-white/5 bg-[#0a0a0a]/50 backdrop-blur-md flex items-center px-8 justify-between shrink-0">
-          <div className="flex items-center gap-3 text-white/50">
-            <h2 className="text-xl font-semibold tracking-wider text-white">
-              {search ? "SEARCH RESULTS" : activeCategory.toUpperCase()}
-            </h2>
-            <span className="text-xs font-mono px-2 py-1 bg-white/5 text-white/40 border border-white/10">
-              {filteredModules.length} MODULES
-            </span>
-          </div>
+      {/* Draggable panels */}
+      <div className="absolute inset-0 pt-10">
+        {categories.map(cat => (
+          <DraggablePanel
+            key={cat.name}
+            category={cat}
+            position={positions[cat.name] ?? { x: 20, y: 80 }}
+            onPositionChange={handlePositionChange}
+            onToggle={handleToggle}
+            zIndex={zOrders[cat.name] ?? 1}
+            onFocus={handleFocus}
+            searchQuery={search}
+          />
+        ))}
+      </div>
 
-          <div className="relative w-64 group">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <Search className="h-4 w-4 text-white/30 group-focus-within:text-cyan-400 transition-colors" />
-            </div>
-            <input
-              data-testid="input-search"
-              type="text"
-              placeholder="SEARCH MODULES..."
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setSelectedModule(null); }}
-              className="w-full bg-[#111] border border-white/10 text-white pl-10 pr-4 py-2 text-sm font-mono focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/50 transition-all placeholder:text-white/20"
-            />
-            {search && (
-              <div className="absolute inset-0 border border-cyan-500/30 pointer-events-none animate-pulse" />
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 flex min-h-0">
-          <div className="flex-1 overflow-y-auto p-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              <AnimatePresence>
-                {filteredModules.map((module) => (
-                  <motion.div
-                    layout
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    key={module.id}
-                  >
-                    <div
-                      data-testid={`module-card-${module.id}`}
-                      onContextMenu={(e) => { e.preventDefault(); setSelectedModule(selectedModule === module.id ? null : module.id); }}
-                      className={`w-full group relative text-left p-4 border transition-all duration-300 overflow-hidden cursor-pointer ${
-                        selectedModule === module.id
-                          ? "border-white/30 bg-[#131313]"
-                          : module.enabled
-                          ? "bg-cyan-950/20 border-cyan-500/50 shadow-[0_0_15px_rgba(34,211,238,0.15)]"
-                          : "bg-[#0f0f0f] border-white/5 hover:border-white/20 hover:bg-[#151515]"
-                      }`}
-                    >
-                      <div className={`absolute top-0 right-0 w-4 h-4 border-t border-r transition-colors ${module.enabled ? "border-cyan-400" : "border-white/10 group-hover:border-white/30"}`} />
-
-                      {module.enabled && (
-                        <motion.div
-                          className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-400/5 to-transparent h-[200%]"
-                          animate={{ top: ["-100%", "100%"] }}
-                          transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                        />
-                      )}
-
-                      <div className="flex justify-between items-start relative z-10">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className={`font-semibold tracking-wide truncate ${module.enabled ? "text-cyan-400 drop-shadow-[0_0_5px_rgba(34,211,238,0.8)]" : "text-white/70"}`}>
-                              {module.name}
-                            </h3>
-                          </div>
-                          {search && (
-                            <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase truncate">
-                              {module.category}
-                            </p>
-                          )}
-                          {module.description && !search && (
-                            <p className="text-[10px] text-white/25 font-mono leading-relaxed truncate mt-0.5">
-                              {module.description}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex items-center ml-2 shrink-0">
-                          <div className={`w-8 h-4 rounded-full border p-[1px] flex items-center transition-colors ${
-                            module.enabled ? "border-cyan-500/50 bg-cyan-900/30" : "border-white/10 bg-black/50"
-                          }`}>
-                            <motion.div
-                              className={`w-2.5 h-2.5 rounded-full ${module.enabled ? "bg-cyan-400 shadow-[0_0_5px_rgba(34,211,238,1)]" : "bg-white/20"}`}
-                              animate={{ x: module.enabled ? 16 : 0 }}
-                              transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {module.settings && module.settings.length > 0 && (
-                        <div
-                          data-testid={`button-open-settings-${module.id}`}
-                          onClick={(e) => { e.stopPropagation(); setSelectedModule(selectedModule === module.id ? null : module.id); }}
-                          className={`mt-2 relative z-10 flex items-center gap-1 text-[10px] font-mono transition-colors cursor-pointer w-fit ${selectedModule === module.id ? "text-white/60" : "text-white/20 hover:text-white/50"}`}
-                        >
-                          <Settings className="w-2.5 h-2.5" />
-                          <span>{module.settings.length} SETTINGS</span>
-                        </div>
-                      )}
-
-                      {/* Toggle click area */}
-                      <div
-                        className="absolute inset-0 z-0"
-                        onClick={() => toggleModule(module.id)}
-                      />
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {filteredModules.length === 0 && (
-                <div className="col-span-full py-20 flex flex-col items-center justify-center text-white/20">
-                  <Target className="w-12 h-12 mb-4 opacity-20" />
-                  <p className="font-mono tracking-widest">NO MODULES FOUND</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Settings Panel */}
-          <AnimatePresence>
-            {openModule && (
-              <SettingsPanel
-                module={openModule}
-                onClose={() => setSelectedModule(null)}
-                onSettingChange={handleSettingChange}
-              />
-            )}
-          </AnimatePresence>
-        </div>
+      {/* Hint */}
+      <div
+        className="absolute bottom-4 right-5 text-[10px] pointer-events-none"
+        style={{ color: "rgba(255,255,255,0.12)", letterSpacing: "0.08em" }}
+      >
+        DRAG HEADERS TO MOVE · CLICK MODULE TO TOGGLE
       </div>
     </div>
   );

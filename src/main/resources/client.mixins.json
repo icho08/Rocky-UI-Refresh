@@ -17,6 +17,7 @@
     "LivingEntityRendererMixin"
   ],
   "client": [
+    "ModMenuHideMixin",
     "CameraMixin",
     "ClientPlayerEntityMixin",
     "ClientPlayerInteractionManagerAccessor",

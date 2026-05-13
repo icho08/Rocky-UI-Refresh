@@ -1,6 +1,6 @@
 package dev.i726.rocky.mixin;
 
-import dev.i726.rocky.gui.vape.RockyGui;
+import dev.i726.rocky.gui.ClickGuiScreen;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -14,14 +14,14 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Screen.class)
 public class ScreenMixin {
 
-	@Shadow
-	@Nullable
-	protected MinecraftClient client;
+    @Shadow
+    @Nullable
+    protected MinecraftClient client;
 
-	@Inject(method = "renderBackground", at = @At("HEAD"), cancellable = true)
-	private void dontRenderBackground(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-		if (this.client.currentScreen instanceof RockyGui) {
-			ci.cancel();
-		}
-	}
+    @Inject(method = "renderBackground", at = @At("HEAD"), cancellable = true)
+    private void dontRenderBackground(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        if (this.client.currentScreen instanceof ClickGuiScreen) {
+            ci.cancel();
+        }
+    }
 }

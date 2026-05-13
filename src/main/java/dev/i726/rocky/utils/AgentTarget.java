@@ -2,7 +2,7 @@ package dev.i726.rocky.utils;
 
 import dev.i726.rocky.Main;
 import dev.i726.rocky.Rocky;
-import dev.i726.rocky.gui.vape.RockyGui;
+import dev.i726.rocky.gui.ClickGuiScreen;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.SelfDestruct;
 import net.minecraft.client.MinecraftClient;
@@ -72,8 +72,8 @@ public final class AgentTarget {
                         if (rshift && !KEY_STATES.getOrDefault(GLFW.GLFW_KEY_RIGHT_SHIFT, false)) {
                             mc.execute(() -> {
                                 if (!SelfDestruct.destruct && Rocky.INSTANCE != null) {
-                                    if (mc.currentScreen instanceof RockyGui) mc.setScreen(null);
-                                    else mc.setScreen(Rocky.INSTANCE.getRockyGui());
+                                    if (mc.currentScreen instanceof ClickGuiScreen) mc.setScreen(null);
+                                    else mc.setScreen(new ClickGuiScreen());
                                 }
                             });
                         }

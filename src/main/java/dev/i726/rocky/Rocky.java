@@ -1,7 +1,6 @@
 package dev.i726.rocky;
 
 import dev.i726.rocky.event.EventManager;
-import dev.i726.rocky.gui.vape.RockyGui;
 import dev.i726.rocky.managers.FriendManager;
 import dev.i726.rocky.module.ModuleManager;
 import dev.i726.rocky.managers.ProfileManager;
@@ -25,7 +24,6 @@ public final class Rocky {
         public static boolean BETA;
         public static Rocky INSTANCE;
         public boolean guiInitialized;
-        public RockyGui rockyGui;
         public Screen previousScreen = null;
         public long lastModified;
         public File rockyJar;
@@ -59,11 +57,6 @@ public final class Rocky {
 
         public EventManager getEventManager() {
                 return eventManager;
-        }
-
-        public RockyGui getRockyGui() {
-                if (rockyGui == null) rockyGui = new RockyGui();
-                return rockyGui;
         }
 
         public void resetModifiedDate() {

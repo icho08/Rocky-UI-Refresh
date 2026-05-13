@@ -15,6 +15,9 @@ public class CategoryPanel {
     public static final int WIDTH    = 140;
     public static final int HEADER_H = 18;
 
+    private static final int SCROLL_SPEED  = 10;
+    private static final int SCROLLBAR_W   = 3;
+
     private float x, y;
     private final String name;
     private final List<ModuleRow> rows = new ArrayList<>();
@@ -23,6 +26,10 @@ public class CategoryPanel {
     private double dragOffsetX, dragOffsetY;
     private boolean collapsed = false;
     private float collapseAnim = 1f;
+
+    private float scrollOffset    = 0f;
+    private float scrollOffsetAnim = 0f;
+    private int   maxScroll       = 0;
 
     public CategoryPanel(String name, List<Module> modules, float x, float y) {
         this.name = name;
@@ -35,10 +42,18 @@ public class CategoryPanel {
         float collapseTarget = collapsed ? 0f : 1f;
         collapseAnim = RenderUtils.fast(collapseAnim, collapseTarget, 10f);
 
-        int ix = (int) x, iy = (int) y;
+        int screenH   = MinecraftClient.getInstance().getWindow().getScaledHeight();
+        int ix        = (int) x;
+        int iy        = (int) y;
         int contentH  = getContentHeight();
-        int animatedH = (int) (contentH * collapseAnim);
+        int maxVisible = Math.max(0, screenH - iy - HEADER_H - 6);
+        int clampedH  = Math.min(contentH, maxVisible);
+        int animatedH = (int) (clampedH * collapseAnim);
         int totalH    = HEADER_H + animatedH;
+
+        maxScroll = Math.max(0, contentH - maxVisible);
+        scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+        scrollOffsetAnim = RenderUtils.fast(scrollOffsetAnim, scrollOffset, 14f);
 
         ctx.fill(ix + 2, iy + 2, ix + WIDTH + 2, iy + totalH + 2, GuiTheme.rgba(0, 0, 0, 55));
         ctx.fill(ix - 1, iy - 1, ix + WIDTH + 1, iy + totalH + 1, GuiTheme.border());
@@ -62,9 +77,12 @@ public class CategoryPanel {
                 arrow, ix + WIDTH - 12, iy + 5, GuiTheme.textSecondary(), false);
 
         if (animatedH > 0) {
-            ctx.enableScissor(ix, iy + HEADER_H, ix + WIDTH, iy + HEADER_H + animatedH);
+            int bodyTop = iy + HEADER_H;
+            int bodyBot = bodyTop + animatedH;
 
-            int rowY = iy + HEADER_H;
+            ctx.enableScissor(ix, bodyTop, ix + WIDTH, bodyBot);
+
+            int rowY = bodyTop - (int) scrollOffsetAnim;
             for (ModuleRow row : rows) {
                 int rh = row.getHeight();
                 row.render(ctx, ix, rowY, WIDTH, mouseX, mouseY, delta);
@@ -73,6 +91,16 @@ public class CategoryPanel {
             }
 
             ctx.disableScissor();
+
+            if (maxScroll > 0) {
+                float scrollbarTrackH = animatedH;
+                float thumbH = Math.max(16, scrollbarTrackH * ((float) maxVisible / contentH));
+                float thumbY = bodyTop + (scrollbarTrackH - thumbH) * (scrollOffsetAnim / maxScroll);
+                int sbX = ix + WIDTH - SCROLLBAR_W;
+                ctx.fill(sbX, bodyTop, sbX + SCROLLBAR_W, bodyBot, GuiTheme.rgba(0, 0, 0, 60));
+                ctx.fill(sbX, (int) thumbY, sbX + SCROLLBAR_W, (int) (thumbY + thumbH),
+                        GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 160));
+            }
         }
     }
 
@@ -92,6 +120,7 @@ public class CategoryPanel {
             if (button == 0) {
                 if (mx >= x + WIDTH - 18) {
                     collapsed = !collapsed;
+                    if (!collapsed) scrollOffset = 0;
                 } else {
                     dragging = true;
                     dragOffsetX = mx - x;
@@ -100,16 +129,19 @@ public class CategoryPanel {
                 return true;
             } else if (button == 1) {
                 collapsed = !collapsed;
+                if (!collapsed) scrollOffset = 0;
                 return true;
             }
         }
 
-        if (!collapsed && collapseAnim > 0.1f) {
+        if (!collapsed && collapseAnim > 0.1f && isOverBody(mx, my)) {
+            double adjustedMy = my + scrollOffsetAnim;
             int rowY = (int) y + HEADER_H;
             for (ModuleRow row : rows) {
                 int rh = row.getHeight();
-                if (my >= rowY && my < rowY + rh) {
-                    if (row.mouseClicked(mx, my, button, (int) x, rowY, WIDTH)) return true;
+                int visualRowY = rowY - (int) scrollOffsetAnim;
+                if (my >= visualRowY && my < visualRowY + rh) {
+                    if (row.mouseClicked(mx, adjustedMy, button, (int) x, rowY, WIDTH)) return true;
                 }
                 rowY += rh;
             }
@@ -124,9 +156,10 @@ public class CategoryPanel {
             return true;
         }
         if (!collapsed) {
+            double adjustedMy = my + scrollOffsetAnim;
             int rowY = (int) y + HEADER_H;
             for (ModuleRow row : rows) {
-                if (row.mouseDragged(mx, my, button, dx, dy, (int) x, rowY, WIDTH)) return true;
+                if (row.mouseDragged(mx, adjustedMy, button, dx, dy, (int) x, rowY, WIDTH)) return true;
                 rowY += row.getHeight();
             }
         }
@@ -139,6 +172,11 @@ public class CategoryPanel {
     }
 
     public boolean mouseScrolled(double mx, double my, double amount) {
+        if (!collapsed && isOverBody(mx, my)) {
+            scrollOffset -= (float) (amount * SCROLL_SPEED);
+            scrollOffset = Math.max(0, Math.min(scrollOffset, maxScroll));
+            return true;
+        }
         return false;
     }
 
@@ -156,5 +194,13 @@ public class CategoryPanel {
 
     private boolean isOverHeader(double mx, double my) {
         return mx >= x && mx < x + WIDTH && my >= y && my < y + HEADER_H;
+    }
+
+    private boolean isOverBody(double mx, double my) {
+        int screenH    = MinecraftClient.getInstance().getWindow().getScaledHeight();
+        int contentH   = getContentHeight();
+        int maxVisible = Math.max(0, screenH - (int) y - HEADER_H - 6);
+        int visibleH   = (int) (Math.min(contentH, maxVisible) * collapseAnim);
+        return mx >= x && mx < x + WIDTH && my >= y + HEADER_H && my < y + HEADER_H + visibleH;
     }
 }

@@ -14,7 +14,7 @@ import java.util.List;
 
 public class Panel extends Component {
 
-    public  static final int HEADER_H = 22;
+    public  static final int HEADER_H = 26;
 
     private final Category category;
     private final List<ModuleButton> buttons = new ArrayList<>();
@@ -66,16 +66,20 @@ public class Panel extends Component {
 
         double totalH = getTotalHeight();
 
-        // ── Outer border with rounded corners ──────────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(38, 38, 42, 210),
+        // ── Deep shadow behind panel (depth effect) ────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(0, 0, 0, 100),
+                x - 3, y - 3, x + width + 3, y + totalH + 3, 6, 8);
+
+        // ── Outer border — clearly visible ─────────────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(58, 58, 64, 255),
                 x - 1, y - 1, x + width + 1, y + totalH + 1, 4, 8);
 
-        // ── Panel body — rounded black rectangle ───────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(11, 11, 11, 242),
+        // ── Panel body ─────────────────────────────────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(10, 10, 10, 252),
                 x, y, x + width, y + totalH, 3, 8);
 
-        // ── Header — slightly lighter rounded top ──────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(18, 18, 18, 252),
+        // ── Header — distinctly lighter than body ──────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(22, 22, 24, 255),
                 x, y, x + width, y + HEADER_H, 3, 3, 0, 0, 8);
 
         // Header bottom: 1px full-width cyan line

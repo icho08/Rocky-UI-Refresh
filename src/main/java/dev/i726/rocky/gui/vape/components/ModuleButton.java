@@ -14,13 +14,13 @@ import java.util.List;
 
 public class ModuleButton extends Component {
 
-    public static final int ROW_H = 21;
+    public static final int ROW_H = 24;
 
     /** Set each frame by render(); read by RockyGui to show description strip. */
     public static Module hoveredModule = null;
 
-    private static final int SW_W = 24;  // toggle track width
-    private static final int SW_H = 10;  // toggle track height
+    private static final int SW_W = 28;  // toggle track width
+    private static final int SW_H = 12;  // toggle track height
 
     private final Module module;
     private boolean expanded;
@@ -59,23 +59,28 @@ public class ModuleButton extends Component {
 
         // ── Row background ─────────────────────────────────────────────────
         if (enabled) {
-            // Solid slightly-cyan dark background
+            // Dark base fill
             context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                    new Color(12, 28, 30, 230).getRGB());
-            // Bold left accent bar
-            context.fill((int)x, (int)y, (int)x + 3, (int)(y + height), VapeTheme.ACCENT.getRGB());
-            // Soft inner glow next to bar
-            context.fill((int)x + 3, (int)y, (int)x + 7, (int)(y + height),
-                    new Color(34, 211, 238, 35).getRGB());
-            // Right border
+                    new Color(8, 22, 24, 245).getRGB());
+            // Horizontal gradient overlay: cyan-tint left → transparent right
+            context.fillGradient((int)x, (int)y, (int)(x + width), (int)(y + height),
+                    new Color(34, 211, 238, 28).getRGB(),
+                    new Color(34, 211, 238, 0).getRGB());
+            // Bold left accent bar (4px)
+            context.fill((int)x, (int)y, (int)x + 4, (int)(y + height), VapeTheme.ACCENT.getRGB());
+            // Soft fade next to bar
+            context.fillGradient((int)x + 4, (int)y, (int)x + 14, (int)(y + height),
+                    new Color(34, 211, 238, 45).getRGB(),
+                    new Color(34, 211, 238, 0).getRGB());
+            // Subtle right glow
             context.fill((int)(x + width - 1), (int)y, (int)(x + width), (int)(y + height),
-                    new Color(34, 211, 238, 40).getRGB());
+                    new Color(34, 211, 238, 30).getRGB());
         } else {
             context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                    new Color(14, 14, 14, 225).getRGB());
+                    new Color(13, 13, 13, 230).getRGB());
             if (hovered)
                 context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                        new Color(255, 255, 255, 10).getRGB());
+                        new Color(255, 255, 255, 12).getRGB());
         }
 
         // Bottom separator
@@ -85,7 +90,7 @@ public class ModuleButton extends Component {
         MinecraftClient mc = MinecraftClient.getInstance();
 
         // ── Module name ─────────────────────────────────────────────────────
-        int textLeft  = enabled ? (int)(x + 9) : (int)(x + 5);
+        int textLeft  = enabled ? (int)(x + 12) : (int)(x + 7);
         int nameMaxW  = (int)(width - textLeft - SW_W - 12);
         String name   = module.getName().toString();
         

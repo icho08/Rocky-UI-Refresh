@@ -116,16 +116,16 @@ public class RockyGui extends Screen {
         handlePollingInput(mc, mouseX, mouseY);
 
         // ── Background dim ─────────────────────────────────────────────────
-        context.fill(0, 0, width, height, new Color(0, 0, 0, 100).getRGB());
+        context.fill(0, 0, width, height, new Color(0, 0, 0, 145).getRGB());
 
         // ── Header bar — flat rectangle ────────────────────────────────────
         context.fill(0, 0, width, HEADER_H, new Color(12, 12, 12, 248).getRGB());
         // Bottom border of header (1px cyan)
         context.fill(0, HEADER_H - 1, width, HEADER_H, VapeTheme.ACCENT.getRGB());
 
-        // ROCKY wordmark
+        // ROCKY wordmark (with shadow for weight)
         int wy = (HEADER_H - 8) / 2;
-        context.drawText(mc.textRenderer, "ROCKY", 12, wy, VapeTheme.ACCENT.getRGB(), false);
+        context.drawText(mc.textRenderer, "ROCKY", 12, wy, VapeTheme.ACCENT.getRGB(), true);
 
         // Search box — bordered rectangle, glows cyan when active
         int sfx = searchField.getX() - 6;

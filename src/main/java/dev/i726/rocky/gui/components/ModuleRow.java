@@ -23,6 +23,8 @@ public class ModuleRow {
     private float hoverAnim  = 0f;
     private boolean expanded = false;
 
+    public String getModuleName() { return module.getName().toString(); }
+
     public ModuleRow(Module module) {
         this.module = module;
         for (Setting<?> s : module.getSettings()) {

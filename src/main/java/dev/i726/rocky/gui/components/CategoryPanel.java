@@ -9,14 +9,15 @@ import net.minecraft.client.gui.DrawContext;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 public class CategoryPanel {
 
     public static final int WIDTH    = 140;
     public static final int HEADER_H = 18;
 
-    private static final int SCROLL_SPEED  = 10;
-    private static final int SCROLLBAR_W   = 3;
+    private static final int SCROLL_SPEED = 10;
+    private static final int SCROLLBAR_W  = 3;
 
     private float x, y;
     private final String name;
@@ -27,9 +28,11 @@ public class CategoryPanel {
     private boolean collapsed = false;
     private float collapseAnim = 1f;
 
-    private float scrollOffset    = 0f;
+    private float scrollOffset     = 0f;
     private float scrollOffsetAnim = 0f;
-    private int   maxScroll       = 0;
+    private int   maxScroll        = 0;
+
+    private String filterQuery = "";
 
     public CategoryPanel(String name, List<Module> modules, float x, float y) {
         this.name = name;
@@ -38,14 +41,28 @@ public class CategoryPanel {
         for (Module m : modules) rows.add(new ModuleRow(m));
     }
 
+    public void setFilter(String query) {
+        this.filterQuery   = query.toLowerCase();
+        this.scrollOffset  = 0f;
+        this.scrollOffsetAnim = 0f;
+    }
+
+    private List<ModuleRow> getVisibleRows() {
+        if (filterQuery.isEmpty()) return rows;
+        return rows.stream()
+                .filter(r -> r.getModuleName().toLowerCase().contains(filterQuery))
+                .collect(Collectors.toList());
+    }
+
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
         float collapseTarget = collapsed ? 0f : 1f;
         collapseAnim = RenderUtils.fast(collapseAnim, collapseTarget, 10f);
 
+        List<ModuleRow> visible  = getVisibleRows();
         int screenH   = MinecraftClient.getInstance().getWindow().getScaledHeight();
         int ix        = (int) x;
         int iy        = (int) y;
-        int contentH  = getContentHeight();
+        int contentH  = getContentHeight(visible);
         int maxVisible = Math.max(0, screenH - iy - HEADER_H - 6);
         int clampedH  = Math.min(contentH, maxVisible);
         int animatedH = (int) (clampedH * collapseAnim);
@@ -58,14 +75,12 @@ public class CategoryPanel {
         ctx.fill(ix + 2, iy + 2, ix + WIDTH + 2, iy + totalH + 2, GuiTheme.rgba(0, 0, 0, 55));
         ctx.fill(ix - 1, iy - 1, ix + WIDTH + 1, iy + totalH + 1, GuiTheme.border());
         ctx.fill(ix, iy, ix + WIDTH, iy + totalH, GuiTheme.panelBg());
-
         ctx.fill(ix, iy, ix + WIDTH, iy + HEADER_H, GuiTheme.headerBg());
 
         Color ac = GuiTheme.accent();
         ctx.fillGradient(ix, iy, ix + WIDTH, iy + HEADER_H,
                 GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 40),
                 GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
-
         ctx.fill(ix, iy, ix + 3, iy + HEADER_H, GuiTheme.accentInt());
 
         String headerName = name.toUpperCase();
@@ -83,7 +98,7 @@ public class CategoryPanel {
             ctx.enableScissor(ix, bodyTop, ix + WIDTH, bodyBot);
 
             int rowY = bodyTop - (int) scrollOffsetAnim;
-            for (ModuleRow row : rows) {
+            for (ModuleRow row : visible) {
                 int rh = row.getHeight();
                 row.render(ctx, ix, rowY, WIDTH, mouseX, mouseY, delta);
                 rowY += rh;
@@ -93,10 +108,10 @@ public class CategoryPanel {
             ctx.disableScissor();
 
             if (maxScroll > 0) {
-                float scrollbarTrackH = animatedH;
-                float thumbH = Math.max(16, scrollbarTrackH * ((float) maxVisible / contentH));
-                float thumbY = bodyTop + (scrollbarTrackH - thumbH) * (scrollOffsetAnim / maxScroll);
-                int sbX = ix + WIDTH - SCROLLBAR_W;
+                float trackH  = animatedH;
+                float thumbH  = Math.max(16, trackH * ((float) maxVisible / contentH));
+                float thumbY  = bodyTop + (trackH - thumbH) * (scrollOffsetAnim / maxScroll);
+                int   sbX     = ix + WIDTH - SCROLLBAR_W;
                 ctx.fill(sbX, bodyTop, sbX + SCROLLBAR_W, bodyBot, GuiTheme.rgba(0, 0, 0, 60));
                 ctx.fill(sbX, (int) thumbY, sbX + SCROLLBAR_W, (int) (thumbY + thumbH),
                         GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 160));
@@ -104,9 +119,9 @@ public class CategoryPanel {
         }
     }
 
-    private int getContentHeight() {
+    private int getContentHeight(List<ModuleRow> visible) {
         int h = 0;
-        for (ModuleRow row : rows) h += row.getHeight();
+        for (ModuleRow row : visible) h += row.getHeight();
         return h;
     }
 
@@ -137,7 +152,7 @@ public class CategoryPanel {
         if (!collapsed && collapseAnim > 0.1f && isOverBody(mx, my)) {
             double adjustedMy = my + scrollOffsetAnim;
             int rowY = (int) y + HEADER_H;
-            for (ModuleRow row : rows) {
+            for (ModuleRow row : getVisibleRows()) {
                 int rh = row.getHeight();
                 int visualRowY = rowY - (int) scrollOffsetAnim;
                 if (my >= visualRowY && my < visualRowY + rh) {
@@ -158,7 +173,7 @@ public class CategoryPanel {
         if (!collapsed) {
             double adjustedMy = my + scrollOffsetAnim;
             int rowY = (int) y + HEADER_H;
-            for (ModuleRow row : rows) {
+            for (ModuleRow row : getVisibleRows()) {
                 if (row.mouseDragged(mx, adjustedMy, button, dx, dy, (int) x, rowY, WIDTH)) return true;
                 rowY += row.getHeight();
             }
@@ -192,8 +207,8 @@ public class CategoryPanel {
         return false;
     }
 
-    public float getX() { return x; }
-    public float getY() { return y; }
+    public float getX()    { return x; }
+    public float getY()    { return y; }
     public String getName() { return name; }
 
     private boolean isOverHeader(double mx, double my) {
@@ -201,10 +216,11 @@ public class CategoryPanel {
     }
 
     private boolean isOverBody(double mx, double my) {
-        int screenH    = MinecraftClient.getInstance().getWindow().getScaledHeight();
-        int contentH   = getContentHeight();
-        int maxVisible = Math.max(0, screenH - (int) y - HEADER_H - 6);
-        int visibleH   = (int) (Math.min(contentH, maxVisible) * collapseAnim);
+        List<ModuleRow> visible = getVisibleRows();
+        int screenH     = MinecraftClient.getInstance().getWindow().getScaledHeight();
+        int contentH    = getContentHeight(visible);
+        int maxVisible  = Math.max(0, screenH - (int) y - HEADER_H - 6);
+        int visibleH    = (int) (Math.min(contentH, maxVisible) * collapseAnim);
         return mx >= x && mx < x + WIDTH && my >= y + HEADER_H && my < y + HEADER_H + visibleH;
     }
 }

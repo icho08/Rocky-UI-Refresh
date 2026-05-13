@@ -88,20 +88,24 @@ public class Panel extends Component {
         // ── Active module count badge — top-left of header ─────────────────
         long active = buttons.stream().filter(b -> b.getModule().isEnabled()).count();
         int leftPad = 5;
-        if (active > 0) {
+        {
             String badge = String.valueOf(active);
-            int bw = mc.textRenderer.getWidth(badge) + 6;
-            // Flat badge box
-            context.fill((int)x + leftPad, (int)(y + (HEADER_H - 11) / 2.0),
-                    (int)x + leftPad + bw, (int)(y + (HEADER_H - 11) / 2.0) + 11,
-                    new Color(34, 211, 238, 28).getRGB());
-            // Top and bottom 1px border on badge
-            context.fill((int)x + leftPad, (int)(y + (HEADER_H - 11) / 2.0),
-                    (int)x + leftPad + bw, (int)(y + (HEADER_H - 11) / 2.0) + 1,
-                    new Color(34, 211, 238, 130).getRGB());
+            int bw = mc.textRenderer.getWidth(badge) + 8;
+            int bTop    = (int)(y + (HEADER_H - 13) / 2.0);
+            int bBottom = bTop + 13;
+            // Badge fill — cyan tint only when active, dark when zero
+            context.fill((int)x + leftPad, bTop, (int)x + leftPad + bw, bBottom,
+                    active > 0 ? new Color(34, 211, 238, 35).getRGB() : new Color(255, 255, 255, 6).getRGB());
+            // Badge border — all 4 sides
+            int badgeBorder = active > 0 ? new Color(34, 211, 238, 150).getRGB() : new Color(255, 255, 255, 20).getRGB();
+            context.fill((int)x + leftPad, bTop, (int)x + leftPad + bw, bTop + 1, badgeBorder);          // top
+            context.fill((int)x + leftPad, bBottom - 1, (int)x + leftPad + bw, bBottom, badgeBorder);    // bottom
+            context.fill((int)x + leftPad, bTop, (int)x + leftPad + 1, bBottom, badgeBorder);            // left
+            context.fill((int)x + leftPad + bw - 1, bTop, (int)x + leftPad + bw, bBottom, badgeBorder); // right
+            int badgeTextColor = active > 0 ? VapeTheme.ACCENT.getRGB() : new Color(80, 80, 85).getRGB();
             context.drawText(mc.textRenderer, badge,
-                    (int)x + leftPad + 3, (int)(y + (HEADER_H - 8) / 2.0),
-                    VapeTheme.ACCENT.getRGB(), true);
+                    (int)x + leftPad + 4, (int)(y + (HEADER_H - 8) / 2.0),
+                    badgeTextColor, false);
             leftPad += bw + 4;
         }
 
@@ -110,7 +114,7 @@ public class Panel extends Component {
         int tw = mc.textRenderer.getWidth(title);
         context.drawText(mc.textRenderer, title,
                 (int)(x + (width - tw) / 2.0), headerMidY,
-                VapeTheme.TEXT.getRGB(), true);
+                VapeTheme.TEXT_DIM.getRGB(), false);
 
         // ── Collapse indicator — top right ──────────────────────────────────
         String arrow = expanded ? "-" : "+";

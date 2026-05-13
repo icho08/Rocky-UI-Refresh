@@ -127,27 +127,47 @@ public class RockyGui extends Screen {
         int wy = (HEADER_H - 8) / 2;
         context.drawText(mc.textRenderer, "ROCKY", 12, wy, VapeTheme.ACCENT.getRGB(), false);
 
-        // Search box — flat rectangle
+        // Search box — bordered rectangle, glows cyan when active
         int sfx = searchField.getX() - 6;
         int sfy = searchField.getY() - 3;
         int sfw = SEARCH_W + 12;
         int sfh = SEARCH_H + 6;
-        context.fill(sfx, sfy, sfx + sfw, sfy + sfh, new Color(22, 22, 22, 235).getRGB());
-        context.fill(sfx, sfy, sfx + sfw, sfy + 1, new Color(255, 255, 255, 18).getRGB());
-        context.fill(sfx, sfy + sfh - 1, sfx + sfw, sfy + sfh, new Color(255, 255, 255, 10).getRGB());
+        boolean searching = !searchText.isEmpty();
+        // Box fill
+        context.fill(sfx, sfy, sfx + sfw, sfy + sfh,
+                searching ? new Color(12, 28, 30, 235).getRGB() : new Color(18, 18, 18, 235).getRGB());
+        // 4-sided border
+        int searchBorder = searching ? new Color(34, 211, 238, 160).getRGB() : new Color(255, 255, 255, 32).getRGB();
+        context.fill(sfx,           sfy,           sfx + sfw,     sfy + 1,     searchBorder); // top
+        context.fill(sfx,           sfy + sfh - 1, sfx + sfw,     sfy + sfh,   searchBorder); // bottom
+        context.fill(sfx,           sfy,           sfx + 1,       sfy + sfh,   searchBorder); // left
+        context.fill(sfx + sfw - 1, sfy,           sfx + sfw,     sfy + sfh,   searchBorder); // right
+        // Subtle inner glow when searching
+        if (searching) {
+            context.fill(sfx + 1, sfy + 1, sfx + sfw - 1, sfy + 2, new Color(34, 211, 238, 20).getRGB());
+            context.fill(sfx + 1, sfy + sfh - 2, sfx + sfw - 1, sfy + sfh - 1, new Color(34, 211, 238, 12).getRGB());
+        }
         // Search text / placeholder
         String displaySearch = searchText.isEmpty() ? "search modules..." : searchText;
-        int searchTextColor = searchText.isEmpty() ? new Color(70, 70, 70).getRGB() : VapeTheme.TEXT_DIM.getRGB();
+        int searchTextColor = searchText.isEmpty() ? new Color(62, 62, 68).getRGB() : VapeTheme.TEXT_DIM.getRGB();
         context.drawText(mc.textRenderer, displaySearch, sfx + 6, sfy + (sfh - 8) / 2, searchTextColor, false);
 
-        // Active count — right side of header
+        // Active count badge — right side of header
         long active = Rocky.INSTANCE.getModuleManager().getModules().stream()
                 .filter(Module::isEnabled).count();
         String activeStr = active + " active";
-        int aw = mc.textRenderer.getWidth(activeStr);
-        int ax = width - aw - 12;
-        int ay = (HEADER_H - 8) / 2;
-        context.drawText(mc.textRenderer, activeStr, ax, ay, VapeTheme.ACCENT.getRGB(), false);
+        int aw  = mc.textRenderer.getWidth(activeStr);
+        int abPad = 6;
+        int abW = aw + abPad * 2;
+        int abH = 13;
+        int abX = width - abW - 10;
+        int abY = (HEADER_H - abH) / 2;
+        // Badge fill
+        context.fill(abX, abY, abX + abW, abY + abH, new Color(34, 211, 238, 22).getRGB());
+        // Badge border — top + bottom only for a subtle pill-band feel
+        context.fill(abX, abY, abX + abW, abY + 1, new Color(34, 211, 238, 100).getRGB());
+        context.fill(abX, abY + abH - 1, abX + abW, abY + abH, new Color(34, 211, 238, 60).getRGB());
+        context.drawText(mc.textRenderer, activeStr, abX + abPad, abY + (abH - 8) / 2, VapeTheme.ACCENT.getRGB(), false);
 
         // Draw Minecraft widget (handles cursor blink etc.)
         super.render(context, mouseX, mouseY, delta);
@@ -182,7 +202,7 @@ public class RockyGui extends Screen {
                 if (mc.textRenderer.getWidth(desc) > maxDescW)
                     desc = mc.textRenderer.trimToWidth(desc, maxDescW - 4) + "..";
                 context.drawText(mc.textRenderer, desc, descX, stripY,
-                        new Color(90, 90, 90).getRGB(), false);
+                        new Color(110, 110, 115).getRGB(), false);
             }
 
             // Settings count — right side

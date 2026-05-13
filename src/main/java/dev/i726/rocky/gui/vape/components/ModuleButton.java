@@ -80,7 +80,7 @@ public class ModuleButton extends Component {
 
         // Bottom separator
         context.fill((int)x, (int)(y + height - 1), (int)(x + width), (int)(y + height),
-                new Color(255, 255, 255, 8).getRGB());
+                new Color(255, 255, 255, 14).getRGB());
 
         MinecraftClient mc = MinecraftClient.getInstance();
 
@@ -94,9 +94,9 @@ public class ModuleButton extends Component {
             name = mc.textRenderer.trimToWidth(name, nameMaxW - 10) + "..";
         }
 
-        int nameColor = enabled ? VapeTheme.ACCENT.getRGB() : new Color(185, 185, 185).getRGB();
+        int nameColor = enabled ? VapeTheme.ACCENT.getRGB() : new Color(148, 148, 155).getRGB();
         context.drawText(mc.textRenderer, name,
-                textLeft, (int)(y + (ROW_H - 8) / 2.0), nameColor, true);
+                textLeft, (int)(y + (ROW_H - 8) / 2.0), nameColor, enabled);
 
         // ── Toggle switch drawn purely with context.fill() (no rounded quad) ─
         drawToggle(context, (int)(x + width - SW_W - 5), (int)(y + (ROW_H - SW_H) / 2), enabled);
@@ -120,14 +120,14 @@ public class ModuleButton extends Component {
     private void drawToggle(DrawContext ctx, int tx, int ty, boolean enabled) {
         // Track background
         int trackColor = enabled
-                ? new Color(34, 211, 238, 80).getRGB()
-                : new Color(38, 38, 42, 220).getRGB();
+                ? new Color(34, 211, 238, 55).getRGB()
+                : new Color(30, 30, 33, 230).getRGB();
         ctx.fill(tx, ty, tx + SW_W, ty + SW_H, trackColor);
 
         // Track border (1px top/bottom/left/right)
         int borderColor = enabled
-                ? new Color(34, 211, 238, 160).getRGB()
-                : new Color(65, 65, 70, 220).getRGB();
+                ? new Color(34, 211, 238, 175).getRGB()
+                : new Color(95, 95, 102, 220).getRGB();
         ctx.fill(tx,             ty,              tx + SW_W,         ty + 1,      borderColor);  // top
         ctx.fill(tx,             ty + SW_H - 1,   tx + SW_W,         ty + SW_H,   borderColor);  // bottom
         ctx.fill(tx,             ty,              tx + 1,             ty + SW_H,   borderColor);  // left
@@ -138,8 +138,8 @@ public class ModuleButton extends Component {
         float thumbOffset = switchAnim * (SW_W - thumbW - 4);
         int thumX  = tx + 2 + (int)thumbOffset;
         int thumbColor = enabled
-                ? new Color(255, 255, 255, 240).getRGB()
-                : new Color(100, 100, 110, 220).getRGB();
+                ? new Color(255, 255, 255, 245).getRGB()
+                : new Color(155, 155, 162, 240).getRGB();
         ctx.fill(thumX, ty + 2, thumX + thumbW, ty + SW_H - 2, thumbColor);
     }
 

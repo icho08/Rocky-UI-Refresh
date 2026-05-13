@@ -14,38 +14,31 @@ import java.util.List;
 
 public class ModuleButton extends Component {
 
-    private static final int BTN_H = 20;
-
     private final Module module;
     private boolean expanded;
     private final List<Component> settingComponents = new ArrayList<>();
     private boolean dragging;
     private double dragX, dragY;
+    private float switchAnim;
 
-    // Per-button animation state (0 = off, 1 = on)
-    private float switchAnim = 0f;
+    // Switch dimensions
+    private static final double SW_W = 24;
+    private static final double SW_H = 12;
 
     public ModuleButton(Module module, double x, double y, double width, double height) {
-        super(x, y, width, BTN_H);
-        this.module = module;
-        switchAnim  = module.isEnabled() ? 1f : 0f;
+        super(x, y, width, height);
+        this.module    = module;
+        this.switchAnim = module.isEnabled() ? 1f : 0f;
 
-        // Keybind row always first in settings
-        settingComponents.add(new KeybindSetting(module, x, 0, width, 18));
+        settingComponents.add(new KeybindSetting(module, x, 0, width, 20));
 
-        for (Setting<?> setting : module.getSettings()) {
-            if (setting instanceof BooleanSetting) {
-                settingComponents.add(new CheckboxSetting((BooleanSetting) setting, x, 0, width, 18));
-            } else if (setting instanceof NumberSetting) {
-                settingComponents.add(new SliderSetting((NumberSetting) setting, x, 0, width, 26));
-            } else if (setting instanceof ModeSetting) {
-                settingComponents.add(new ModeSettingComponent((ModeSetting<?>) setting, x, 0, width, 18));
-            } else if (setting instanceof MinMaxSetting) {
-                settingComponents.add(new MinMaxSettingComponent((MinMaxSetting) setting, x, 0, width, 26));
-            } else if (setting instanceof dev.i726.rocky.module.setting.StringSetting) {
-                settingComponents.add(new StringSettingComponent(
-                        (dev.i726.rocky.module.setting.StringSetting) setting, x, 0, width, 18));
-            }
+        for (Setting<?> s : module.getSettings()) {
+            if      (s instanceof BooleanSetting)    settingComponents.add(new CheckboxSetting((BooleanSetting) s, x, 0, width, 20));
+            else if (s instanceof NumberSetting)     settingComponents.add(new SliderSetting((NumberSetting) s, x, 0, width, 28));
+            else if (s instanceof ModeSetting)       settingComponents.add(new ModeSettingComponent((ModeSetting<?>) s, x, 0, width, 20));
+            else if (s instanceof MinMaxSetting)     settingComponents.add(new MinMaxSettingComponent((MinMaxSetting) s, x, 0, width, 28));
+            else if (s instanceof dev.i726.rocky.module.setting.StringSetting)
+                settingComponents.add(new StringSettingComponent((dev.i726.rocky.module.setting.StringSetting) s, x, 0, width, 20));
         }
     }
 
@@ -53,128 +46,137 @@ public class ModuleButton extends Component {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         if (dragging) { x = mouseX - dragX; y = mouseY - dragY; }
 
-        // Animate switch
+        // Smooth switch animation
         float target = module.isEnabled() ? 1f : 0f;
-        float speed  = (float)(RenderUtils.deltaTime() * 12f);
-        switchAnim   = switchAnim + Math.signum(target - switchAnim) * Math.min(Math.abs(target - switchAnim), speed);
+        float speed  = (float)(RenderUtils.deltaTime() * 14f);
+        float diff   = target - switchAnim;
+        switchAnim  += Math.signum(diff) * Math.min(Math.abs(diff), speed);
 
         boolean hovered = isHovered(mouseX, mouseY) && !dragging;
+        boolean enabled = module.isEnabled();
 
-        // ── Row background ────────────────────────────────────────────────
-        Color bg = module.isEnabled() ? VapeTheme.MODULE_ENABLED : VapeTheme.MODULE_BG;
-        context.fill((int)x, (int)y, (int)(x + width), (int)(y + height), bg.getRGB());
-
-        if (hovered) {
-            context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                    VapeTheme.HOVER_OVERLAY.getRGB());
+        // ── Row background ─────────────────────────────────────────────────
+        if (enabled) {
+            // Gradient: cyan-tinted left edge fading to dark — shows depth
+            context.fillGradient(
+                    (int) x, (int) y, (int) (x + width * 0.55), (int) (y + height),
+                    new Color(34, 211, 238, 38).getRGB(),
+                    VapeTheme.MODULE_ENABLED.getRGB());
+            context.fill(
+                    (int) (x + width * 0.55), (int) y,
+                    (int) (x + width), (int) (y + height),
+                    VapeTheme.MODULE_ENABLED.getRGB());
+        } else {
+            context.fill((int) x, (int) y, (int) (x + width), (int) (y + height),
+                    VapeTheme.MODULE_BG.getRGB());
         }
 
-        // Separator line at bottom of row
-        context.fill((int)x, (int)(y + height - 1), (int)(x + width), (int)(y + height),
-                VapeTheme.SEPARATOR.getRGB());
+        if (hovered) {
+            context.fill((int) x, (int) y, (int) (x + width), (int) (y + height),
+                    new Color(255, 255, 255, 12).getRGB());
+        }
 
-        // ── Enabled left accent bar ────────────────────────────────────────
-        if (module.isEnabled()) {
-            // Glowing 2px bar
-            context.fill((int)x, (int)y, (int)x + 2, (int)(y + height), VapeTheme.ACCENT.getRGB());
-            // Soft glow spread
-            context.fill((int)x + 2, (int)y, (int)x + 5, (int)(y + height), VapeTheme.ACCENT_GLOW.getRGB());
+        // Row bottom separator
+        context.fill((int) x, (int) (y + height - 1), (int) (x + width), (int) (y + height),
+                new Color(255, 255, 255, 6).getRGB());
+
+        // ── Enabled accent left bar (3 px solid + glow) ───────────────────
+        if (enabled) {
+            // Core bar
+            context.fill((int) x, (int) y, (int) x + 3, (int) (y + height),
+                    VapeTheme.ACCENT.getRGB());
+            // Glow layer 1
+            context.fill((int) x + 3, (int) y, (int) x + 7, (int) (y + height),
+                    new Color(34, 211, 238, 50).getRGB());
+            // Glow layer 2 (wider fade)
+            context.fill((int) x + 7, (int) y, (int) x + 12, (int) (y + height),
+                    new Color(34, 211, 238, 16).getRGB());
         }
 
         // ── Module name ───────────────────────────────────────────────────
-        int textColor = module.isEnabled() ? VapeTheme.ACCENT.getRGB() : VapeTheme.TEXT_DIM.getRGB();
-        String name = module.getName().toString();
         MinecraftClient mc = MinecraftClient.getInstance();
-        int maxNameW = (int)(width - 30);
-        if (mc.textRenderer.getWidth(name) > maxNameW) {
-            name = mc.textRenderer.trimToWidth(name, maxNameW - 6) + "..";
-        }
-        context.drawText(mc.textRenderer, name,
-                (int)(x + 8), (int)(y + (height - 8) / 2), textColor, false);
+        // Reserve space: accent bar (12) + padding (4) + switch (SW_W) + expand btn (10) + margin (6)
+        int maxNameW = (int) (width - 12 - 4 - SW_W - 10 - 6);
+        String name = module.getName().toString();
+        if (mc.textRenderer.getWidth(name) > maxNameW)
+            name = mc.textRenderer.trimToWidth(name, maxNameW - 4) + "..";
+
+        int textX = enabled ? (int) (x + 16) : (int) (x + 8);
+        int textColor = enabled ? VapeTheme.TEXT.getRGB() : VapeTheme.TEXT_DIM.getRGB();
+        // Shadow text for enabled modules gives a premium look
+        context.drawText(mc.textRenderer, name, textX, (int) (y + (height - 8) / 2),
+                textColor, enabled);
 
         // ── Toggle switch ─────────────────────────────────────────────────
-        double swW  = 20;
-        double swH  = 10;
-        double swX  = x + width - swW - 5;
-        double swY  = y + (height - swH) / 2;
-        RenderUtils.renderSwitch(context, module.isEnabled(), switchAnim, swX, swY, swW, swH, VapeTheme.ACCENT);
+        double swX = x + width - SW_W - 5;
+        double swY = y + (height - SW_H) / 2;
+        RenderUtils.renderSwitch(context, enabled, switchAnim, swX, swY, SW_W, SW_H, VapeTheme.ACCENT);
 
-        // ── Expand chevron (only if has settings) ─────────────────────────
+        // ── Expand/collapse chevron ────────────────────────────────────────
         if (!settingComponents.isEmpty()) {
-            String chevron = expanded ? "-" : "+";
-            int chColor = expanded ? VapeTheme.ACCENT.getRGB() : VapeTheme.TEXT_MUTED.getRGB();
-            context.drawText(mc.textRenderer, chevron,
-                    (int)(x + width - swW - mc.textRenderer.getWidth(chevron) - 10),
-                    (int)(y + (height - 8) / 2), chColor, false);
+            String ch = expanded ? "-" : "+";
+            int chX = (int) (swX - mc.textRenderer.getWidth(ch) - 6);
+            int chY = (int) (y + (height - 8) / 2);
+            context.drawText(mc.textRenderer, ch, chX, chY,
+                    expanded ? VapeTheme.ACCENT.getRGB() : new Color(120, 120, 120).getRGB(), false);
         }
 
-        // ── Hover tooltip with description ────────────────────────────────
+        // ── Description tooltip (hover) ────────────────────────────────────
         if (hovered && module.getDescription() != null
                 && !module.getDescription().toString().isEmpty()) {
             String desc = module.getDescription().toString();
-            int tw = mc.textRenderer.getWidth(desc);
-            int tx = mouseX + 10;
-            int ty = mouseY - 14;
-            // Clamp to screen
-            if (tx + tw + 8 > (int)(x + width * 5)) tx = mouseX - tw - 14;
-            RenderUtils.drawRoundedRect(context, tx - 4, ty - 2, tx + tw + 4, ty + 10, 2,
-                    new Color(8, 8, 8, 220).getRGB());
-            RenderUtils.renderRoundedOutline(context, VapeTheme.ACCENT_DIM,
-                    tx - 4, ty - 2, tx + tw + 4, ty + 10, 2, 2, 2, 2, 0.5, 8);
+            int dw = mc.textRenderer.getWidth(desc);
+            int tx = mouseX + 12;
+            int ty = mouseY - 16;
+            // Tooltip background
+            RenderUtils.renderRoundedQuad(context, new Color(6, 6, 6, 230),
+                    tx - 5, ty - 3, tx + dw + 5, ty + 11, 3, 8);
+            // Cyan left accent on tooltip
+            context.fill(tx - 5, ty - 3, tx - 3, ty + 11, VapeTheme.ACCENT.getRGB());
+            RenderUtils.renderRoundedOutline(context, new Color(34, 211, 238, 60),
+                    tx - 5, ty - 3, tx + dw + 5, ty + 11, 3, 3, 3, 3, 0.5, 8);
             context.drawText(mc.textRenderer, desc, tx, ty, VapeTheme.TEXT_DIM.getRGB(), false);
         }
 
         // ── Settings rows ─────────────────────────────────────────────────
         if (expanded && !dragging) {
-            double settingY = y + height;
+            double sy = y + height;
             for (Component setting : settingComponents) {
                 setting.x = x;
-                setting.y = settingY;
+                setting.y = sy;
                 setting.render(context, mouseX, mouseY, delta);
-                settingY += setting.height;
+                sy += setting.height;
             }
         }
     }
 
     @Override
     public void mouseClicked(double mouseX, double mouseY, int button) {
-        if (isHovered((int)mouseX, (int)mouseY)) {
-            if (button == 0) {
-                module.toggle();
-            } else if (button == 1) {
-                if (!settingComponents.isEmpty()) expanded = !expanded;
-            } else if (button == 2) {
-                dragging = true;
-                dragX = mouseX - x;
-                dragY = mouseY - y;
-            }
+        if (isHovered((int) mouseX, (int) mouseY)) {
+            if      (button == 0) module.toggle();
+            else if (button == 1 && !settingComponents.isEmpty()) expanded = !expanded;
+            else if (button == 2) { dragging = true; dragX = mouseX - x; dragY = mouseY - y; }
             return;
         }
-        if (expanded && !dragging) {
+        if (expanded && !dragging)
             for (Component s : settingComponents) s.mouseClicked(mouseX, mouseY, button);
-        }
     }
 
     @Override
     public void mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 2) dragging = false;
-        if (expanded && !dragging) {
+        if (expanded && !dragging)
             for (Component s : settingComponents) s.mouseReleased(mouseX, mouseY, button);
-        }
     }
 
-    public boolean isDragging()  { return dragging; }
-    public Module  getModule()   { return module;   }
+    public boolean isDragging() { return dragging; }
+    public Module  getModule()  { return module; }
 
     public boolean onKey(int key) {
         if (expanded) {
-            for (Component setting : settingComponents) {
-                if (setting instanceof KeybindSetting) {
-                    if (((KeybindSetting) setting).onKey(key)) return true;
-                }
-                if (setting instanceof StringSettingComponent) {
-                    if (((StringSettingComponent) setting).onKey(key)) return true;
-                }
+            for (Component s : settingComponents) {
+                if (s instanceof KeybindSetting         && ((KeybindSetting) s).onKey(key))         return true;
+                if (s instanceof StringSettingComponent && ((StringSettingComponent) s).onKey(key)) return true;
             }
         }
         return false;

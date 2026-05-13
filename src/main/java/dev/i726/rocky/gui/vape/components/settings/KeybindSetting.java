@@ -28,51 +28,66 @@ public class KeybindSetting extends Component {
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
         boolean hovered = isHovered(mouseX, mouseY);
 
-        // Row background — highlight when listening
-        Color bg = binding
-                ? new Color(34, 211, 238, 18)
-                : VapeTheme.SETTING_BG;
-        context.fill((int)x, (int)y, (int)(x + width), (int)(y + height), bg.getRGB());
-        if (hovered && !binding) {
+        // Background — pulse when binding
+        if (binding) {
+            context.fillGradient((int)x, (int)y, (int)(x + width), (int)(y + height),
+                    new Color(34, 211, 238, 30).getRGB(),
+                    new Color(8, 8, 8, 210).getRGB());
+        } else {
             context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                    VapeTheme.HOVER_OVERLAY.getRGB());
+                    new Color(8, 8, 8, 210).getRGB());
+            if (hovered) context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
+                    new Color(255, 255, 255, 10).getRGB());
         }
 
-        // Left accent stripe when binding
+        // Left accent or indent bar
         if (binding) {
-            context.fill((int)x, (int)y, (int)x + 2, (int)(y + height), VapeTheme.ACCENT.getRGB());
+            context.fill((int)x, (int)y, (int)x + 3, (int)(y + height), VapeTheme.ACCENT.getRGB());
+            context.fill((int)x + 3, (int)y, (int)x + 7, (int)(y + height),
+                    new Color(34, 211, 238, 40).getRGB());
+        } else {
+            context.fill((int)x, (int)y, (int)x + 2, (int)(y + height),
+                    new Color(50, 50, 55, 180).getRGB());
         }
 
         context.fill((int)x, (int)(y + height - 1), (int)(x + width), (int)(y + height),
-                VapeTheme.SEPARATOR.getRGB());
+                new Color(255, 255, 255, 5).getRGB());
 
         MinecraftClient mc = MinecraftClient.getInstance();
 
-        // "Keybind" label
+        // Label
         context.drawText(mc.textRenderer, "Keybind",
-                (int)(x + 8), (int)(y + (height - 8) / 2),
-                VapeTheme.TEXT_DIM.getRGB(), false);
+                (int)(x + 10), (int)(y + (height - 8) / 2.0),
+                binding ? VapeTheme.ACCENT.getRGB() : VapeTheme.TEXT_DIM.getRGB(), false);
 
         // Key pill
         String keyStr = binding ? "PRESS KEY..." : getSafeKeyName(module.getKey());
-        int pillW = mc.textRenderer.getWidth(keyStr) + 8;
-        int pillX = (int)(x + width - pillW - 4);
-        int pillY = (int)(y + (height - 10) / 2);
-        Color pillBg = binding
-                ? new Color(34, 211, 238, 35)
-                : new Color(30, 30, 34, 200);
-        RenderUtils.drawRoundedRect(context, pillX, pillY, pillX + pillW, pillY + 10, 2, pillBg.getRGB());
-        RenderUtils.renderRoundedOutline(context,
-                binding ? new Color(34, 211, 238, 120) : VapeTheme.BORDER,
-                pillX, pillY, pillX + pillW, pillY + 10, 2, 2, 2, 2, 0.5, 8);
-        context.drawText(mc.textRenderer, keyStr, pillX + 4, pillY + 1,
-                binding ? VapeTheme.ACCENT.getRGB() : VapeTheme.TEXT_DIM.getRGB(), false);
+        int pillW = mc.textRenderer.getWidth(keyStr) + 10;
+        int pillX = (int)(x + width - pillW - 5);
+        int pillY = (int)(y + (height - 12) / 2.0);
+
+        if (binding) {
+            RenderUtils.renderRoundedQuad(context, new Color(34, 211, 238, 40),
+                    pillX, pillY, pillX + pillW, pillY + 12, 3, 8);
+            RenderUtils.renderRoundedOutline(context, new Color(34, 211, 238, 140),
+                    pillX, pillY, pillX + pillW, pillY + 12, 3, 3, 3, 3, 0.5, 8);
+            context.drawText(mc.textRenderer, keyStr, pillX + 5, pillY + 2,
+                    VapeTheme.ACCENT.getRGB(), false);
+        } else {
+            boolean hasKey = module.getKey() > 0;
+            RenderUtils.renderRoundedQuad(context, new Color(28, 28, 32, 220),
+                    pillX, pillY, pillX + pillW, pillY + 12, 3, 8);
+            RenderUtils.renderRoundedOutline(context,
+                    hasKey ? new Color(34, 211, 238, 60) : new Color(255, 255, 255, 15),
+                    pillX, pillY, pillX + pillW, pillY + 12, 3, 3, 3, 3, 0.5, 8);
+            context.drawText(mc.textRenderer, keyStr, pillX + 5, pillY + 2,
+                    hasKey ? VapeTheme.ACCENT.getRGB() : VapeTheme.TEXT_MUTED.getRGB(), false);
+        }
     }
 
     private String getSafeKeyName(int key) {
         if (key <= 0) return "NONE";
         if (KEY_CACHE.containsKey(key)) return KEY_CACHE.get(key);
-
         String name;
         switch (key) {
             case GLFW.GLFW_KEY_UP:            name = "UP";     break;
@@ -94,13 +109,9 @@ public class KeybindSetting extends Component {
             case GLFW.GLFW_KEY_END:           name = "END";    break;
             default:
                 if (key >= 32 && key <= 96) {
-                    try {
-                        String n = GLFW.glfwGetKeyName(key, 0);
-                        name = (n == null) ? "K_" + key : n.toUpperCase();
-                    } catch (Exception e) { name = "K_" + key; }
-                } else {
-                    name = "K_" + key;
-                }
+                    try { String n = GLFW.glfwGetKeyName(key, 0); name = n == null ? "K_"+key : n.toUpperCase(); }
+                    catch (Exception e) { name = "K_"+key; }
+                } else { name = "K_"+key; }
         }
         KEY_CACHE.put(key, name);
         return name;
@@ -115,21 +126,13 @@ public class KeybindSetting extends Component {
     }
 
     public boolean onKey(int key) {
-        if (binding) {
-            if (key == GLFW.GLFW_KEY_ESCAPE) {
-                // Cancel without clearing
-                binding = false;
-            } else if (key == GLFW.GLFW_KEY_DELETE || key == GLFW.GLFW_KEY_BACKSPACE) {
-                module.setKey(0);
-                binding = false;
-            } else {
-                module.setKey(key);
-                binding = false;
-            }
-            isAnyBinding = false;
-            KEY_CACHE.clear();
-            return true;
-        }
-        return false;
+        if (!binding) return false;
+        if      (key == GLFW.GLFW_KEY_ESCAPE)    binding = false;
+        else if (key == GLFW.GLFW_KEY_DELETE
+              || key == GLFW.GLFW_KEY_BACKSPACE) { module.setKey(0); binding = false; }
+        else                                      { module.setKey(key); binding = false; }
+        isAnyBinding = false;
+        KEY_CACHE.clear();
+        return true;
     }
 }

@@ -11,92 +11,102 @@ import java.awt.Color;
 public class MinMaxSettingComponent extends SettingComponent<MinMaxSetting> {
     private boolean draggingMin, draggingMax;
 
+    private static final int INDENT = 10;
+
     public MinMaxSettingComponent(MinMaxSetting setting, double x, double y, double width, double height) {
         super(setting, x, y, width, height);
     }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        double barX     = x + 8;
-        double barWidth = width - 16;
+        double barX     = x + INDENT + 4;
+        double barWidth = width - INDENT - 12;
 
         if (draggingMin) {
-            double pct = Math.max(0, Math.min(1, (mouseX - barX) / barWidth));
+            double pct = Math.max(0.0, Math.min(1.0, (mouseX - barX) / barWidth));
             double val = setting.getMin() + (setting.getMax() - setting.getMin()) * pct;
             if (val < setting.getMaxValue()) setting.setMinValue(val);
         } else if (draggingMax) {
-            double pct = Math.max(0, Math.min(1, (mouseX - barX) / barWidth));
+            double pct = Math.max(0.0, Math.min(1.0, (mouseX - barX) / barWidth));
             double val = setting.getMin() + (setting.getMax() - setting.getMin()) * pct;
             if (val > setting.getMinValue()) setting.setMaxValue(val);
         }
 
         boolean hovered = isHovered(mouseX, mouseY);
 
-        // Row background
-        context.fill((int)x, (int)y, (int)(x + width), (int)(y + height), VapeTheme.SETTING_BG.getRGB());
-        if (hovered || draggingMin || draggingMax) {
-            context.fill((int)x, (int)y, (int)(x + width), (int)(y + height), VapeTheme.HOVER_OVERLAY.getRGB());
-        }
-        context.fill((int)x, (int)(y + height - 1), (int)(x + width), (int)(y + height), VapeTheme.SEPARATOR.getRGB());
+        // Background
+        context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
+                new Color(8, 8, 8, 210).getRGB());
+        if (hovered || draggingMin || draggingMax) context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
+                new Color(255, 255, 255, 10).getRGB());
+
+        // Indent bar
+        context.fill((int)x, (int)y, (int)x + 2, (int)(y + height),
+                new Color(50, 50, 55, 180).getRGB());
+
+        context.fill((int)x, (int)(y + height - 1), (int)(x + width), (int)(y + height),
+                new Color(255, 255, 255, 5).getRGB());
 
         MinecraftClient mc = MinecraftClient.getInstance();
 
         // Name
         context.drawText(mc.textRenderer, setting.getName().toString(),
-                (int)(x + 8), (int)(y + 4), VapeTheme.TEXT_DIM.getRGB(), false);
+                (int)(x + INDENT + 2), (int)(y + 4),
+                VapeTheme.TEXT_DIM.getRGB(), false);
 
         // Range pill
         String range = (int)setting.getMinValue() + " – " + (int)setting.getMaxValue();
-        int rw = mc.textRenderer.getWidth(range) + 6;
+        int rw = mc.textRenderer.getWidth(range) + 8;
         int rx = (int)(x + width - rw - 4);
         int ry = (int)(y + 3);
-        RenderUtils.drawRoundedRect(context, rx, ry, rx + rw, ry + 10, 2,
-                new Color(34, 211, 238, 25).getRGB());
-        context.drawText(mc.textRenderer, range, rx + 3, ry + 1, VapeTheme.ACCENT.getRGB(), false);
+        RenderUtils.renderRoundedQuad(context, new Color(34, 211, 238, 22),
+                rx, ry, rx + rw, ry + 11, 2, 8);
+        RenderUtils.renderRoundedOutline(context, new Color(34, 211, 238, 55),
+                rx, ry, rx + rw, ry + 11, 2, 2, 2, 2, 0.5, 8);
+        context.drawText(mc.textRenderer, range, rx + 4, ry + 2,
+                VapeTheme.ACCENT.getRGB(), false);
 
         // Track
-        double barY = y + height - 9;
-        double barH = 2;
+        double barY = y + height - 10;
+        double barH = 3;
         RenderUtils.drawRoundedRect(context,
-                (float)barX, (float)barY,
-                (float)(barX + barWidth), (float)(barY + barH), 1,
-                new Color(38, 38, 42, 255).getRGB());
+                (float)barX, (float)barY, (float)(barX + barWidth), (float)(barY + barH),
+                1, new Color(40, 40, 45, 255).getRGB());
 
-        // Fill between min and max
+        // Fill between thumbs
         double minPct = (setting.getMinValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
         double maxPct = (setting.getMaxValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
         double fillX  = barX + minPct * barWidth;
         double fillW  = (maxPct - minPct) * barWidth;
         if (fillW > 0) {
-            RenderUtils.drawRoundedRect(context,
-                    (float)fillX, (float)barY,
-                    (float)(fillX + fillW), (float)(barY + barH), 1,
-                    VapeTheme.ACCENT.getRGB());
+            context.fillGradient(
+                    (int)fillX, (int)barY, (int)(fillX + fillW), (int)(barY + barH),
+                    new Color(34, 211, 238, 160).getRGB(), VapeTheme.ACCENT.getRGB());
         }
 
         // Thumbs
-        double thumbMinX = barX + minPct * barWidth - 3;
-        double thumbMaxX = barX + maxPct * barWidth - 3;
-        double thumbY    = barY - 3;
-        Color minCol = draggingMin ? VapeTheme.TEXT   : VapeTheme.ACCENT;
-        Color maxCol = draggingMax ? VapeTheme.TEXT   : VapeTheme.ACCENT;
-        RenderUtils.drawRoundedRect(context,
-                (float)thumbMinX, (float)thumbY,
-                (float)(thumbMinX + 6), (float)(thumbY + 8), 2, minCol.getRGB());
-        RenderUtils.drawRoundedRect(context,
-                (float)thumbMaxX, (float)thumbY,
-                (float)(thumbMaxX + 6), (float)(thumbY + 8), 2, maxCol.getRGB());
+        double tMinX = barX + minPct * barWidth - 3;
+        double tMaxX = barX + maxPct * barWidth - 3;
+        double tY    = barY - 3;
+        RenderUtils.renderRoundedQuad(context, draggingMin ? VapeTheme.TEXT : VapeTheme.ACCENT,
+                tMinX, tY, tMinX + 7, tY + 9, 2, 8);
+        RenderUtils.renderRoundedQuad(context, draggingMax ? VapeTheme.TEXT : VapeTheme.ACCENT,
+                tMaxX, tY, tMaxX + 7, tY + 9, 2, 8);
+        if (draggingMin) RenderUtils.renderRoundedOutline(context, new Color(34, 211, 238, 80),
+                tMinX - 1, tY - 1, tMinX + 8, tY + 10, 2, 2, 2, 2, 0.5, 8);
+        if (draggingMax) RenderUtils.renderRoundedOutline(context, new Color(34, 211, 238, 80),
+                tMaxX - 1, tY - 1, tMaxX + 8, tY + 10, 2, 2, 2, 2, 0.5, 8);
     }
 
     @Override
     public void mouseClicked(double mouseX, double mouseY, int button) {
         if (isHovered((int)mouseX, (int)mouseY) && button == 0) {
-            double barX     = x + 8;
-            double barWidth = width - 16;
-            double minPct   = (setting.getMinValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
-            double maxPct   = (setting.getMaxValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
-            double tmx      = barX + minPct * barWidth;
-            double tmax     = barX + maxPct * barWidth;
+            double barX   = x + INDENT + 4;
+            double barWidth = width - INDENT - 12;
+            double minPct = (setting.getMinValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
+            double maxPct = (setting.getMaxValue() - setting.getMin()) / (setting.getMax() - setting.getMin());
+            double tmx    = barX + minPct * barWidth;
+            double tmax   = barX + maxPct * barWidth;
             if (Math.abs(mouseX - tmx) <= Math.abs(mouseX - tmax)) draggingMin = true;
             else draggingMax = true;
         }

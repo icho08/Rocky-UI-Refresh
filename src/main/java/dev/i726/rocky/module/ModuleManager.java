@@ -23,7 +23,7 @@ import java.util.Map;
 public final class ModuleManager implements ButtonListener {
         private final List<Module> modules = new ArrayList<>();
         private final Map<Integer, Long> lastToggleTime = new HashMap<>();
-        private static final long DEBOUNCE_MS = 150;
+        private static final long DEBOUNCE_MS = 500;
 
         public ModuleManager() {
                 addModules();

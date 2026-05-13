@@ -2,6 +2,7 @@ package dev.i726.rocky.gui;
 
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.gui.components.CategoryPanel;
+import dev.i726.rocky.managers.ProfileManager;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
@@ -44,14 +45,21 @@ public class ClickGuiScreen extends Screen {
                 CategoryManager.VISUAL,
                 CategoryManager.MISC
         );
+        ProfileManager pm = Rocky.INSTANCE.getProfileManager();
         int startX = Math.max(8, this.width / 2 - 295);
         int startY = 40;
         for (int i = 0; i < topLevel.size(); i++) {
             Category cat = topLevel.get(i);
             List<Module> catModules = getModulesForCategory(cat);
             if (!catModules.isEmpty()) {
-                panels.add(new CategoryPanel(cat.getName(), catModules,
-                        startX + i * (CategoryPanel.WIDTH + 5), startY));
+                float px = startX + i * (CategoryPanel.WIDTH + 5);
+                float py = startY;
+                double[] saved = pm.getPanelPosition(cat.getName());
+                if (saved != null) {
+                    px = (float) saved[0];
+                    py = (float) saved[1];
+                }
+                panels.add(new CategoryPanel(cat.getName(), catModules, px, py));
             }
         }
     }
@@ -124,6 +132,16 @@ public class ClickGuiScreen extends Screen {
         for (CategoryPanel panel : panels)
             if (panel.charTyped(chr, modifiers)) return true;
         return super.charTyped(input);
+    }
+
+    @Override
+    public void removed() {
+        ProfileManager pm = Rocky.INSTANCE.getProfileManager();
+        for (CategoryPanel panel : panels) {
+            pm.setPanelPosition(panel.getName(), panel.getX(), panel.getY());
+        }
+        pm.saveProfile("default");
+        super.removed();
     }
 
     @Override

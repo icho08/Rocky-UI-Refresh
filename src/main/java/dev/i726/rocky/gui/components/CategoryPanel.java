@@ -192,6 +192,10 @@ public class CategoryPanel {
         return false;
     }
 
+    public float getX() { return x; }
+    public float getY() { return y; }
+    public String getName() { return name; }
+
     private boolean isOverHeader(double mx, double my) {
         return mx >= x && mx < x + WIDTH && my >= y && my < y + HEADER_H;
     }

@@ -2,144 +2,201 @@ package dev.i726.rocky.module.modules.render;
 
 import dev.i726.rocky.event.events.HudListener;
 import dev.i726.rocky.event.events.PacketSendListener;
-import dev.i726.rocky.module.Category;
+import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
-import dev.i726.rocky.utils.*;
+import dev.i726.rocky.utils.EncryptedString;
+import dev.i726.rocky.utils.RenderUtils;
+import dev.i726.rocky.utils.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.PlayerSkinDrawer;
 import net.minecraft.client.network.PlayerListEntry;
-
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
 import net.minecraft.util.Hand;
-
 import net.minecraft.util.math.Vec3d;
 
-import java.awt.*;
+import java.awt.Color;
 
 public final class TargetHud extends Module implements HudListener, PacketSendListener {
-	private final NumberSetting xCoord = new NumberSetting(EncryptedString.of("X"), 0, 1920, 500, 1);
-	private final NumberSetting yCoord = new NumberSetting(EncryptedString.of("Y"), 0, 1080, 500, 1);
-	private final BooleanSetting hudTimeout = new BooleanSetting(EncryptedString.of("Timeout"), true)
-			.setDescription(EncryptedString.of("Target hud will disappear after 10 seconds"));
-	private long lastAttackTime = 0;
-	public static float animation;
-	private static final long timeout = 10000;
 
-	public TargetHud() {
-		super(EncryptedString.of("Target HUD"),
+    private final NumberSetting xCoord    = new NumberSetting(EncryptedString.of("X"), 0, 1920, 10, 1);
+    private final NumberSetting yCoord    = new NumberSetting(EncryptedString.of("Y"), 0, 1080, 10, 1);
+    private final BooleanSetting hudTimeout = new BooleanSetting(EncryptedString.of("Timeout"), true)
+            .setDescription(EncryptedString.of("Hides after 10 seconds of not attacking"));
+
+    private long lastAttackTime = 0;
+    public static float animation = 1f;
+    private static final long TIMEOUT_MS = 10_000L;
+
+    private static final int CARD_W  = 190;
+    private static final int HEADER_H = 20;
+
+    public TargetHud() {
+        super(EncryptedString.of("Target HUD"),
                 EncryptedString.of("Shows target information"),
-				-1,
-				CategoryManager.GUI);
-		addSettings(xCoord, yCoord, hudTimeout);
-	}
+                -1,
+                CategoryManager.GUI);
+        addSettings(xCoord, yCoord, hudTimeout);
+    }
 
-	@Override
-	public void onEnable() {
-		eventManager.add(HudListener.class, this);
-		eventManager.add(PacketSendListener.class, this);
-		super.onEnable();
-	}
+    @Override
+    public void onEnable() {
+        eventManager.add(HudListener.class, this);
+        eventManager.add(PacketSendListener.class, this);
+        super.onEnable();
+    }
 
-	@Override
-	public void onDisable() {
-		eventManager.remove(HudListener.class, this);
-		eventManager.remove(PacketSendListener.class, this);
-		super.onDisable();
-	}
+    @Override
+    public void onDisable() {
+        eventManager.remove(HudListener.class, this);
+        eventManager.remove(PacketSendListener.class, this);
+        super.onDisable();
+    }
 
-	@Override
-	public void onRenderHud(HudEvent event) {
-		DrawContext context = event.context;
+    @Override
+    public void onRenderHud(HudEvent event) {
+        DrawContext ctx = event.context;
+        if (mc.player == null) return;
 
-		int x = xCoord.getValueInt();
-		int y = yCoord.getValueInt();
+        boolean hasTarget = mc.player.getAttacking() instanceof PlayerEntity p && p.isAlive();
+        boolean withinTimeout = !hudTimeout.getValue()
+                || (System.currentTimeMillis() - lastAttackTime <= TIMEOUT_MS);
 
-		RenderUtils.unscaledProjection();
-		if ((!hudTimeout.getValue() || (System.currentTimeMillis() - lastAttackTime <= timeout)) &&
-				mc.player.getAttacking() != null && mc.player.getAttacking() instanceof PlayerEntity player && player.isAlive()) {
-			animation = RenderUtils.fast(animation, mc.player.getAttacking() instanceof PlayerEntity player1 && player1.isAlive() ? 0 : 1, 15f);
+        float animTarget = (hasTarget && withinTimeout) ? 0f : 1f;
+        animation = RenderUtils.fast(animation, animTarget, 15f);
 
-			PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(player.getUuid());
-			float tx = (float) x;
-			float ty = (float) y;
-			org.joml.Matrix3x2fStack matrixStack = context.getMatrices();
-			matrixStack.pushMatrix();
+        if (!hasTarget || !withinTimeout) return;
 
-			RenderUtils.renderRoundedQuad(context, new Color(31, 41, 55, 200), x, y, x + 180, y + 70, 5, 10);
-			RenderUtils.renderRoundedQuad(context, Utils.getMainColor(255, 1), x, y + 18, x + 180, y + 20, 0, 10);
+        PlayerEntity target = (PlayerEntity) mc.player.getAttacking();
+        PlayerListEntry entry = mc.getNetworkHandler() != null
+                ? mc.getNetworkHandler().getPlayerListEntry(target.getUuid()) : null;
 
-			TextRenderer.drawString(player.getName().getString(), context, x + 25, y + 3, new Color(229, 231, 235).getRGB());
+        float health       = Math.min(target.getHealth() + target.getAbsorptionAmount(), 20f);
+        float healthPct    = health / 20f;
+        int   armorVal     = target.getArmor();
+        float armorPct     = armorVal / 20f;
+        int   ping         = entry != null ? entry.getLatency() : -1;
+        String name        = target.getName().getString();
+        boolean isBot      = entry == null;
 
-			if (entry == null) {
-				TextRenderer.drawString("Bot", context, x + 25, y + 25, new Color(239, 68, 68).getRGB());
-				matrixStack.popMatrix();
-				RenderUtils.scaledProjection();
-				return;
-			}
+        int x = xCoord.getValueInt();
+        int y = yCoord.getValueInt();
 
-			float health = player.getHealth() + player.getAbsorptionAmount();
-			TextRenderer.drawString("HP: " + Math.round(health), context, x + 25, y + 25, new Color(59, 130, 246).getRGB());
-			
-			// Health bar
-			int barWidth = 150;
-			int barHeight = 4;
-			context.fill(x + 25, y + 37, x + 25 + barWidth, y + 37 + barHeight, new Color(55, 65, 81).getRGB());
-			int healthWidth = (int)(barWidth * (health / 20.0f));
-			context.fill(x + 25, y + 37, x + 25 + healthWidth, y + 37 + barHeight, new Color(34, 197, 94).getRGB());
+        // ── Layout math ──────────────────────────────────────────────────────
+        int cardH = HEADER_H          // name header
+                + 1                   // separator
+                + 10                  // HP label padding
+                + 8                   // HP bar
+                + 8                   // Armor label padding
+                + 8                   // Armor bar
+                + (ping >= 0 ? 18 : 0)// Ping row
+                + 10;                 // bottom padding
 
-			TextRenderer.drawString("Ping: " + entry.getLatency() + "ms", context, x + 25, y + 47, new Color(156, 163, 175).getRGB());
+        Color ac   = GuiTheme.accent();
+        int acInt  = GuiTheme.accentInt();
 
-			// PlayerSkinDrawer API changed in 1.21.10 - needs update
-			// PlayerSkinDrawer.draw(context, entry.getSkinTextures().texture(), x + 3, y + 3, 16);
-			matrixStack.popMatrix();
-		} else {
-			animation = RenderUtils.fast(animation, 1, 15f);
-		}
-		RenderUtils.scaledProjection();
-	}
+        // ── Card ─────────────────────────────────────────────────────────────
+        // Shadow
+        ctx.fill(x + 2, y + 2, x + CARD_W + 2, y + cardH + 2, GuiTheme.rgba(0, 0, 0, 60));
+        // Border
+        ctx.fill(x - 1, y - 1, x + CARD_W + 1, y + cardH + 1, GuiTheme.border());
+        // Body
+        ctx.fill(x, y, x + CARD_W, y + cardH, GuiTheme.panelBg());
 
-	private Color getDamageTickColor(int hurtTime) {
-		return switch (hurtTime) {
-			case 0 -> null;
-			case 10 -> new Color(255, 0, 0, 255);
-			case 9 -> new Color(255, 50, 0, 255);
-			case 8 -> new Color(255, 100, 0, 255);
-			case 7 -> new Color(255, 150, 0, 255);
-			case 6 -> new Color(255, 255, 0, 255);
-			case 5 -> new Color(200, 255, 0, 255);
-			case 4 -> new Color(175, 255, 0, 255);
-			case 3 -> new Color(100, 255, 0, 255);
-			case 2 -> new Color(50, 255, 0, 255);
-			case 1 -> new Color(0, 255, 0, 255);
-			default -> throw new IllegalStateException("uv" + hurtTime);
-		};
-	}
+        // ── Header ───────────────────────────────────────────────────────────
+        ctx.fill(x, y, x + CARD_W, y + HEADER_H, GuiTheme.headerBg());
+        // Accent gradient (left → transparent, matching panels)
+        ctx.fillGradient(x, y, x + CARD_W, y + HEADER_H,
+                GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 45),
+                GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
+        // Left accent bar
+        ctx.fill(x, y, x + 3, y + HEADER_H, acInt);
 
-	@Override
-	public void onPacketSend(PacketSendListener.PacketSendEvent event) {
-		if (event.packet instanceof PlayerInteractEntityC2SPacket packet) {
-			packet.handle(new PlayerInteractEntityC2SPacket.Handler() {
-				@Override
-				public void interact(Hand hand) {
+        // Name
+        int nameColor = isBot ? GuiTheme.rgba(239, 68, 68, 255) : GuiTheme.textPrimary();
+        String displayName = isBot ? name + " [BOT]" : name;
+        ctx.drawText(mc.textRenderer, displayName, x + 9, y + 6, nameColor, false);
 
-				}
+        // ── Header separator ─────────────────────────────────────────────────
+        int sepY = y + HEADER_H;
+        ctx.fill(x + 4, sepY, x + CARD_W - 4, sepY + 1, GuiTheme.separator());
 
-				@Override
-				public void interactAt(Hand hand, Vec3d pos) {
+        // ── HP row ───────────────────────────────────────────────────────────
+        int rowY = sepY + 8;
+        int barX = x + 9;
+        int barW = CARD_W - 18;
 
-				}
+        // Label
+        ctx.drawText(mc.textRenderer, "HP", barX, rowY, GuiTheme.textSecondary(), false);
+        // Value (right-aligned, colored by health %)
+        String hpStr   = String.valueOf(Math.round(health));
+        int    hpColor = healthBarColor(healthPct);
+        int    hpStrW  = mc.textRenderer.getWidth(hpStr);
+        ctx.drawText(mc.textRenderer, hpStr, x + CARD_W - 9 - hpStrW, rowY, hpColor, false);
 
-				@Override
-				public void attack() {
-					if (mc.targetedEntity instanceof PlayerEntity) {
-						lastAttackTime = System.currentTimeMillis();
-					}
-				}
-			});
-		}
-	}
+        // Health bar
+        int barY = rowY + 10;
+        ctx.fill(barX, barY, barX + barW, barY + 5, GuiTheme.sliderTrack());
+        int fillW = Math.max(0, (int)(barW * healthPct));
+        ctx.fill(barX, barY, barX + fillW, barY + 5, hpColor);
+        // Subtle highlight on top of filled bar
+        if (fillW > 0) {
+            ctx.fill(barX, barY, barX + fillW, barY + 1,
+                    GuiTheme.rgba(255, 255, 255, 25));
+        }
+
+        // ── Armor row ────────────────────────────────────────────────────────
+        rowY = barY + 10;
+        ctx.drawText(mc.textRenderer, "Armor", barX, rowY, GuiTheme.textSecondary(), false);
+        String armorStr  = String.valueOf(armorVal);
+        int    armorStrW = mc.textRenderer.getWidth(armorStr);
+        ctx.drawText(mc.textRenderer, armorStr, x + CARD_W - 9 - armorStrW, rowY, acInt, false);
+
+        barY = rowY + 10;
+        ctx.fill(barX, barY, barX + barW, barY + 5, GuiTheme.sliderTrack());
+        int armorFill = (int)(barW * armorPct);
+        if (armorFill > 0) {
+            ctx.fill(barX, barY, barX + armorFill, barY + 5, acInt);
+            ctx.fill(barX, barY, barX + armorFill, barY + 1,
+                    GuiTheme.rgba(255, 255, 255, 25));
+        }
+
+        // ── Ping row ─────────────────────────────────────────────────────────
+        if (ping >= 0) {
+            rowY = barY + 10;
+            ctx.fill(x + 4, rowY - 3, x + CARD_W - 4, rowY - 2, GuiTheme.separator());
+            rowY += 3;
+            ctx.drawText(mc.textRenderer, "Ping", barX, rowY, GuiTheme.textSecondary(), false);
+            String pingStr  = ping + "ms";
+            int    pingColor = ping < 80 ? GuiTheme.rgba(34, 197, 94, 255)
+                    : ping < 150 ? GuiTheme.rgba(234, 179, 8, 255)
+                    : GuiTheme.rgba(239, 68, 68, 255);
+            int pingStrW = mc.textRenderer.getWidth(pingStr);
+            ctx.drawText(mc.textRenderer, pingStr, x + CARD_W - 9 - pingStrW, rowY, pingColor, false);
+        }
+    }
+
+    private int healthBarColor(float pct) {
+        if (pct > 0.6f) return GuiTheme.rgba(34, 197, 94, 255);   // green
+        if (pct > 0.3f) return GuiTheme.rgba(234, 179, 8, 255);   // yellow
+        return GuiTheme.rgba(239, 68, 68, 255);                     // red
+    }
+
+    @Override
+    public void onPacketSend(PacketSendListener.PacketSendEvent event) {
+        if (event.packet instanceof PlayerInteractEntityC2SPacket packet) {
+            packet.handle(new PlayerInteractEntityC2SPacket.Handler() {
+                @Override public void interact(Hand hand) {}
+                @Override public void interactAt(Hand hand, Vec3d pos) {}
+                @Override
+                public void attack() {
+                    if (mc.targetedEntity instanceof PlayerEntity) {
+                        lastAttackTime = System.currentTimeMillis();
+                    }
+                }
+            });
+        }
+    }
 }

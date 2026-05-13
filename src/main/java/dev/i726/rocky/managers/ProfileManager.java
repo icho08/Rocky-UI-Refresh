@@ -77,7 +77,7 @@ public final class ProfileManager {
                                         
                                         JsonObject moduleConfig = moduleJson.getAsJsonObject();
                                         JsonElement enabledJson = moduleConfig.get("enabled");
-                                        if (enabledJson != null) module.setEnabled(enabledJson.getAsBoolean());
+                                        if (enabledJson != null) module.setEnabledStatus(enabledJson.getAsBoolean());
 
                                         // Load category
                                         JsonElement categoryJson = moduleConfig.get("category");

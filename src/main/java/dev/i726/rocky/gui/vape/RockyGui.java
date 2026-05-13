@@ -7,7 +7,6 @@ import dev.i726.rocky.gui.vape.components.settings.KeybindSetting;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
-import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -23,18 +22,19 @@ import java.util.stream.Collectors;
 public class RockyGui extends Screen {
 
     private final List<Panel> panels = new ArrayList<>();
-    private double scrollAmount = 0;
     private boolean[] mouseState = new boolean[3];
     private boolean[] keyState   = new boolean[512];
     private TextFieldWidget searchField;
     private String searchText = "";
 
-    // ─── Layout constants ───────────────────────────────────────────────────
-    public  static final int PANEL_W  = 160;   // wider so module names breathe
-    private static final int GAP_X    = 10;
-    private static final int HEADER_H = 36;
-    private static final int SEARCH_W = 190;
-    private static final int SEARCH_H = 15;
+    // ─── Layout ──────────────────────────────────────────────────────────────
+    public  static final int PANEL_W   = 160;
+    private static final int GAP_X     = 8;
+    private static final int HEADER_H  = 30;     // top bar
+    private static final int HOVER_H   = 20;     // description strip below header
+    private static final int PANELS_Y  = HEADER_H + HOVER_H + 6; // where panels start
+    private static final int SEARCH_W  = 180;
+    private static final int SEARCH_H  = 14;
 
     private static final int[] POLL_KEYS = {
         GLFW.GLFW_KEY_ESCAPE, GLFW.GLFW_KEY_RIGHT_SHIFT, GLFW.GLFW_KEY_LEFT_SHIFT,
@@ -47,7 +47,6 @@ public class RockyGui extends Screen {
     @Override
     protected void init() {
         panels.clear();
-        scrollAmount = 0;
 
         int fieldX = width / 2 - SEARCH_W / 2;
         int fieldY = (HEADER_H - SEARCH_H) / 2;
@@ -68,26 +67,20 @@ public class RockyGui extends Screen {
 
     private void rebuildPanels() {
         panels.clear();
+        int x = 10, y = PANELS_Y;
 
-        int startX = 14;
-        int startY = HEADER_H + 10;
-        int x = startX, y = startY;
-
-        List<Category> cats = CategoryManager.getCategories().stream()
-                .filter(Category::isSubcategory)
-                .collect(Collectors.toList());
-
-        for (Category cat : cats) {
+        for (Category cat : CategoryManager.getCategories().stream()
+                .filter(Category::isSubcategory).collect(Collectors.toList())) {
             List<Module> mods = getFilteredModules(cat);
-            if (!mods.isEmpty()) {
-                double[] pos = Rocky.INSTANCE.getProfileManager().getPanelPosition(cat.getName());
-                if (pos != null) {
-                    panels.add(new Panel(cat, pos[0], pos[1], PANEL_W, searchText));
-                } else {
-                    panels.add(new Panel(cat, x, y, PANEL_W, searchText));
-                    x += PANEL_W + GAP_X;
-                    if (x > width - PANEL_W - 14) { x = startX; y += 210; }
-                }
+            if (mods.isEmpty()) continue;
+
+            double[] pos = Rocky.INSTANCE.getProfileManager().getPanelPosition(cat.getName());
+            if (pos != null) {
+                panels.add(new Panel(cat, pos[0], pos[1], PANEL_W, searchText));
+            } else {
+                panels.add(new Panel(cat, x, y, PANEL_W, searchText));
+                x += PANEL_W + GAP_X;
+                if (x > width - PANEL_W - 10) { x = 10; y += 220; }
             }
         }
     }
@@ -117,69 +110,99 @@ public class RockyGui extends Screen {
         if (Rocky.mc == null) Rocky.mc = MinecraftClient.getInstance();
         MinecraftClient mc = MinecraftClient.getInstance();
 
+        // Reset hover every frame before panels render
+        ModuleButton.hoveredModule = null;
+
         handlePollingInput(mc, mouseX, mouseY);
 
-        // ── Full-screen dark vignette (gradient from edges) ───────────────
-        int dimColor = new Color(0, 0, 0, 110).getRGB();
-        context.fill(0, 0, width, height, dimColor);
+        // ── Background dim ─────────────────────────────────────────────────
+        context.fill(0, 0, width, height, new Color(0, 0, 0, 100).getRGB());
 
-        // ── Header bar ────────────────────────────────────────────────────
-        // Gradient: slightly lighter at top, pure black at bottom
-        context.fillGradient(0, 0, width, HEADER_H,
-                new Color(18, 18, 18, 252).getRGB(),
-                new Color(8, 8, 8, 252).getRGB());
-        // Glowing cyan bottom edge
-        RenderUtils.renderAccentLine(context, VapeTheme.ACCENT_DIM, VapeTheme.ACCENT_DIM,
-                0, HEADER_H - 1, width, HEADER_H);
+        // ── Header bar — flat rectangle ────────────────────────────────────
+        context.fill(0, 0, width, HEADER_H, new Color(12, 12, 12, 248).getRGB());
+        // Bottom border of header (1px cyan)
+        context.fill(0, HEADER_H - 1, width, HEADER_H, VapeTheme.ACCENT.getRGB());
 
         // ROCKY wordmark
-        String wordmark = "ROCKY";
-        int wmy = (HEADER_H - 8) / 2;
-        context.drawText(mc.textRenderer, wordmark, 14, wmy, VapeTheme.ACCENT.getRGB(), false);
+        int wy = (HEADER_H - 8) / 2;
+        context.drawText(mc.textRenderer, "ROCKY", 12, wy, VapeTheme.ACCENT.getRGB(), false);
 
-        // Search box chrome
-        int sfx = searchField.getX() - 8;
-        int sfy = searchField.getY() - 4;
-        int sfw = SEARCH_W + 16;
-        int sfh = SEARCH_H + 8;
-        RenderUtils.renderRoundedQuad(context, new Color(22, 22, 22, 230),
-                sfx, sfy, sfx + sfw, sfy + sfh, 4, 10);
-        RenderUtils.renderRoundedOutline(context, new Color(255, 255, 255, 18),
-                sfx, sfy, sfx + sfw, sfy + sfh, 4, 4, 4, 4, 0.5, 10);
-        // Search icon text placeholder
-        context.drawText(mc.textRenderer, "[ " + (searchText.isEmpty() ? "search..." : searchText) + " ]",
-                sfx + 6, sfy + 4, searchText.isEmpty()
-                        ? new Color(80, 80, 80).getRGB() : VapeTheme.TEXT_DIM.getRGB(), false);
+        // Search box — flat rectangle
+        int sfx = searchField.getX() - 6;
+        int sfy = searchField.getY() - 3;
+        int sfw = SEARCH_W + 12;
+        int sfh = SEARCH_H + 6;
+        context.fill(sfx, sfy, sfx + sfw, sfy + sfh, new Color(22, 22, 22, 235).getRGB());
+        context.fill(sfx, sfy, sfx + sfw, sfy + 1, new Color(255, 255, 255, 18).getRGB());
+        context.fill(sfx, sfy + sfh - 1, sfx + sfw, sfy + sfh, new Color(255, 255, 255, 10).getRGB());
+        // Search text / placeholder
+        String displaySearch = searchText.isEmpty() ? "search modules..." : searchText;
+        int searchTextColor = searchText.isEmpty() ? new Color(70, 70, 70).getRGB() : VapeTheme.TEXT_DIM.getRGB();
+        context.drawText(mc.textRenderer, displaySearch, sfx + 6, sfy + (sfh - 8) / 2, searchTextColor, false);
 
-        // Active module pill — right
+        // Active count — right side of header
         long active = Rocky.INSTANCE.getModuleManager().getModules().stream()
                 .filter(Module::isEnabled).count();
         String activeStr = active + " active";
         int aw = mc.textRenderer.getWidth(activeStr);
-        int ax = width - aw - 16;
-        int ay = (HEADER_H - 10) / 2;
-        RenderUtils.renderRoundedQuad(context, new Color(34, 211, 238, 22), ax - 5, ay - 1, ax + aw + 5, ay + 11, 3, 8);
-        context.drawText(mc.textRenderer, activeStr, ax, ay + 1, VapeTheme.ACCENT.getRGB(), false);
+        int ax = width - aw - 12;
+        int ay = (HEADER_H - 8) / 2;
+        context.drawText(mc.textRenderer, activeStr, ax, ay, VapeTheme.ACCENT.getRGB(), false);
 
-        // Draw MC widget (search text cursor etc.) — hidden behind our custom rendering
+        // Draw Minecraft widget (handles cursor blink etc.)
         super.render(context, mouseX, mouseY, delta);
 
-        // ── Panels ────────────────────────────────────────────────────────
-        double adjY = mouseY - scrollAmount;
-        context.getMatrices().translate(0, (float) scrollAmount);
+        // ── Panels ─────────────────────────────────────────────────────────
         for (Panel panel : panels)
-            panel.render(context, mouseX, (int) adjY, delta);
-        context.getMatrices().translate(0, -(float) scrollAmount);
+            panel.render(context, mouseX, mouseY, delta);
+
+        // ── Hover description strip — drawn AFTER panels so it's on top ────
+        // Background strip below header
+        context.fill(0, HEADER_H, width, HEADER_H + HOVER_H, new Color(8, 8, 8, 220).getRGB());
+        context.fill(0, HEADER_H + HOVER_H - 1, width, HEADER_H + HOVER_H,
+                new Color(255, 255, 255, 8).getRGB());
+
+        Module hm = ModuleButton.hoveredModule;
+        if (hm != null) {
+            int stripY = HEADER_H + (HOVER_H - 8) / 2;
+
+            // Module name (cyan)
+            String hmName = hm.getName().toString();
+            context.drawText(mc.textRenderer, hmName, 12, stripY, VapeTheme.ACCENT.getRGB(), false);
+
+            // Divider dot
+            int dotX = 12 + mc.textRenderer.getWidth(hmName) + 5;
+            context.drawText(mc.textRenderer, "—", dotX, stripY, new Color(45, 45, 45).getRGB(), false);
+
+            // Description (muted)
+            String desc = (hm.getDescription() != null) ? hm.getDescription().toString() : "";
+            if (!desc.isEmpty()) {
+                int descX = dotX + mc.textRenderer.getWidth("—") + 5;
+                int maxDescW = width - descX - 80;
+                if (mc.textRenderer.getWidth(desc) > maxDescW)
+                    desc = mc.textRenderer.trimToWidth(desc, maxDescW - 4) + "..";
+                context.drawText(mc.textRenderer, desc, descX, stripY,
+                        new Color(90, 90, 90).getRGB(), false);
+            }
+
+            // Settings count — right side
+            int nSettings = (int) hm.getSettings().stream().count();
+            if (nSettings > 0) {
+                String sStr = nSettings + " settings";
+                int sw2 = mc.textRenderer.getWidth(sStr);
+                context.drawText(mc.textRenderer, sStr, width - sw2 - 12, stripY,
+                        new Color(60, 60, 65).getRGB(), false);
+            }
+        }
     }
 
     private void handlePollingInput(MinecraftClient mc, int mouseX, int mouseY) {
         long handle = mc.getWindow().getHandle();
-        double adjY = mouseY - scrollAmount;
 
         for (int i = 0; i < 2; i++) {
             boolean down = GLFW.glfwGetMouseButton(handle, i) == GLFW.GLFW_PRESS;
-            if (down && !mouseState[i]) onMouseClick(mouseX, adjY, i);
-            else if (!down && mouseState[i]) onMouseRelease(mouseX, adjY, i);
+            if (down && !mouseState[i]) onMouseClick(mouseX, mouseY, i);
+            else if (!down && mouseState[i]) onMouseRelease(mouseX, mouseY, i);
             mouseState[i] = down;
         }
 
@@ -228,9 +251,7 @@ public class RockyGui extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double h, double v) {
-        scrollAmount += v * 20;
-        if (scrollAmount > 0) scrollAmount = 0;
-        return true;
+        return true; // panels are draggable so no global scroll needed
     }
 
     @Override

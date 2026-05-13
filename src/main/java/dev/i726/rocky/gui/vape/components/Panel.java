@@ -4,7 +4,6 @@ import dev.i726.rocky.gui.vape.VapeTheme;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.Rocky;
-import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
@@ -14,8 +13,7 @@ import java.util.List;
 
 public class Panel extends Component {
 
-    public  static final int   HEADER_H = 26;
-    private static final float RADIUS   = 5f;
+    public  static final int HEADER_H = 22;
 
     private final Category category;
     private final List<ModuleButton> buttons = new ArrayList<>();
@@ -29,26 +27,32 @@ public class Panel extends Component {
         this.category     = category;
         this.searchFilter = searchFilter;
 
-        List<Module> modules = Rocky.INSTANCE.getModuleManager().getModulesInCategory(category);
-        double buttonY = y + HEADER_H;
-        for (Module module : modules) {
-            if (matchesSearch(module)) {
-                // Pass dummy height — ModuleButton always uses CARD_H
-                buttons.add(new ModuleButton(module, x, buttonY, width, ModuleButton.CARD_H));
-                buttonY += ModuleButton.CARD_H;
-            }
+        for (Module module : Rocky.INSTANCE.getModuleManager().getModulesInCategory(category)) {
+            if (matchesSearch(module))
+                buttons.add(new ModuleButton(module, x, 0, width));
         }
+        layoutButtons();
     }
 
     private boolean matchesSearch(Module module) {
         if (searchFilter == null || searchFilter.isEmpty()) return true;
-        return module.getName().toString().toLowerCase().contains(searchFilter)
-            || module.getDescription().toString().toLowerCase().contains(searchFilter);
+        String f = searchFilter;
+        return module.getName().toString().toLowerCase().contains(f)
+            || module.getDescription().toString().toLowerCase().contains(f);
     }
 
     public Category getCategory() { return category; }
     public double   getX()        { return x; }
     public double   getY()        { return y; }
+
+    private void layoutButtons() {
+        double sy = y + HEADER_H;
+        for (ModuleButton btn : buttons) {
+            btn.x = x;
+            btn.y = sy;
+            sy += btn.getFullHeight();
+        }
+    }
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
@@ -57,93 +61,58 @@ public class Panel extends Component {
             y = mouseY - dragY;
             Rocky.INSTANCE.getProfileManager().setPanelPosition(category.getName(), x, y);
         }
-        updateButtonPositions();
+        layoutButtons();
 
         double totalH = getTotalHeight();
 
-        // ── Drop shadow ────────────────────────────────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(0, 0, 0, 90),
-                x + 4, y + 5, x + width + 4, y + totalH + 5, RADIUS, 8);
+        // ── Outer border — 1px around entire panel ─────────────────────────
+        int borderColor = new Color(40, 40, 42, 200).getRGB();
+        context.fill((int)x - 1, (int)y - 1, (int)(x + width) + 1, (int)(y + totalH) + 1, borderColor);
 
-        // ── Panel body ─────────────────────────────────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(10, 10, 10, 240),
-                x, y, x + width, y + totalH, RADIUS, 12);
+        // ── Panel body background ───────────────────────────────────────────
+        context.fill((int)x, (int)y, (int)(x + width), (int)(y + totalH),
+                new Color(10, 10, 10, 235).getRGB());
 
-        // Outer border — thin white rim
-        RenderUtils.renderRoundedOutline(context, new Color(255, 255, 255, 12),
-                x, y, x + width, y + totalH, RADIUS, RADIUS, RADIUS, RADIUS, 0.5, 12);
+        // ── Header — flat dark rectangle ───────────────────────────────────
+        context.fill((int)x, (int)y, (int)(x + width), (int)(y + HEADER_H),
+                new Color(16, 16, 16, 245).getRGB());
 
-        // ── Header — gradient ─────────────────────────────────────────────
-        // Top-rounded corners
-        RenderUtils.renderRoundedQuad(context, new Color(18, 18, 18, 252),
-                x, y, x + width, y + HEADER_H,
-                RADIUS, RADIUS, expanded ? 0 : RADIUS, expanded ? 0 : RADIUS, 12);
-        // Gradient overlay (top lighter, bottom darker)
-        context.fillGradient(
-                (int)(x + RADIUS), (int)y, (int)(x + width - RADIUS), (int)(y + HEADER_H),
-                new Color(28, 28, 28, 0).getRGB(),
-                new Color(0, 0, 0, 60).getRGB());
-
-        // ── Cyan accent bar — bottom of header ────────────────────────────
-        int ay = (int)(y + HEADER_H - 1);
-        context.fillGradient((int)x, ay, (int)(x + width / 2), ay + 1,
-                new Color(34, 211, 238, 60).getRGB(), VapeTheme.ACCENT.getRGB());
-        context.fillGradient((int)(x + width / 2), ay, (int)(x + width), ay + 1,
-                VapeTheme.ACCENT.getRGB(), new Color(34, 211, 238, 60).getRGB());
+        // Cyan bottom edge of header (1px)
+        context.fill((int)x, (int)(y + HEADER_H - 1), (int)(x + width), (int)(y + HEADER_H),
+                VapeTheme.ACCENT.getRGB());
 
         MinecraftClient mc = MinecraftClient.getInstance();
 
-        // ── Category name — centered, all-caps ────────────────────────────
-        String title = category.getName().toUpperCase();
-        int tw = mc.textRenderer.getWidth(title);
-        context.drawText(mc.textRenderer, title,
-                (int)(x + (width - tw) / 2), (int)(y + (HEADER_H - 8) / 2),
-                VapeTheme.TEXT.getRGB(), false);
-
-        // ── Collapse chevron ───────────────────────────────────────────────
-        String arrow = expanded ? "▼" : "▶";
-        context.drawText(mc.textRenderer, arrow,
-                (int)(x + width - mc.textRenderer.getWidth(arrow) - 6),
-                (int)(y + (HEADER_H - 8) / 2),
-                VapeTheme.ACCENT_DIM.getRGB(), false);
-
-        // ── Active-module badge ────────────────────────────────────────────
+        // ── Active badge — left of header ──────────────────────────────────
         long active = buttons.stream().filter(b -> b.getModule().isEnabled()).count();
+        int headerTextY = (int)(y + (HEADER_H - 8) / 2.0);
+
         if (active > 0) {
             String badge = String.valueOf(active);
-            int bw = mc.textRenderer.getWidth(badge) + 8;
-            int bh = 11;
-            int bx = (int)(x + 5);
-            int by = (int)(y + (HEADER_H - bh) / 2);
-            RenderUtils.renderRoundedQuad(context, new Color(34, 211, 238, 35),
-                    bx, by, bx + bw, by + bh, 2, 8);
-            RenderUtils.renderRoundedOutline(context, new Color(34, 211, 238, 90),
-                    bx, by, bx + bw, by + bh, 2, 2, 2, 2, 0.5, 8);
-            context.drawText(mc.textRenderer, badge, bx + 4, by + 2,
-                    VapeTheme.ACCENT.getRGB(), false);
+            int bw = mc.textRenderer.getWidth(badge) + 6;
+            int bx = (int)(x + 4);
+            int by = (int)(y + (HEADER_H - 10) / 2.0);
+            context.fill(bx, by, bx + bw, by + 10, new Color(34, 211, 238, 30).getRGB());
+            context.fill(bx, by, bx + bw, by + 1, VapeTheme.ACCENT.getRGB());
+            context.drawText(mc.textRenderer, badge, bx + 3, by + 1, VapeTheme.ACCENT.getRGB(), false);
         }
 
-        // ── Module cards ───────────────────────────────────────────────────
-        if (expanded) {
-            // Small gap between header and first card
-            context.fill((int)x, (int)(y + HEADER_H), (int)(x + width), (int)(y + HEADER_H + 2),
-                    new Color(0, 0, 0, 100).getRGB());
+        // ── Category name centered ──────────────────────────────────────────
+        String title = category.getName().toUpperCase();
+        int tw = mc.textRenderer.getWidth(title);
+        context.drawText(mc.textRenderer, title, (int)(x + (width - tw) / 2.0), headerTextY,
+                VapeTheme.TEXT.getRGB(), false);
 
+        // ── Collapse arrow right ────────────────────────────────────────────
+        String arrow = expanded ? "v" : ">";
+        context.drawText(mc.textRenderer, arrow,
+                (int)(x + width - mc.textRenderer.getWidth(arrow) - 5), headerTextY,
+                VapeTheme.ACCENT_DIM.getRGB(), false);
+
+        // ── Module rows ─────────────────────────────────────────────────────
+        if (expanded) {
             for (ModuleButton btn : buttons)
                 btn.render(context, mouseX, mouseY, delta);
-
-            // Bottom rounding cap
-            RenderUtils.renderRoundedQuad(context, new Color(10, 10, 10, 240),
-                    x, y + totalH - RADIUS, x + width, y + totalH, RADIUS, 8);
-        }
-    }
-
-    private void updateButtonPositions() {
-        double buttonY = y + HEADER_H + 2;   // +2 for gap after header
-        for (ModuleButton btn : buttons) {
-            btn.x = x;
-            btn.y = buttonY;
-            buttonY += btn.getFullHeight();
         }
     }
 
@@ -167,21 +136,11 @@ public class Panel extends Component {
         return mx >= x && mx <= x + width && my >= y && my <= y + HEADER_H;
     }
 
-    public void addModule(Module module) {
-        double buttonY = y + HEADER_H + 2;
-        for (ModuleButton btn : buttons) buttonY += btn.getFullHeight();
-        buttons.add(new ModuleButton(module, x, buttonY, width, ModuleButton.CARD_H));
-    }
-
-    public void removeModule(Module module) {
-        buttons.removeIf(btn -> btn.getModule() == module);
-    }
-
     public List<ModuleButton> getButtons() { return buttons; }
 
     public double getTotalHeight() {
         if (!expanded) return HEADER_H;
-        double h = HEADER_H + 2;
+        double h = HEADER_H;
         for (ModuleButton btn : buttons) h += btn.getFullHeight();
         return h;
     }

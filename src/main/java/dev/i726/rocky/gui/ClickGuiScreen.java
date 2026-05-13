@@ -5,8 +5,11 @@ import dev.i726.rocky.gui.components.CategoryPanel;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
+import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.input.CharInput;
+import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
@@ -73,23 +76,29 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+    public boolean mouseClicked(Click click, boolean canDoubleClick) {
+        double mouseX = click.x(), mouseY = click.y();
+        int button = click.button();
         for (int i = panels.size() - 1; i >= 0; i--)
             if (panels.get(i).mouseClicked(mouseX, mouseY, button)) return true;
-        return super.mouseClicked(mouseX, mouseY, button);
+        return super.mouseClicked(click, canDoubleClick);
     }
 
     @Override
-    public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
+    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+        double mouseX = click.x(), mouseY = click.y();
+        int button = click.button();
         for (CategoryPanel panel : panels)
             if (panel.mouseDragged(mouseX, mouseY, button, deltaX, deltaY)) return true;
-        return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
+        return super.mouseDragged(click, deltaX, deltaY);
     }
 
     @Override
-    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+    public boolean mouseReleased(Click click) {
+        double mouseX = click.x(), mouseY = click.y();
+        int button = click.button();
         for (CategoryPanel panel : panels) panel.mouseReleased(mouseX, mouseY, button);
-        return super.mouseReleased(mouseX, mouseY, button);
+        return super.mouseReleased(click);
     }
 
     @Override
@@ -100,17 +109,21 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+    public boolean keyPressed(KeyInput input) {
+        int keyCode = input.key(), scanCode = input.scancode(), modifiers = input.modifiers();
         for (CategoryPanel panel : panels)
             if (panel.keyPressed(keyCode, scanCode, modifiers)) return true;
-        return super.keyPressed(keyCode, scanCode, modifiers);
+        return super.keyPressed(input);
     }
 
     @Override
-    public boolean charTyped(char chr, int modifiers) {
+    public boolean charTyped(CharInput input) {
+        if (!input.isValidChar()) return super.charTyped(input);
+        char chr = (char) input.codepoint();
+        int modifiers = input.modifiers();
         for (CategoryPanel panel : panels)
             if (panel.charTyped(chr, modifiers)) return true;
-        return super.charTyped(chr, modifiers);
+        return super.charTyped(input);
     }
 
     @Override

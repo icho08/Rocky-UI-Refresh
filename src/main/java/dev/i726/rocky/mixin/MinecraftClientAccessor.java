@@ -8,15 +8,18 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 
 @Mixin(MinecraftClient.class)
 public interface MinecraftClientAccessor {
-	@Accessor
-	Mouse getMouse();
+        @Accessor
+        Mouse getMouse();
 
-	@Invoker
-	void invokeDoItemUse();
+        @Invoker
+        void invokeDoItemUse();
 
-	@Invoker
-	boolean invokeDoAttack();
+        @Invoker
+        boolean invokeDoAttack();
 
-	@Accessor("itemUseCooldown")
-	void setItemUseCooldown(int cooldown);
+        @Accessor("itemUseCooldown")
+        void setItemUseCooldown(int cooldown);
+
+        @Accessor("attackCooldown")
+        void setAttackCooldown(int cooldown);
 }

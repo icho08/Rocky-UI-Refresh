@@ -1,5 +1,5 @@
 package dev.i726.rocky.module.modules.render;
-import dev.i726.rocky.gui.Theme;
+import dev.i726.rocky.gui.GuiTheme;
 
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
@@ -25,10 +25,7 @@ public final class Chams extends Module {
     }
 
     public Color getColor() {
-        if (Theme.rainbow) {
-            return ColorUtils.getBreathingRGBColor(1, opacity.getValueInt());
-        } else {
-            return new Color(Theme.red, Theme.green, Theme.blue, opacity.getValueInt());
-        }
+        Color a = GuiTheme.accent();
+        return new Color(a.getRed(), a.getGreen(), a.getBlue(), opacity.getValueInt());
     }
 }

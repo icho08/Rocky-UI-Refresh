@@ -55,7 +55,7 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
 
     public AutoTool() {
         super(EncryptedString.of("Auto Tool"),
-                EncryptedString.of("Switches to best tool"), -1, CategoryManager.PLAYER);
+                EncryptedString.of("Switches to best tool"), -1, CategoryManager.AUTOMATION);
         addSettings(enchantPreference, silkTouchEnderChest, fortuneOres, antiBreak, breakDurability, switchBack, switchDelay);
     }
 

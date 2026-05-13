@@ -4,6 +4,7 @@ import dev.i726.rocky.gui.vape.VapeTheme;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.Rocky;
+import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 
@@ -65,17 +66,17 @@ public class Panel extends Component {
 
         double totalH = getTotalHeight();
 
-        // ── Outer 1px border around the entire panel ───────────────────────
-        context.fill((int)x - 1, (int)y - 1, (int)(x + width) + 1, (int)(y + totalH) + 1,
-                new Color(38, 38, 42, 210).getRGB());
+        // ── Outer border with rounded corners ──────────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(38, 38, 42, 210),
+                x - 1, y - 1, x + width + 1, y + totalH + 1, 4, 8);
 
-        // ── Panel body — flat black rectangle ──────────────────────────────
-        context.fill((int)x, (int)y, (int)(x + width), (int)(y + totalH),
-                new Color(11, 11, 11, 242).getRGB());
+        // ── Panel body — rounded black rectangle ───────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(11, 11, 11, 242),
+                x, y, x + width, y + totalH, 3, 8);
 
-        // ── Header — slightly lighter flat rectangle ───────────────────────
-        context.fill((int)x, (int)y, (int)(x + width), (int)(y + HEADER_H),
-                new Color(18, 18, 18, 252).getRGB());
+        // ── Header — slightly lighter rounded top ──────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(18, 18, 18, 252),
+                x, y, x + width, y + HEADER_H, 3, 3, 0, 0, 8);
 
         // Header bottom: 1px full-width cyan line
         context.fill((int)x, (int)(y + HEADER_H - 1), (int)(x + width), (int)(y + HEADER_H),
@@ -100,7 +101,7 @@ public class Panel extends Component {
                     new Color(34, 211, 238, 130).getRGB());
             context.drawText(mc.textRenderer, badge,
                     (int)x + leftPad + 3, (int)(y + (HEADER_H - 8) / 2.0),
-                    VapeTheme.ACCENT.getRGB(), false);
+                    VapeTheme.ACCENT.getRGB(), true);
             leftPad += bw + 4;
         }
 
@@ -109,7 +110,7 @@ public class Panel extends Component {
         int tw = mc.textRenderer.getWidth(title);
         context.drawText(mc.textRenderer, title,
                 (int)(x + (width - tw) / 2.0), headerMidY,
-                VapeTheme.TEXT.getRGB(), false);
+                VapeTheme.TEXT.getRGB(), true);
 
         // ── Collapse indicator — top right ──────────────────────────────────
         String arrow = expanded ? "-" : "+";

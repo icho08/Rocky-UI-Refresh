@@ -52,7 +52,7 @@ public class SliderSetting extends SettingComponent<NumberSetting> {
                 VapeTheme.TEXT_MUTED.getRGB(), false);
 
         // ── Value — right-aligned ─────────────────────────────────────────
-        String val = formatValue(setting.getValue(), setting.getStep());
+        String val = formatValue(setting.getValue(), setting.getIncrement());
         int valW = mc.textRenderer.getWidth(val);
         context.drawText(mc.textRenderer, val,
                 (int)(x + width - valW - 6), (int)(y + 3),

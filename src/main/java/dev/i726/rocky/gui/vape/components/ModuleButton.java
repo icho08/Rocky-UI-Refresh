@@ -33,7 +33,7 @@ public class ModuleButton extends Component {
         this.switchAnim = module.isEnabled() ? 1f : 0f;
 
         // Always add keybind row first
-        settingComponents.add(new KeybindSetting(module, x, 0, width, 20));
+        settingComponents.add(new dev.i726.rocky.gui.vape.components.settings.KeybindSetting(module, x, 0, width, 20));
 
         for (Setting<?> s : module.getSettings()) {
             if      (s instanceof BooleanSetting) settingComponents.add(new CheckboxSetting((BooleanSetting) s, x, 0, width, 20));
@@ -88,12 +88,15 @@ public class ModuleButton extends Component {
         int textLeft  = enabled ? (int)(x + 9) : (int)(x + 5);
         int nameMaxW  = (int)(width - textLeft - SW_W - 12);
         String name   = module.getName().toString();
-        if (mc.textRenderer.getWidth(name) > nameMaxW)
-            name = mc.textRenderer.trimToWidth(name, nameMaxW - 3) + "..";
+        
+        // Only trim if name is actually too wide
+        if (!name.isEmpty() && mc.textRenderer.getWidth(name) > nameMaxW && nameMaxW > 10) {
+            name = mc.textRenderer.trimToWidth(name, nameMaxW - 10) + "..";
+        }
 
         int nameColor = enabled ? VapeTheme.ACCENT.getRGB() : new Color(185, 185, 185).getRGB();
         context.drawText(mc.textRenderer, name,
-                textLeft, (int)(y + (ROW_H - 8) / 2.0), nameColor, false);
+                textLeft, (int)(y + (ROW_H - 8) / 2.0), nameColor, true);
 
         // ── Toggle switch drawn purely with context.fill() (no rounded quad) ─
         drawToggle(context, (int)(x + width - SW_W - 5), (int)(y + (ROW_H - SW_H) / 2), enabled);
@@ -160,7 +163,7 @@ public class ModuleButton extends Component {
     public boolean onKey(int key) {
         if (!expanded) return false;
         for (Component s : settingComponents) {
-            if (s instanceof KeybindSetting         && ((KeybindSetting)s).onKey(key))         return true;
+            if (s instanceof dev.i726.rocky.gui.vape.components.settings.KeybindSetting         && ((dev.i726.rocky.gui.vape.components.settings.KeybindSetting)s).onKey(key))         return true;
             if (s instanceof StringSettingComponent && ((StringSettingComponent)s).onKey(key)) return true;
         }
         return false;

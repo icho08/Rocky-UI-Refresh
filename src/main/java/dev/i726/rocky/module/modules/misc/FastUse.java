@@ -48,7 +48,7 @@ public final class FastUse extends Module {
 
     public FastUse() {
         super(EncryptedString.of("Fast Use"),
-                EncryptedString.of("Use items faster"), -1, CategoryManager.PLAYER);
+                EncryptedString.of("Use items faster"), -1, CategoryManager.AUTOMATION);
         addSettings(mode, cooldown, jitter, failChance, respectBuilding);
     }
 

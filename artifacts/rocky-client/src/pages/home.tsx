@@ -141,14 +141,15 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: () => void 
   return (
     <button
       onClick={(e) => { e.stopPropagation(); onChange(); }}
-      className="relative flex-shrink-0 focus:outline-none transition-all duration-200"
+      className="relative flex-shrink-0 focus:outline-none"
       style={{
         width: 28,
         height: 12,
-        background: enabled ? "rgba(34,211,238,0.22)" : "rgba(30,30,33,0.95)",
-        border: `1px solid ${enabled ? "rgba(34,211,238,0.7)" : "rgba(95,95,102,0.9)"}`,
-        boxShadow: enabled ? "0 0 6px rgba(34,211,238,0.25)" : "none",
-        borderRadius: "2px",
+        background: enabled ? "rgba(34,211,238,0.35)" : "rgba(50,50,55,0.9)",
+        border: `1px solid ${enabled ? "rgba(34,211,238,0.65)" : "rgba(80,80,88,0.8)"}`,
+        boxShadow: enabled ? "0 0 8px rgba(34,211,238,0.3), inset 0 0 6px rgba(34,211,238,0.1)" : "none",
+        borderRadius: 6,
+        transition: "background 0.18s, border-color 0.18s, box-shadow 0.18s",
       }}
     >
       <motion.div
@@ -156,12 +157,12 @@ function Toggle({ enabled, onChange }: { enabled: boolean; onChange: () => void 
         style={{
           width: 8,
           height: 8,
-          borderRadius: "1px",
-          background: enabled ? "rgba(255,255,255,0.96)" : "rgba(155,155,162,0.95)",
-          boxShadow: enabled ? "0 0 4px rgba(34,211,238,0.8)" : "none",
+          borderRadius: "50%",
+          background: enabled ? "#ffffff" : "rgba(180,185,195,0.9)",
+          boxShadow: enabled ? "0 0 5px rgba(34,211,238,0.9), 0 1px 3px rgba(0,0,0,0.4)" : "0 1px 3px rgba(0,0,0,0.4)",
         }}
         animate={{ left: enabled ? "calc(100% - 10px)" : "2px" }}
-        transition={{ type: "spring", stiffness: 600, damping: 35 }}
+        transition={{ type: "spring", stiffness: 700, damping: 38 }}
       />
     </button>
   );
@@ -228,49 +229,60 @@ function DraggablePanel({
       style={{ left: position.x, top: position.y, zIndex, width: 168 }}
       onMouseDown={() => onFocus(category.name)}
     >
-      {/* Panel */}
+      {/* Panel with neon glow when active */}
       <div
         className="overflow-hidden"
         style={{
-          background: "rgba(10,10,10,0.98)",
-          border: "1px solid rgba(58,58,64,1)",
-          boxShadow: "0 6px 32px rgba(0,0,0,0.75), 0 0 0 3px rgba(0,0,0,0.5)",
+          background: "rgba(8,8,10,0.97)",
+          border: "1px solid rgba(55,55,62,1)",
+          borderRadius: 4,
+          boxShadow: activeCount > 0
+            ? "0 4px 24px rgba(0,0,0,0.7), 0 0 0 1.5px rgba(34,211,238,0.22), 0 0 12px rgba(34,211,238,0.08)"
+            : "0 4px 20px rgba(0,0,0,0.65)",
+          transition: "box-shadow 0.2s",
         }}
       >
-        {/* Header */}
+        {/* Header with gradient */}
         <div
-          className="flex items-center gap-0 cursor-grab active:cursor-grabbing border-b border-white/[0.07]"
-          style={{ background: "rgba(255,255,255,0.03)", userSelect: "none" }}
+          className="flex items-center cursor-grab active:cursor-grabbing"
+          style={{
+            background: "linear-gradient(to bottom, rgba(28,28,32,1) 0%, rgba(16,16,18,1) 100%)",
+            borderBottom: activeCount > 0 ? "1px solid rgba(34,211,238,0.9)" : "1px solid rgba(45,45,50,1)",
+            userSelect: "none",
+            height: 26,
+          }}
           onMouseDown={handleMouseDown}
         >
+          {/* Rounded badge */}
           <div
-            className="flex items-center justify-center text-[10px] font-bold font-mono border-r border-white/[0.07] shrink-0"
+            className="flex items-center justify-center text-[9px] font-bold font-mono shrink-0 mx-1.5"
             style={{
-              width: 26,
-              height: 28,
-              color: activeCount > 0 ? "#22d3ee" : "rgba(255,255,255,0.3)",
-              background: activeCount > 0 ? "rgba(34,211,238,0.08)" : "transparent",
+              minWidth: 18,
+              height: 14,
+              paddingInline: 4,
+              borderRadius: 3,
+              color: activeCount > 0 ? "#22d3ee" : "rgba(75,75,82,1)",
+              background: activeCount > 0 ? "rgba(34,211,238,0.16)" : "rgba(255,255,255,0.04)",
+              border: `1px solid ${activeCount > 0 ? "rgba(34,211,238,0.6)" : "rgba(255,255,255,0.1)"}`,
+              boxShadow: activeCount > 0 ? "0 0 4px rgba(34,211,238,0.15)" : "none",
             }}
           >
             {activeCount}
           </div>
 
           <span
-            className="flex-1 text-[10px] font-mono tracking-[0.15em] px-2.5 py-1.5"
-            style={{ color: "rgba(255,255,255,0.65)", letterSpacing: "0.12em" }}
+            className="flex-1 text-[10px] font-mono tracking-[0.12em]"
+            style={{ color: activeCount > 0 ? "rgba(220,220,225,1)" : "rgba(140,140,148,1)" }}
           >
             {category.name}
           </span>
 
-          <div className="flex items-center">
-            <button
-              className="flex items-center justify-center hover:bg-white/5 transition-colors"
-              style={{ width: 26, height: 28 }}
-              onClick={() => setMinimized(v => !v)}
-            >
-              <Minus className="w-3 h-3" style={{ color: "rgba(255,255,255,0.25)" }} />
-            </button>
-          </div>
+          <button
+            className="flex items-center justify-center mr-1.5 hover:opacity-70 transition-opacity"
+            onClick={() => setMinimized(v => !v)}
+          >
+            <Minus className="w-2.5 h-2.5" style={{ color: "rgba(34,211,238,0.5)" }} />
+          </button>
         </div>
 
         {/* Module list */}
@@ -280,50 +292,49 @@ function DraggablePanel({
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.15 }}
+              transition={{ duration: 0.13 }}
               style={{ overflow: "hidden" }}
             >
               {visibleModules.map((module) => (
                 <div
                   key={module.id}
-                  className="flex items-center justify-between group cursor-pointer relative overflow-hidden"
+                  className="flex items-center justify-between cursor-pointer relative overflow-hidden"
                   style={{
-                    padding: "6px 8px 6px 0",
-                    borderBottom: "1px solid rgba(255,255,255,0.05)",
-                    background: module.enabled
-                      ? "rgba(8,22,24,0.98)"
-                      : "rgba(13,13,13,0.95)",
-                    borderLeft: module.enabled
-                      ? "4px solid rgba(34,211,238,1)"
-                      : "4px solid transparent",
+                    padding: "0 8px 0 0",
+                    height: 24,
+                    borderBottom: "1px solid rgba(255,255,255,0.055)",
+                    background: module.enabled ? "rgba(8,22,24,0.98)" : "rgba(13,13,13,0.95)",
+                    borderLeft: module.enabled ? "4px solid rgba(34,211,238,1)" : "4px solid transparent",
                     transition: "background 0.12s, border-color 0.12s",
                   }}
                   onClick={() => onToggle(category.name, module.id)}
                   onMouseEnter={e => {
-                    if (!module.enabled) {
-                      (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.04)";
-                    }
+                    if (!module.enabled)
+                      (e.currentTarget as HTMLDivElement).style.background = "rgba(255,255,255,0.05)";
                   }}
                   onMouseLeave={e => {
-                    if (!module.enabled) {
+                    if (!module.enabled)
                       (e.currentTarget as HTMLDivElement).style.background = "rgba(13,13,13,0.95)";
-                    }
                   }}
                 >
-                  {/* Gradient fade on enabled rows */}
                   {module.enabled && (
-                    <div className="absolute inset-0 pointer-events-none" style={{
-                      background: "linear-gradient(to right, rgba(34,211,238,0.12) 0%, rgba(34,211,238,0) 60%)",
-                    }} />
+                    <>
+                      <div className="absolute inset-0 pointer-events-none" style={{
+                        background: "linear-gradient(to right, rgba(34,211,238,0.13) 0%, rgba(34,211,238,0) 55%)",
+                      }} />
+                      <div className="absolute inset-y-0 left-0 pointer-events-none" style={{
+                        width: 12,
+                        background: "linear-gradient(to right, rgba(34,211,238,0.2), transparent)",
+                      }} />
+                    </>
                   )}
                   <span
-                    className="text-[11px] font-mono truncate flex-1 mr-2 relative z-10"
+                    className="text-[10.5px] font-mono truncate flex-1 mr-2 relative z-10"
                     style={{
                       paddingLeft: module.enabled ? "10px" : "8px",
                       color: module.enabled ? "#22d3ee" : "rgba(148,148,155,0.95)",
                       fontWeight: module.enabled ? 500 : 400,
-                      textShadow: module.enabled ? "0 0 10px rgba(34,211,238,0.55)" : "none",
-                      transition: "color 0.12s",
+                      textShadow: module.enabled ? "0 0 8px rgba(34,211,238,0.45)" : "none",
                     }}
                   >
                     {module.name}

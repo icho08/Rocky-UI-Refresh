@@ -65,66 +65,77 @@ public class Panel extends Component {
         layoutButtons();
 
         double totalH = getTotalHeight();
+        long active = buttons.stream().filter(b -> b.getModule().isEnabled()).count();
 
-        // ── Deep shadow behind panel (depth effect) ────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(0, 0, 0, 100),
-                x - 3, y - 3, x + width + 3, y + totalH + 3, 6, 8);
+        // ── Outer drop shadow ──────────────────────────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(0, 0, 0, 80),
+                x + 3, y + 4, x + width + 3, y + totalH + 4, 5, 6);
 
-        // ── Outer border — clearly visible ─────────────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(58, 58, 64, 255),
+        // ── Active panel: neon cyan outer glow ─────────────────────────────
+        if (active > 0) {
+            RenderUtils.renderRoundedOutline(context,
+                    new Color(34, 211, 238, 55),
+                    x - 2, y - 2, x + width + 2, y + totalH + 2,
+                    5, 5, 5, 5, 1.5, 12);
+            RenderUtils.renderRoundedOutline(context,
+                    new Color(34, 211, 238, 20),
+                    x - 4, y - 4, x + width + 4, y + totalH + 4,
+                    7, 7, 7, 7, 1.5, 12);
+        }
+
+        // ── Outer border ───────────────────────────────────────────────────
+        RenderUtils.renderRoundedQuad(context, new Color(55, 55, 62, 255),
                 x - 1, y - 1, x + width + 1, y + totalH + 1, 4, 8);
 
         // ── Panel body ─────────────────────────────────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(10, 10, 10, 252),
+        RenderUtils.renderRoundedQuad(context, new Color(8, 8, 10, 245),
                 x, y, x + width, y + totalH, 3, 8);
 
-        // ── Header — distinctly lighter than body ──────────────────────────
-        RenderUtils.renderRoundedQuad(context, new Color(22, 22, 24, 255),
-                x, y, x + width, y + HEADER_H, 3, 3, 0, 0, 8);
+        // ── Header — gradient from lighter top to darker bottom ────────────
+        context.fillGradient((int)x, (int)y, (int)(x + width), (int)(y + HEADER_H),
+                new Color(28, 28, 32, 255).getRGB(), new Color(16, 16, 18, 255).getRGB());
 
-        // Header bottom: 1px full-width cyan line
+        // Header bottom: 1px full-width accent line
         context.fill((int)x, (int)(y + HEADER_H - 1), (int)(x + width), (int)(y + HEADER_H),
-                VapeTheme.ACCENT.getRGB());
+                active > 0 ? VapeTheme.ACCENT.getRGB() : new Color(45, 45, 50, 255).getRGB());
 
         MinecraftClient mc = MinecraftClient.getInstance();
         int headerMidY = (int)(y + (HEADER_H - 8) / 2.0);
 
-        // ── Active module count badge — top-left of header ─────────────────
-        long active = buttons.stream().filter(b -> b.getModule().isEnabled()).count();
+        // ── Active module count badge — top-left of header (rounded pill) ──
         int leftPad = 5;
         {
             String badge = String.valueOf(active);
-            int bw = mc.textRenderer.getWidth(badge) + 8;
-            int bTop    = (int)(y + (HEADER_H - 13) / 2.0);
-            int bBottom = bTop + 13;
-            // Badge fill — cyan tint only when active, dark when zero
-            context.fill((int)x + leftPad, bTop, (int)x + leftPad + bw, bBottom,
-                    active > 0 ? new Color(34, 211, 238, 35).getRGB() : new Color(255, 255, 255, 6).getRGB());
-            // Badge border — all 4 sides
-            int badgeBorder = active > 0 ? new Color(34, 211, 238, 150).getRGB() : new Color(255, 255, 255, 20).getRGB();
-            context.fill((int)x + leftPad, bTop, (int)x + leftPad + bw, bTop + 1, badgeBorder);          // top
-            context.fill((int)x + leftPad, bBottom - 1, (int)x + leftPad + bw, bBottom, badgeBorder);    // bottom
-            context.fill((int)x + leftPad, bTop, (int)x + leftPad + 1, bBottom, badgeBorder);            // left
-            context.fill((int)x + leftPad + bw - 1, bTop, (int)x + leftPad + bw, bBottom, badgeBorder); // right
-            int badgeTextColor = active > 0 ? VapeTheme.ACCENT.getRGB() : new Color(80, 80, 85).getRGB();
+            int bw = mc.textRenderer.getWidth(badge) + 10;
+            int bTop    = (int)(y + (HEADER_H - 14) / 2.0);
+            int bBottom = bTop + 14;
+            // Rounded badge
+            RenderUtils.renderRoundedQuad(context,
+                    active > 0 ? new Color(34, 211, 238, 40) : new Color(255, 255, 255, 8),
+                    x + leftPad, bTop, x + leftPad + bw, bBottom, 3, 8);
+            RenderUtils.renderRoundedOutline(context,
+                    active > 0 ? new Color(34, 211, 238, 160) : new Color(255, 255, 255, 22),
+                    x + leftPad, bTop, x + leftPad + bw, bBottom, 3, 3, 3, 3, 1, 8);
+            int badgeTextColor = active > 0 ? VapeTheme.ACCENT.getRGB() : new Color(75, 75, 82).getRGB();
             context.drawText(mc.textRenderer, badge,
-                    (int)x + leftPad + 4, (int)(y + (HEADER_H - 8) / 2.0),
+                    (int)x + leftPad + 5, (int)(y + (HEADER_H - 8) / 2.0),
                     badgeTextColor, false);
             leftPad += bw + 4;
         }
 
-        // ── Category name — centered in remaining space ─────────────────────
+        // ── Category name — centered ────────────────────────────────────────
         String title = category.getName().toUpperCase();
         int tw = mc.textRenderer.getWidth(title);
         context.drawText(mc.textRenderer, title,
                 (int)(x + (width - tw) / 2.0), headerMidY,
-                VapeTheme.TEXT_DIM.getRGB(), false);
+                active > 0 ? new Color(220, 220, 225).getRGB() : VapeTheme.TEXT_DIM.getRGB(),
+                false);
 
         // ── Collapse indicator — top right ──────────────────────────────────
-        String arrow = expanded ? "-" : "+";
+        String arrow = expanded ? "−" : "+";
         int arrowW = mc.textRenderer.getWidth(arrow);
         context.drawText(mc.textRenderer, arrow,
-                (int)(x + width - arrowW - 5), headerMidY,
+                (int)(x + width - arrowW - 6), headerMidY,
                 VapeTheme.ACCENT_DIM.getRGB(), false);
 
         // ── Module rows ─────────────────────────────────────────────────────

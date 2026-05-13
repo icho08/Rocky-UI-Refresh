@@ -103,8 +103,10 @@ public class ModuleButton extends Component {
         context.drawText(mc.textRenderer, name,
                 textLeft, (int)(y + (ROW_H - 8) / 2.0), nameColor, enabled);
 
-        // ── Toggle switch drawn purely with context.fill() (no rounded quad) ─
-        drawToggle(context, (int)(x + width - SW_W - 5), (int)(y + (ROW_H - SW_H) / 2), enabled);
+        // ── Toggle switch — rounded pill using RenderUtils ──────────────────
+        RenderUtils.renderSwitch(context, enabled, switchAnim,
+                x + width - SW_W - 5, y + (ROW_H - SW_H) / 2.0,
+                SW_W, SW_H, VapeTheme.ACCENT);
 
         // ── Settings rows (expanded with right-click) ───────────────────────
         if (expanded) {
@@ -116,36 +118,6 @@ public class ModuleButton extends Component {
                 sy += s.height;
             }
         }
-    }
-
-    /**
-     * Flat rectangle toggle switch — no rounded quads, pure fill calls.
-     * Track: full rectangle. Thumb: sliding inner rectangle.
-     */
-    private void drawToggle(DrawContext ctx, int tx, int ty, boolean enabled) {
-        // Track background
-        int trackColor = enabled
-                ? new Color(34, 211, 238, 55).getRGB()
-                : new Color(30, 30, 33, 230).getRGB();
-        ctx.fill(tx, ty, tx + SW_W, ty + SW_H, trackColor);
-
-        // Track border (1px top/bottom/left/right)
-        int borderColor = enabled
-                ? new Color(34, 211, 238, 175).getRGB()
-                : new Color(95, 95, 102, 220).getRGB();
-        ctx.fill(tx,             ty,              tx + SW_W,         ty + 1,      borderColor);  // top
-        ctx.fill(tx,             ty + SW_H - 1,   tx + SW_W,         ty + SW_H,   borderColor);  // bottom
-        ctx.fill(tx,             ty,              tx + 1,             ty + SW_H,   borderColor);  // left
-        ctx.fill(tx + SW_W - 1, ty,              tx + SW_W,          ty + SW_H,   borderColor);  // right
-
-        // Thumb — slides from left (off) to right (on)
-        int thumbW = SW_H - 4; // square thumb
-        float thumbOffset = switchAnim * (SW_W - thumbW - 4);
-        int thumX  = tx + 2 + (int)thumbOffset;
-        int thumbColor = enabled
-                ? new Color(255, 255, 255, 245).getRGB()
-                : new Color(155, 155, 162, 240).getRGB();
-        ctx.fill(thumX, ty + 2, thumX + thumbW, ty + SW_H - 2, thumbColor);
     }
 
     @Override

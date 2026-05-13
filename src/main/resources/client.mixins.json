@@ -5,6 +5,7 @@
   "refmap": "rocky-refmap.json",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "FabricLoaderMixin",
     "ClientConnectionMixin",
     "EndCrystalItemMixin",
     "HandshakeC2SPacketMixin",

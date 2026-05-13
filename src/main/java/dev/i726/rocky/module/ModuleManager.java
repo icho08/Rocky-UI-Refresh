@@ -10,6 +10,7 @@ import dev.i726.rocky.module.modules.misc.*;
 import dev.i726.rocky.module.modules.movement.*;
 import dev.i726.rocky.module.modules.render.*;
 import dev.i726.rocky.module.setting.KeybindSetting;
+import dev.i726.rocky.module.setting.Setting;
 import dev.i726.rocky.utils.EncryptedString;
 
 import org.lwjgl.glfw.GLFW;
@@ -133,16 +134,25 @@ public final class ModuleManager implements ButtonListener {
                 modules.add(module);
         }
 
+        private int getActiveKey(Module module) {
+                for (Setting<?> s : module.getSettings()) {
+                        if (s instanceof KeybindSetting kb && kb.isModuleKey()) {
+                                return kb.getKey();
+                        }
+                }
+                return module.getKey();
+        }
+
         @Override
         public void onButtonPress(ButtonEvent event) {
-                
-                if(!SelfDestruct.destruct) {
-                        modules.forEach(module -> {
-                                if(module.getKey() == event.button && event.action == GLFW.GLFW_PRESS) {
-                                        System.out.println("[Rocky] Toggling module: " + module.getName() + " (key=" + module.getKey() + ")");
-                                        module.toggle();
-                                }
-                        });
-                }
+                if (event.action != GLFW.GLFW_PRESS) return;
+                if (SelfDestruct.destruct) return;
+
+                modules.forEach(module -> {
+                        int key = getActiveKey(module);
+                        if (key != -1 && key == event.button) {
+                                module.toggle();
+                        }
+                });
         }
 }

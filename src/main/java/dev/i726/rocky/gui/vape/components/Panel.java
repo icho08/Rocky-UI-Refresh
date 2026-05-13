@@ -65,48 +65,57 @@ public class Panel extends Component {
 
         double totalH = getTotalHeight();
 
-        // ── Outer border — 1px around entire panel ─────────────────────────
-        int borderColor = new Color(40, 40, 42, 200).getRGB();
-        context.fill((int)x - 1, (int)y - 1, (int)(x + width) + 1, (int)(y + totalH) + 1, borderColor);
+        // ── Outer 1px border around the entire panel ───────────────────────
+        context.fill((int)x - 1, (int)y - 1, (int)(x + width) + 1, (int)(y + totalH) + 1,
+                new Color(38, 38, 42, 210).getRGB());
 
-        // ── Panel body background ───────────────────────────────────────────
+        // ── Panel body — flat black rectangle ──────────────────────────────
         context.fill((int)x, (int)y, (int)(x + width), (int)(y + totalH),
-                new Color(10, 10, 10, 235).getRGB());
+                new Color(11, 11, 11, 242).getRGB());
 
-        // ── Header — flat dark rectangle ───────────────────────────────────
+        // ── Header — slightly lighter flat rectangle ───────────────────────
         context.fill((int)x, (int)y, (int)(x + width), (int)(y + HEADER_H),
-                new Color(16, 16, 16, 245).getRGB());
+                new Color(18, 18, 18, 252).getRGB());
 
-        // Cyan bottom edge of header (1px)
+        // Header bottom: 1px full-width cyan line
         context.fill((int)x, (int)(y + HEADER_H - 1), (int)(x + width), (int)(y + HEADER_H),
                 VapeTheme.ACCENT.getRGB());
 
         MinecraftClient mc = MinecraftClient.getInstance();
+        int headerMidY = (int)(y + (HEADER_H - 8) / 2.0);
 
-        // ── Active badge — left of header ──────────────────────────────────
+        // ── Active module count badge — top-left of header ─────────────────
         long active = buttons.stream().filter(b -> b.getModule().isEnabled()).count();
-        int headerTextY = (int)(y + (HEADER_H - 8) / 2.0);
-
+        int leftPad = 5;
         if (active > 0) {
             String badge = String.valueOf(active);
             int bw = mc.textRenderer.getWidth(badge) + 6;
-            int bx = (int)(x + 4);
-            int by = (int)(y + (HEADER_H - 10) / 2.0);
-            context.fill(bx, by, bx + bw, by + 10, new Color(34, 211, 238, 30).getRGB());
-            context.fill(bx, by, bx + bw, by + 1, VapeTheme.ACCENT.getRGB());
-            context.drawText(mc.textRenderer, badge, bx + 3, by + 1, VapeTheme.ACCENT.getRGB(), false);
+            // Flat badge box
+            context.fill((int)x + leftPad, (int)(y + (HEADER_H - 11) / 2.0),
+                    (int)x + leftPad + bw, (int)(y + (HEADER_H - 11) / 2.0) + 11,
+                    new Color(34, 211, 238, 28).getRGB());
+            // Top and bottom 1px border on badge
+            context.fill((int)x + leftPad, (int)(y + (HEADER_H - 11) / 2.0),
+                    (int)x + leftPad + bw, (int)(y + (HEADER_H - 11) / 2.0) + 1,
+                    new Color(34, 211, 238, 130).getRGB());
+            context.drawText(mc.textRenderer, badge,
+                    (int)x + leftPad + 3, (int)(y + (HEADER_H - 8) / 2.0),
+                    VapeTheme.ACCENT.getRGB(), false);
+            leftPad += bw + 4;
         }
 
-        // ── Category name centered ──────────────────────────────────────────
+        // ── Category name — centered in remaining space ─────────────────────
         String title = category.getName().toUpperCase();
         int tw = mc.textRenderer.getWidth(title);
-        context.drawText(mc.textRenderer, title, (int)(x + (width - tw) / 2.0), headerTextY,
+        context.drawText(mc.textRenderer, title,
+                (int)(x + (width - tw) / 2.0), headerMidY,
                 VapeTheme.TEXT.getRGB(), false);
 
-        // ── Collapse arrow right ────────────────────────────────────────────
-        String arrow = expanded ? "v" : ">";
+        // ── Collapse indicator — top right ──────────────────────────────────
+        String arrow = expanded ? "-" : "+";
+        int arrowW = mc.textRenderer.getWidth(arrow);
         context.drawText(mc.textRenderer, arrow,
-                (int)(x + width - mc.textRenderer.getWidth(arrow) - 5), headerTextY,
+                (int)(x + width - arrowW - 5), headerMidY,
                 VapeTheme.ACCENT_DIM.getRGB(), false);
 
         // ── Module rows ─────────────────────────────────────────────────────
@@ -123,13 +132,15 @@ public class Panel extends Component {
             else if (button == 1) { expanded = !expanded; }
             return;
         }
-        if (expanded) for (ModuleButton mb : buttons) mb.mouseClicked(mouseX, mouseY, button);
+        if (expanded)
+            for (ModuleButton mb : buttons) mb.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public void mouseReleased(double mouseX, double mouseY, int button) {
         if (button == 0) dragging = false;
-        if (expanded) for (ModuleButton mb : buttons) mb.mouseReleased(mouseX, mouseY, button);
+        if (expanded)
+            for (ModuleButton mb : buttons) mb.mouseReleased(mouseX, mouseY, button);
     }
 
     public boolean isOverHeader(double mx, double my) {

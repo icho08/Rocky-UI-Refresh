@@ -14,30 +14,32 @@ import java.util.List;
 
 public class ModuleButton extends Component {
 
-    public static final int ROW_H = 22;
+    public static final int ROW_H = 21;
 
-    // Which module the mouse is over right now (reset each frame by RockyGui)
+    /** Set each frame by render(); read by RockyGui to show description strip. */
     public static Module hoveredModule = null;
 
-    private static final double SW_W = 22;
-    private static final double SW_H = 10;
+    private static final int SW_W = 24;  // toggle track width
+    private static final int SW_H = 10;  // toggle track height
 
     private final Module module;
     private boolean expanded;
     private final List<Component> settingComponents = new ArrayList<>();
-    private float switchAnim;
+    private float switchAnim; // 0.0 = off, 1.0 = on
 
     public ModuleButton(Module module, double x, double y, double width) {
         super(x, y, width, ROW_H);
-        this.module    = module;
+        this.module     = module;
         this.switchAnim = module.isEnabled() ? 1f : 0f;
 
+        // Always add keybind row first
         settingComponents.add(new KeybindSetting(module, x, 0, width, 20));
+
         for (Setting<?> s : module.getSettings()) {
-            if      (s instanceof BooleanSetting)  settingComponents.add(new CheckboxSetting((BooleanSetting) s, x, 0, width, 20));
-            else if (s instanceof NumberSetting)   settingComponents.add(new SliderSetting((NumberSetting) s, x, 0, width, 28));
-            else if (s instanceof ModeSetting)     settingComponents.add(new ModeSettingComponent((ModeSetting<?>) s, x, 0, width, 20));
-            else if (s instanceof MinMaxSetting)   settingComponents.add(new MinMaxSettingComponent((MinMaxSetting) s, x, 0, width, 28));
+            if      (s instanceof BooleanSetting) settingComponents.add(new CheckboxSetting((BooleanSetting) s, x, 0, width, 20));
+            else if (s instanceof NumberSetting)  settingComponents.add(new SliderSetting((NumberSetting) s, x, 0, width, 26));
+            else if (s instanceof ModeSetting)    settingComponents.add(new ModeSettingComponent((ModeSetting<?>) s, x, 0, width, 20));
+            else if (s instanceof MinMaxSetting)  settingComponents.add(new MinMaxSettingComponent((MinMaxSetting) s, x, 0, width, 26));
             else if (s instanceof dev.i726.rocky.module.setting.StringSetting)
                 settingComponents.add(new StringSettingComponent((dev.i726.rocky.module.setting.StringSetting) s, x, 0, width, 20));
         }
@@ -45,66 +47,60 @@ public class ModuleButton extends Component {
 
     @Override
     public void render(DrawContext context, int mouseX, int mouseY, float delta) {
-        // Smooth toggle animation
-        float target  = module.isEnabled() ? 1f : 0f;
-        float diff    = target - switchAnim;
-        switchAnim   += Math.signum(diff) * Math.min(Math.abs(diff), (float)(RenderUtils.deltaTime() * 14f));
-
-        boolean hovered = isHovered(mouseX, mouseY);
         boolean enabled = module.isEnabled();
+        boolean hovered = isHovered(mouseX, mouseY);
+
+        // Animate switch
+        float target  = enabled ? 1f : 0f;
+        float diff    = target - switchAnim;
+        switchAnim   += Math.signum(diff) * Math.min(Math.abs(diff), (float)(RenderUtils.deltaTime() * 12f));
 
         if (hovered) hoveredModule = module;
 
-        // ── Row background — flat rectangle ────────────────────────────────
+        // ── Row background ─────────────────────────────────────────────────
         if (enabled) {
-            // Enabled: dark cyan tint
+            // Solid slightly-cyan dark background
             context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                    new Color(10, 26, 28, 220).getRGB());
-            // Left accent bar  (solid 2px + soft 3px glow)
-            context.fill((int)x, (int)y, (int)x + 2, (int)(y + height),
-                    VapeTheme.ACCENT.getRGB());
-            context.fill((int)x + 2, (int)y, (int)x + 5, (int)(y + height),
-                    new Color(34, 211, 238, 45).getRGB());
+                    new Color(12, 28, 30, 230).getRGB());
+            // Bold left accent bar
+            context.fill((int)x, (int)y, (int)x + 3, (int)(y + height), VapeTheme.ACCENT.getRGB());
+            // Soft inner glow next to bar
+            context.fill((int)x + 3, (int)y, (int)x + 7, (int)(y + height),
+                    new Color(34, 211, 238, 35).getRGB());
+            // Right border
+            context.fill((int)(x + width - 1), (int)y, (int)(x + width), (int)(y + height),
+                    new Color(34, 211, 238, 40).getRGB());
         } else {
             context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                    new Color(14, 14, 14, 215).getRGB());
-            if (hovered) context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
-                    new Color(255, 255, 255, 8).getRGB());
+                    new Color(14, 14, 14, 225).getRGB());
+            if (hovered)
+                context.fill((int)x, (int)y, (int)(x + width), (int)(y + height),
+                        new Color(255, 255, 255, 10).getRGB());
         }
 
         // Bottom separator
         context.fill((int)x, (int)(y + height - 1), (int)(x + width), (int)(y + height),
-                new Color(255, 255, 255, 7).getRGB());
+                new Color(255, 255, 255, 8).getRGB());
 
         MinecraftClient mc = MinecraftClient.getInstance();
 
         // ── Module name ─────────────────────────────────────────────────────
-        int textX   = enabled ? (int)(x + 8)  : (int)(x + 5);
-        int maxNameW = (int)(width - 10 - SW_W - 14);
-        String name = module.getName().toString();
-        if (mc.textRenderer.getWidth(name) > maxNameW)
-            name = mc.textRenderer.trimToWidth(name, maxNameW - 4) + "..";
+        int textLeft  = enabled ? (int)(x + 9) : (int)(x + 5);
+        int nameMaxW  = (int)(width - textLeft - SW_W - 12);
+        String name   = module.getName().toString();
+        if (mc.textRenderer.getWidth(name) > nameMaxW)
+            name = mc.textRenderer.trimToWidth(name, nameMaxW - 3) + "..";
 
-        int nameColor = enabled ? VapeTheme.ACCENT.getRGB() : new Color(195, 195, 195).getRGB();
-        context.drawText(mc.textRenderer, name, textX, (int)(y + (ROW_H - 8) / 2.0), nameColor, enabled);
+        int nameColor = enabled ? VapeTheme.ACCENT.getRGB() : new Color(185, 185, 185).getRGB();
+        context.drawText(mc.textRenderer, name,
+                textLeft, (int)(y + (ROW_H - 8) / 2.0), nameColor, false);
 
-        // ── Settings count badge (right of name, small) ─────────────────────
-        int nSettings = settingComponents.size() - 1; // minus keybind entry
-        if (nSettings > 0) {
-            String ct = String.valueOf(nSettings);
-            int bx = textX + mc.textRenderer.getWidth(mc.textRenderer.trimToWidth(name, maxNameW)) + 4;
-            int by = (int)(y + (ROW_H - 8) / 2.0);
-            context.drawText(mc.textRenderer, ct, bx, by, new Color(55, 55, 60).getRGB(), false);
-        }
+        // ── Toggle switch drawn purely with context.fill() (no rounded quad) ─
+        drawToggle(context, (int)(x + width - SW_W - 5), (int)(y + (ROW_H - SW_H) / 2), enabled);
 
-        // ── Toggle switch ────────────────────────────────────────────────────
-        double swX = x + width - SW_W - 5;
-        double swY = y + (ROW_H - SW_H) / 2.0;
-        RenderUtils.renderSwitch(context, enabled, switchAnim, swX, swY, SW_W, SW_H, VapeTheme.ACCENT);
-
-        // ── Settings rows (expanded) ──────────────────────────────────────────
+        // ── Settings rows (expanded with right-click) ───────────────────────
         if (expanded) {
-            double sy = y + height;
+            double sy = y + ROW_H;
             for (Component s : settingComponents) {
                 s.x = x;
                 s.y = sy;
@@ -114,6 +110,36 @@ public class ModuleButton extends Component {
         }
     }
 
+    /**
+     * Flat rectangle toggle switch — no rounded quads, pure fill calls.
+     * Track: full rectangle. Thumb: sliding inner rectangle.
+     */
+    private void drawToggle(DrawContext ctx, int tx, int ty, boolean enabled) {
+        // Track background
+        int trackColor = enabled
+                ? new Color(34, 211, 238, 80).getRGB()
+                : new Color(38, 38, 42, 220).getRGB();
+        ctx.fill(tx, ty, tx + SW_W, ty + SW_H, trackColor);
+
+        // Track border (1px top/bottom/left/right)
+        int borderColor = enabled
+                ? new Color(34, 211, 238, 160).getRGB()
+                : new Color(65, 65, 70, 220).getRGB();
+        ctx.fill(tx,             ty,              tx + SW_W,         ty + 1,      borderColor);  // top
+        ctx.fill(tx,             ty + SW_H - 1,   tx + SW_W,         ty + SW_H,   borderColor);  // bottom
+        ctx.fill(tx,             ty,              tx + 1,             ty + SW_H,   borderColor);  // left
+        ctx.fill(tx + SW_W - 1, ty,              tx + SW_W,          ty + SW_H,   borderColor);  // right
+
+        // Thumb — slides from left (off) to right (on)
+        int thumbW = SW_H - 4; // square thumb
+        float thumbOffset = switchAnim * (SW_W - thumbW - 4);
+        int thumX  = tx + 2 + (int)thumbOffset;
+        int thumbColor = enabled
+                ? new Color(255, 255, 255, 240).getRGB()
+                : new Color(100, 100, 110, 220).getRGB();
+        ctx.fill(thumX, ty + 2, thumX + thumbW, ty + SW_H - 2, thumbColor);
+    }
+
     @Override
     public void mouseClicked(double mouseX, double mouseY, int button) {
         if (isHovered((int)mouseX, (int)mouseY)) {
@@ -121,26 +147,26 @@ public class ModuleButton extends Component {
             else if (button == 1 && settingComponents.size() > 1) expanded = !expanded;
             return;
         }
-        if (expanded) for (Component s : settingComponents) s.mouseClicked(mouseX, mouseY, button);
+        if (expanded)
+            for (Component s : settingComponents) s.mouseClicked(mouseX, mouseY, button);
     }
 
     @Override
     public void mouseReleased(double mouseX, double mouseY, int button) {
-        if (expanded) for (Component s : settingComponents) s.mouseReleased(mouseX, mouseY, button);
+        if (expanded)
+            for (Component s : settingComponents) s.mouseReleased(mouseX, mouseY, button);
     }
 
     public boolean onKey(int key) {
-        if (expanded) {
-            for (Component s : settingComponents) {
-                if (s instanceof KeybindSetting         && ((KeybindSetting) s).onKey(key))         return true;
-                if (s instanceof StringSettingComponent && ((StringSettingComponent) s).onKey(key)) return true;
-            }
+        if (!expanded) return false;
+        for (Component s : settingComponents) {
+            if (s instanceof KeybindSetting         && ((KeybindSetting)s).onKey(key))         return true;
+            if (s instanceof StringSettingComponent && ((StringSettingComponent)s).onKey(key)) return true;
         }
         return false;
     }
 
-    public Module  getModule()     { return module; }
-    public boolean isExpanded()    { return expanded; }
+    public Module  getModule()  { return module; }
 
     public double getFullHeight() {
         if (!expanded) return height;

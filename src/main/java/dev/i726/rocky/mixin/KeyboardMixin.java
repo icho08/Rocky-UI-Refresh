@@ -4,6 +4,7 @@ import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.ButtonListener;
 import net.minecraft.client.Keyboard;
 import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.input.KeyInput;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -18,7 +19,9 @@ public class KeyboardMixin {
         private MinecraftClient client;
 
         @Inject(method = "onKey", at = @At("HEAD"))
-        private void onPress(long window, int key, int scancode, int action, int modifiers, CallbackInfo ci) {
+        private void onPress(long window, int scancode, KeyInput input, CallbackInfo ci) {
+                int key = input.key();
+                int action = 1;
                 EventManager.fire(new ButtonListener.ButtonEvent(key, window, action));
         }
 }

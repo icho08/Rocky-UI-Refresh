@@ -175,14 +175,34 @@ public final class RenderUtils {
                 Matrix4f matrix = matrices.peek().getPositionMatrix();
                 VertexConsumer buffer = mc.getBufferBuilders().getEntityVertexConsumers().getBuffer(RenderLayer.getLines());
                 Vec3d cam = getCameraPos();
-                
+
                 float r = color.getRed() / 255f;
                 float g = color.getGreen() / 255f;
                 float b = color.getBlue() / 255f;
                 float a = color.getAlpha() / 255f;
-                
-                buffer.vertex(matrix, (float)(start.x - cam.x), (float)(start.y - cam.y), (float)(start.z - cam.z)).color(r, g, b, a).normal(matrices.peek(), 0, 1, 0);
-                buffer.vertex(matrix, (float)(end.x - cam.x), (float)(end.y - cam.y), (float)(end.z - cam.z)).color(r, g, b, a).normal(matrices.peek(), 0, 1, 0);
+
+                float sx = (float)(start.x - cam.x);
+                float sy = (float)(start.y - cam.y);
+                float sz = (float)(start.z - cam.z);
+                float ex = (float)(end.x - cam.x);
+                float ey = (float)(end.y - cam.y);
+                float ez = (float)(end.z - cam.z);
+
+                // Compute line direction, then cross with world-up to get a proper
+                // screen-space normal. Fall back to world-right if the line is vertical.
+                float dx = ex - sx, dy = ey - sy, dz = ez - sz;
+                float len = (float) Math.sqrt(dx*dx + dy*dy + dz*dz);
+                if (len < 1e-6f) return;
+                dx /= len; dy /= len; dz /= len;
+
+                // cross(dir, up=(0,1,0)) = (dz, 0, -dx)
+                float nx = dz, ny = 0f, nz = -dx;
+                float nLen = (float) Math.sqrt(nx*nx + nz*nz);
+                if (nLen < 1e-6f) { nx = 1f; ny = 0f; nz = 0f; } // line is vertical, use right
+                else { nx /= nLen; nz /= nLen; }
+
+                buffer.vertex(matrix, sx, sy, sz).color(r, g, b, a).normal(matrices.peek(), nx, ny, nz);
+                buffer.vertex(matrix, ex, ey, ez).color(r, g, b, a).normal(matrices.peek(), nx, ny, nz);
         }
 
         public static void renderFilledBox(MatrixStack matrices, double x1, double y1, double z1, double x2, double y2, double z2, Color color) {

@@ -53,7 +53,7 @@ public final class ShowHealth extends Module implements GameRenderListener {
             float health = player.getHealth() + player.getAbsorptionAmount();
             String healthText = String.format("%.1f", health);
             
-            int color = health > 15 ? 0x22C55E : health > 10 ? 0xFBBF24 : 0xEF4444;
+            int color = health > 15 ? 0xFF22C55E : health > 10 ? 0xFFFBBF24 : 0xFFEF4444;
 
             matrices.push();
             

@@ -29,11 +29,14 @@ public final class Velocity extends Module implements TickListener {
     @Override
     public void onEnable() {
         eventManager.add(TickListener.class, this);
+        hitTicks = 0;
+        super.onEnable();
     }
 
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
+        super.onDisable();
     }
 
     @Override

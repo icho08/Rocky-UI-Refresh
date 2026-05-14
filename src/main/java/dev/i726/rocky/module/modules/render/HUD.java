@@ -19,7 +19,7 @@ import java.util.List;
 public final class HUD extends Module implements HudListener {
 
     private final BooleanSetting info    = new BooleanSetting(EncryptedString.of("Info"), true);
-    private final BooleanSetting modules = new BooleanSetting("Modules", true)
+    private final BooleanSetting modules = new BooleanSetting(EncryptedString.of("Modules"), true)
             .setDescription(EncryptedString.of("Renders module array list"));
 
     public HUD() {

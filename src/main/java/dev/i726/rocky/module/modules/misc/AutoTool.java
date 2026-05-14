@@ -2,7 +2,6 @@ package dev.i726.rocky.module.modules.misc;
 
 import dev.i726.rocky.event.events.BlockBreakingListener;
 import dev.i726.rocky.event.events.TickListener;
-import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
@@ -12,40 +11,48 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
 import net.minecraft.block.*;
 import net.minecraft.component.DataComponentTypes;
+import net.minecraft.enchantment.Enchantment;
+import net.minecraft.enchantment.EnchantmentHelper;
 import net.minecraft.enchantment.Enchantments;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.ShearsItem;
+import net.minecraft.registry.RegistryKey;
+import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.BlockTags;
 import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.util.math.BlockPos;
 
 public final class AutoTool extends Module implements TickListener, BlockBreakingListener {
-    public enum EnchantPreference {
-        None,
-        Fortune,
-        SilkTouch
-    }
 
-    private final ModeSetting<EnchantPreference> enchantPreference = new ModeSetting<>(EncryptedString.of("Prefer"), EnchantPreference.Fortune, EnchantPreference.class)
-            .setDescription(EncryptedString.of("Enchantment preference"));
+    public enum EnchantPreference { None, Fortune, SilkTouch }
 
-    private final BooleanSetting silkTouchEnderChest = new BooleanSetting(EncryptedString.of("Silk Touch Ender Chest"), true)
-            .setDescription(EncryptedString.of("Only mine Ender Chests with Silk Touch"));
+    private final ModeSetting<EnchantPreference> enchantPreference = new ModeSetting<>(
+            EncryptedString.of("Prefer"), EnchantPreference.Fortune, EnchantPreference.class)
+            .setDescription(EncryptedString.of("Enchantment to prefer when multiple tools match"));
 
-    private final BooleanSetting fortuneOres = new BooleanSetting(EncryptedString.of("Fortune Ores"), false)
-            .setDescription(EncryptedString.of("Only mine ores with Fortune"));
+    private final BooleanSetting silkTouchEnderChest = new BooleanSetting(
+            EncryptedString.of("Silk Touch Ender Chest"), true)
+            .setDescription(EncryptedString.of("Only mine Ender Chests with a Silk Touch tool"));
 
-    private final BooleanSetting antiBreak = new BooleanSetting(EncryptedString.of("Anti Break"), false)
-            .setDescription(EncryptedString.of("Prevents breaking tools"));
+    private final BooleanSetting fortuneOres = new BooleanSetting(
+            EncryptedString.of("Fortune Ores"), false)
+            .setDescription(EncryptedString.of("Skip ores entirely if no Fortune tool is available"));
 
-    private final NumberSetting breakDurability = new NumberSetting(EncryptedString.of("Break Percentage"), 1, 100, 10, 1)
-            .setDescription(EncryptedString.of("Durability percentage to stop using tool"));
+    private final BooleanSetting antiBreak = new BooleanSetting(
+            EncryptedString.of("Anti Break"), false)
+            .setDescription(EncryptedString.of("Stop using a tool before it breaks"));
 
-    private final BooleanSetting switchBack = new BooleanSetting(EncryptedString.of("Switch Back"), true)
-            .setDescription(EncryptedString.of("Switch back to previous item"));
+    private final NumberSetting breakDurability = new NumberSetting(
+            EncryptedString.of("Break Percentage"), 1, 100, 10, 1)
+            .setDescription(EncryptedString.of("Durability % threshold to stop using a tool"));
 
-    private final NumberSetting switchDelay = new NumberSetting(EncryptedString.of("Switch Delay"), 0, 20, 0, 1)
-            .setDescription(EncryptedString.of("Delay in ticks before switching"));
+    private final BooleanSetting switchBack = new BooleanSetting(
+            EncryptedString.of("Switch Back"), true)
+            .setDescription(EncryptedString.of("Return to the previous slot after breaking stops"));
+
+    private final NumberSetting switchDelay = new NumberSetting(
+            EncryptedString.of("Switch Delay"), 0, 20, 0, 1)
+            .setDescription(EncryptedString.of("Ticks to wait before switching tool"));
 
     private boolean wasPressed;
     private boolean shouldSwitch;
@@ -55,7 +62,8 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
 
     public AutoTool() {
         super(EncryptedString.of("Auto Tool"),
-                EncryptedString.of("Switches to best tool"), -1, CategoryManager.AUTOMATION);
+                EncryptedString.of("Switches to the best tool for the block being mined"),
+                -1, CategoryManager.AUTOMATION);
         addSettings(enchantPreference, silkTouchEnderChest, fortuneOres, antiBreak, breakDurability, switchBack, switchDelay);
     }
 
@@ -63,16 +71,24 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
     public void onEnable() {
         eventManager.add(TickListener.class, this);
         eventManager.add(BlockBreakingListener.class, this);
+        wasPressed = false;
+        shouldSwitch = false;
+        ticks = 0;
+        previousSlot = -1;
+        super.onEnable();
     }
 
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
         eventManager.remove(BlockBreakingListener.class, this);
+        super.onDisable();
     }
 
     @Override
     public void onTick() {
+        if (mc.player == null) return;
+
         if (switchBack.getValue() && !mc.options.attackKey.isPressed() && wasPressed && previousSlot != -1) {
             InventoryUtils.swapToSlot(previousSlot);
             previousSlot = -1;
@@ -93,14 +109,14 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
 
     @Override
     public void onBlockBreaking(BlockBreakingListener.BlockBreakingEvent event) {
+        if (mc.player == null || mc.world == null) return;
         if (mc.player.isCreative()) return;
-        
-        // Only switch when actually breaking blocks (attack key pressed)
         if (!mc.options.attackKey.isPressed()) return;
 
-        BlockPos pos = mc.crosshairTarget != null && mc.crosshairTarget.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK 
-                ? ((net.minecraft.util.hit.BlockHitResult) mc.crosshairTarget).getBlockPos() : null;
-        
+        BlockPos pos = mc.crosshairTarget != null
+                && mc.crosshairTarget.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK
+                ? ((net.minecraft.util.hit.BlockHitResult) mc.crosshairTarget).getBlockPos()
+                : null;
         if (pos == null) return;
 
         BlockState blockState = mc.world.getBlockState(pos);
@@ -110,19 +126,18 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
         bestSlot = -1;
 
         for (int i = 0; i < 9; i++) {
-            ItemStack itemStack = mc.player.getInventory().getStack(i);
-            
-            double score = getScore(itemStack, blockState);
-            
+            ItemStack stack = mc.player.getInventory().getStack(i);
+            double score = getScore(stack, blockState);
             if (score > bestScore) {
                 bestScore = score;
                 bestSlot = i;
             }
         }
 
-        if (bestSlot != -1 && (bestScore > getScore(currentStack, blockState) || shouldStopUsing(currentStack) || !isTool(currentStack))) {
+        if (bestSlot != -1 && (bestScore > getScore(currentStack, blockState)
+                || shouldStopUsing(currentStack)
+                || !isTool(currentStack))) {
             ticks = (int) switchDelay.getValue();
-
             if (ticks == 0) {
                 if (switchBack.getValue()) previousSlot = mc.player.getInventory().getSelectedSlot();
                 InventoryUtils.swapToSlot(bestSlot);
@@ -137,62 +152,84 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
         }
     }
 
+    // ── Scoring ──────────────────────────────────────────────────────────────
 
+    private double getScore(ItemStack stack, BlockState state) {
+        if (!isTool(stack) || shouldStopUsing(stack)) return -1;
 
-    private boolean shouldStopUsing(ItemStack itemStack) {
-        return antiBreak.getValue() && 
-               (itemStack.getMaxDamage() - itemStack.getDamage()) < (itemStack.getMaxDamage() * breakDurability.getValue() / 100);
-    }
+        boolean suitable = stack.isSuitableFor(state)
+                || (stack.isIn(ItemTags.SWORDS) && isBamboo(state))
+                || (stack.getItem() instanceof ShearsItem
+                        && (state.getBlock() instanceof LeavesBlock || state.isIn(BlockTags.WOOL)));
 
-    private double getScore(ItemStack itemStack, BlockState state) {
-        if (!isTool(itemStack) || shouldStopUsing(itemStack)) return -1;
-        
-        if (!itemStack.isSuitableFor(state) &&
-            !(itemStack.isIn(ItemTags.SWORDS) && (state.getBlock() instanceof BambooBlock || state.getBlock() instanceof BambooShootBlock)) &&
-            !(itemStack.getItem() instanceof ShearsItem && (state.getBlock() instanceof LeavesBlock || state.isIn(BlockTags.WOOL))))
-            return -1;
+        if (!suitable) return -1;
 
-        // Simplified enchantment checks - just check if enchantments exist
-        if (silkTouchEnderChest.getValue() && state.getBlock() == Blocks.ENDER_CHEST) {
-            // Skip silk touch check for now
+        // Hard requirements from settings
+        if (silkTouchEnderChest.getValue() && state.getBlock() == Blocks.ENDER_CHEST
+                && enchLevel(stack, Enchantments.SILK_TOUCH) == 0) return -1;
+
+        if (fortuneOres.getValue() && isFortunable(state.getBlock())
+                && enchLevel(stack, Enchantments.FORTUNE) == 0) return -1;
+
+        double score = stack.getMiningSpeedMultiplier(state) * 1000;
+
+        // Enchantment preference bonus
+        if (enchantPreference.isMode(EnchantPreference.Fortune)) {
+            score += enchLevel(stack, Enchantments.FORTUNE) * 500;
+        } else if (enchantPreference.isMode(EnchantPreference.SilkTouch)) {
+            score += enchLevel(stack, Enchantments.SILK_TOUCH) * 500;
         }
 
-        if (fortuneOres.getValue() && isFortunable(state.getBlock())) {
-            // Skip fortune check for now
-        }
-
-        double score = itemStack.getMiningSpeedMultiplier(state) * 1000;
-        
-        // Basic enchantment scoring without registry access
-        try {
-            score += itemStack.getEnchantments().getSize() * 10; // Basic enchantment bonus
-        } catch (Exception ignored) {}
-
-        if (itemStack.isIn(ItemTags.SWORDS) && (state.getBlock() instanceof BambooBlock || state.getBlock() instanceof BambooShootBlock)) {
+        // Sword bonus for bamboo
+        if (stack.isIn(ItemTags.SWORDS) && isBamboo(state)) {
             score += 9000;
             try {
-                score += itemStack.get(DataComponentTypes.TOOL).getSpeed(state) * 1000;
+                var tool = stack.get(DataComponentTypes.TOOL);
+                if (tool != null) score += tool.getSpeed(state) * 1000;
             } catch (Exception ignored) {}
         }
 
         return score;
     }
 
-    private boolean isTool(ItemStack itemStack) {
-        return itemStack.isIn(ItemTags.AXES) || itemStack.isIn(ItemTags.HOES) || 
-               itemStack.isIn(ItemTags.PICKAXES) || itemStack.isIn(ItemTags.SHOVELS) || 
-               itemStack.getItem() instanceof ShearsItem;
+    private boolean shouldStopUsing(ItemStack stack) {
+        return antiBreak.getValue()
+                && stack.getMaxDamage() > 0
+                && (stack.getMaxDamage() - stack.getDamage()) < (stack.getMaxDamage() * breakDurability.getValue() / 100.0);
+    }
+
+    private boolean isTool(ItemStack stack) {
+        return stack.isIn(ItemTags.AXES)
+                || stack.isIn(ItemTags.HOES)
+                || stack.isIn(ItemTags.PICKAXES)
+                || stack.isIn(ItemTags.SHOVELS)
+                || stack.getItem() instanceof ShearsItem;
+    }
+
+    private boolean isBamboo(BlockState state) {
+        return state.getBlock() instanceof BambooBlock || state.getBlock() instanceof BambooShootBlock;
     }
 
     private boolean isFortunable(Block block) {
-        return block instanceof CropBlock || 
-               block == Blocks.COAL_ORE || block == Blocks.DEEPSLATE_COAL_ORE ||
-               block == Blocks.IRON_ORE || block == Blocks.DEEPSLATE_IRON_ORE ||
-               block == Blocks.GOLD_ORE || block == Blocks.DEEPSLATE_GOLD_ORE ||
-               block == Blocks.DIAMOND_ORE || block == Blocks.DEEPSLATE_DIAMOND_ORE ||
-               block == Blocks.EMERALD_ORE || block == Blocks.DEEPSLATE_EMERALD_ORE ||
-               block == Blocks.LAPIS_ORE || block == Blocks.DEEPSLATE_LAPIS_ORE ||
-               block == Blocks.REDSTONE_ORE || block == Blocks.DEEPSLATE_REDSTONE_ORE ||
-               block == Blocks.COPPER_ORE || block == Blocks.DEEPSLATE_COPPER_ORE;
+        return block instanceof CropBlock
+                || block == Blocks.COAL_ORE         || block == Blocks.DEEPSLATE_COAL_ORE
+                || block == Blocks.IRON_ORE          || block == Blocks.DEEPSLATE_IRON_ORE
+                || block == Blocks.GOLD_ORE          || block == Blocks.DEEPSLATE_GOLD_ORE
+                || block == Blocks.DIAMOND_ORE       || block == Blocks.DEEPSLATE_DIAMOND_ORE
+                || block == Blocks.EMERALD_ORE       || block == Blocks.DEEPSLATE_EMERALD_ORE
+                || block == Blocks.LAPIS_ORE         || block == Blocks.DEEPSLATE_LAPIS_ORE
+                || block == Blocks.REDSTONE_ORE      || block == Blocks.DEEPSLATE_REDSTONE_ORE
+                || block == Blocks.COPPER_ORE        || block == Blocks.DEEPSLATE_COPPER_ORE;
+    }
+
+    // ── Enchantment helpers ───────────────────────────────────────────────────
+
+    private int enchLevel(ItemStack stack, RegistryKey<Enchantment> key) {
+        if (mc.world == null) return 0;
+        return mc.world.getRegistryManager()
+                .getOrThrow(RegistryKeys.ENCHANTMENT)
+                .getOptionalEntry(key)
+                .map(e -> EnchantmentHelper.getLevel(e, stack))
+                .orElse(0);
     }
 }

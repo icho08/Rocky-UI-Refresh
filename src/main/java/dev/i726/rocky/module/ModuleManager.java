@@ -57,10 +57,12 @@ public final class ModuleManager implements ButtonListener {
                 add(new BoxIn());
                 add(new Hitboxes());
                 add(new Velocity());
+                add(new Criticals());
 
                 //Misc
                 add(new ChestStealer());
                 add(new AutoArmor());
+                add(new AutoEat());
                 add(new AntiAFK());
                 add(new AutoXP());
                 add(new NoJumpDelay());
@@ -76,6 +78,8 @@ public final class ModuleManager implements ButtonListener {
                 add(new GodBridge());
                 add(new SmartBridge());
                 add(new Scaffold());
+                add(new NoFall());
+                add(new Step());
                 add(new FastUse());
                 add(new AutoTool());
                 add(new AutoRespawn());

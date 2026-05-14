@@ -22,10 +22,8 @@ import java.util.Random;
  * Strategies used:
  * 1. Motion Noise   — sends micro-offset position packets each tick so the
  *                     movement trace is not perfectly smooth (bots are).
- * 2. Packet Jitter  — introduces a 1-3 tick random window before NoFall /
- *                     Criticals packets are sent (ground-spoof timing masks).
- * 3. Flag Detect    — watches for server velocity corrections; on detection
- *                     temporarily disables NoFall & Criticals so the server
+ * 2. Flag Detect    — watches for server velocity corrections; on detection
+ *                     temporarily suppresses NoFall & Criticals so the server
  *                     does not see suspicious packets piling up during a flag.
  */
 public final class BypassAssist extends Module implements TickListener {
@@ -44,20 +42,23 @@ public final class BypassAssist extends Module implements TickListener {
 
     private final NumberSetting flagCooldown = new NumberSetting(
             EncryptedString.of("Flag Cooldown"), 20, 200, 60, 5)
-            .setDescription(EncryptedString.of("Ticks to pause modules after a flag is detected"));
+            .setDescription(EncryptedString.of("Ticks to suppress modules after a flag is detected"));
 
-    // Noise send interval: send a jitter packet every N ticks
     private final NumberSetting noiseInterval = new NumberSetting(
             EncryptedString.of("Noise Interval"), 1, 10, 3, 1)
             .setDescription(EncryptedString.of("Ticks between motion-noise packets (lower = more frequent)"));
 
     // ── Runtime state ─────────────────────────────────────────────────────────
-    private final Random rng     = new Random();
-    private int flagTicks        = 0;
-    private int noiseTick        = 0;
-    private Vec3d prevVelocity   = null;
+    private final Random rng        = new Random();
+    private int  flagTicks          = 0;
+    private int  noiseTick          = 0;
+    private Vec3d prevVelocity      = null;
+    private double prevY            = Double.NaN;
 
-    // Modules paused on flag detection
+    // Track which modules we suppressed so we can restore them after cooldown
+    private boolean suppressedCriticals = false;
+    private boolean suppressedNoFall    = false;
+
     private Criticals criticals;
     private NoFall    noFall;
 
@@ -71,9 +72,12 @@ public final class BypassAssist extends Module implements TickListener {
     @Override
     public void onEnable() {
         eventManager.add(TickListener.class, this);
-        flagTicks     = 0;
-        noiseTick     = 0;
-        prevVelocity  = null;
+        flagTicks           = 0;
+        noiseTick           = 0;
+        prevVelocity        = null;
+        prevY               = Double.NaN;
+        suppressedCriticals = false;
+        suppressedNoFall    = false;
         cacheModules();
         super.onEnable();
     }
@@ -81,6 +85,8 @@ public final class BypassAssist extends Module implements TickListener {
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
+        // Restore any suppressed modules when we turn off
+        restoreSuppressedModules();
         super.onDisable();
     }
 
@@ -89,6 +95,8 @@ public final class BypassAssist extends Module implements TickListener {
         if (mc.player == null || mc.world == null) return;
         if (mc.getNetworkHandler() == null) return;
 
+        double currentY = mc.player.getY();
+
         // ── 1. Flag detection ─────────────────────────────────────────────────
         if (flagDetect.getValue()) {
             Vec3d vel = mc.player.getVelocity();
@@ -96,21 +104,33 @@ public final class BypassAssist extends Module implements TickListener {
                 double dh = Math.sqrt(
                         Math.pow(vel.x - prevVelocity.x, 2) +
                         Math.pow(vel.z - prevVelocity.z, 2));
-                // Large unexpected horizontal correction while airborne = flag
-                if (dh > 0.25 && !mc.player.isOnGround()) {
+
+                // Threshold raised to 0.4 to avoid triggering on normal step movement.
+                // Also skip detection if the player is stepping upward (Y increased
+                // by a step-like amount) — that is expected Step module behaviour,
+                // not a server rubber-band.
+                boolean steppingUp = !Double.isNaN(prevY) && (currentY - prevY) > 0.05 && (currentY - prevY) < 1.5;
+
+                if (dh > 0.4 && !mc.player.isOnGround() && !steppingUp) {
                     triggerFlagResponse();
                 }
             }
             prevVelocity = vel;
         }
+        prevY = currentY;
 
+        // ── Cooldown tick ─────────────────────────────────────────────────────
         if (flagTicks > 0) {
             flagTicks--;
-            return; // pause all bypass activity during cooldown
+            if (flagTicks == 0) {
+                // Cooldown expired — restore any modules we suppressed
+                restoreSuppressedModules();
+            }
+            return;
         }
 
-        // ── 2. Motion noise ───────────────────────────────────────────────────
-        if (motionNoise.getValue() && !mc.player.isOnGround() == false /* ground only */) {
+        // ── 2. Motion noise (while moving on the ground) ──────────────────────
+        if (motionNoise.getValue() && mc.player.isOnGround()) {
             noiseTick++;
             if (noiseTick >= noiseInterval.getValueInt()) {
                 noiseTick = 0;
@@ -123,21 +143,36 @@ public final class BypassAssist extends Module implements TickListener {
 
     private void triggerFlagResponse() {
         flagTicks = flagCooldown.getValueInt();
-        if (criticals != null && criticals.isEnabled()) criticals.toggle();
-        if (noFall    != null && noFall.isEnabled())    noFall.toggle();
+
+        // Suppress (not permanently toggle off) — remember state so we can restore
+        if (criticals != null && criticals.isEnabled()) {
+            criticals.toggle();
+            suppressedCriticals = true;
+        }
+        if (noFall != null && noFall.isEnabled()) {
+            noFall.toggle();
+            suppressedNoFall = true;
+        }
+    }
+
+    private void restoreSuppressedModules() {
+        if (suppressedCriticals && criticals != null && !criticals.isEnabled()) {
+            criticals.toggle();
+        }
+        suppressedCriticals = false;
+
+        if (suppressedNoFall && noFall != null && !noFall.isEnabled()) {
+            noFall.toggle();
+        }
+        suppressedNoFall = false;
     }
 
     // ── Motion noise packet ───────────────────────────────────────────────────
 
-    /**
-     * Sends a tiny position packet with imperceptible randomisation.
-     * This mimics the sub-millimetre jitter that real humans produce and
-     * breaks the perfectly-straight movement signatures that bot detectors look for.
-     */
     private void sendNoisePacket() {
         if (mc.player == null || mc.getNetworkHandler() == null) return;
-        // Only inject while walking — avoids noise during combat/elytra
-        if (mc.player.isSprinting() && mc.options.forwardKey.isPressed()) {
+        // Only inject while walking/sprinting in a straight line
+        if (mc.options.forwardKey.isPressed()) {
             double amp = noiseAmplitude();
             double nx  = (rng.nextDouble() - 0.5) * amp;
             double nz  = (rng.nextDouble() - 0.5) * amp;

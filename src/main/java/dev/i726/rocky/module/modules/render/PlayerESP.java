@@ -64,7 +64,7 @@ public final class PlayerESP extends Module implements GameRenderListener {
 
                         // Lerped position for smooth interpolation between ticks
                         Vec3d pos = player.getLerpedPos(tickDelta);
-                        Vec3d rawPos = player.getPos();
+                        Vec3d rawPos = new Vec3d(player.getX(), player.getY(), player.getZ());
                         Vec3d lerpDelta = pos.subtract(rawPos);
 
                         // Build the lerped bounding box by offsetting the server-tick box

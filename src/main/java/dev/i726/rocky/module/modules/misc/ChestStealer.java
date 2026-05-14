@@ -8,11 +8,10 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
 import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
-import net.minecraft.item.ArmorItem;
-import net.minecraft.item.AxeItem;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.item.ItemStack;
-import net.minecraft.item.MiningToolItem;
-import net.minecraft.item.SwordItem;
+import net.minecraft.registry.tag.ItemTags;
 import net.minecraft.screen.GenericContainerScreenHandler;
 import net.minecraft.screen.slot.SlotActionType;
 
@@ -57,7 +56,6 @@ public final class ChestStealer extends Module implements TickListener {
         GenericContainerScreenHandler handler = (GenericContainerScreenHandler) mc.player.currentScreenHandler;
         int containerSize = handler.getRows() * 9;
 
-        // First pass: items that already stack in the inventory
         if (stackFirst.getValue()) {
             for (int i = 0; i < containerSize; i++) {
                 ItemStack stack = handler.getSlot(i).getStack();
@@ -70,7 +68,6 @@ public final class ChestStealer extends Module implements TickListener {
             }
         }
 
-        // Second pass: take everything else
         for (int i = 0; i < containerSize; i++) {
             ItemStack stack = handler.getSlot(i).getStack();
             if (stack.isEmpty()) continue;
@@ -80,7 +77,6 @@ public final class ChestStealer extends Module implements TickListener {
             return;
         }
 
-        // All items taken
         if (closeWhenDone.getValue()) {
             mc.player.closeHandledScreen();
         }
@@ -101,9 +97,20 @@ public final class ChestStealer extends Module implements TickListener {
     }
 
     private boolean isToolOrArmor(ItemStack stack) {
-        return stack.getItem() instanceof ArmorItem
-                || stack.getItem() instanceof MiningToolItem
-                || stack.getItem() instanceof SwordItem
-                || stack.getItem() instanceof AxeItem;
+        // Armor: has EQUIPPABLE component with an armor slot
+        var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+        if (equippable != null) {
+            EquipmentSlot s = equippable.slot();
+            if (s == EquipmentSlot.HEAD || s == EquipmentSlot.CHEST
+                    || s == EquipmentSlot.LEGS || s == EquipmentSlot.FEET) {
+                return true;
+            }
+        }
+        // Tools: pickaxes, shovels, axes, hoes, swords
+        return stack.isIn(ItemTags.PICKAXES)
+                || stack.isIn(ItemTags.SHOVELS)
+                || stack.isIn(ItemTags.AXES)
+                || stack.isIn(ItemTags.HOES)
+                || stack.isIn(ItemTags.SWORDS);
     }
 }

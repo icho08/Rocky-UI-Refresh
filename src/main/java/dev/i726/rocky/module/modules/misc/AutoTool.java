@@ -228,7 +228,7 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
         if (mc.world == null) return 0;
         return mc.world.getRegistryManager()
                 .getOrThrow(RegistryKeys.ENCHANTMENT)
-                .getOptionalEntry(key)
+                .getEntry(key.getValue())
                 .map(e -> EnchantmentHelper.getLevel(e, stack))
                 .orElse(0);
     }

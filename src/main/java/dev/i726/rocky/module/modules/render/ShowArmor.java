@@ -10,7 +10,6 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 
@@ -19,8 +18,8 @@ public final class ShowArmor extends Module implements GameRenderListener {
 
     public ShowArmor() {
         super(EncryptedString.of("Armor Display"),
-                EncryptedString.of("Shows player armor"), 
-              -1, 
+                EncryptedString.of("Shows player armor durability above their head"),
+              -1,
               CategoryManager.ESP);
         addSettings(range);
     }
@@ -45,6 +44,7 @@ public final class ShowArmor extends Module implements GameRenderListener {
         Camera cam = mc.gameRenderer.getCamera();
         Vec3d camPos = cam.getPos();
         VertexConsumerProvider.Immediate vertexConsumers = mc.getBufferBuilders().getEntityVertexConsumers();
+        float tickDelta = mc.getRenderTickCounter().getTickProgress(true);
 
         for (PlayerEntity player : mc.world.getPlayers()) {
             if (player == mc.player || !player.isAlive()) continue;
@@ -53,54 +53,54 @@ public final class ShowArmor extends Module implements GameRenderListener {
             String armorInfo = getArmorInfo(player);
             if (armorInfo.isEmpty()) continue;
 
-            float tickDelta = mc.getRenderTickCounter().getTickProgress(true);
+            // getLerpedPos correctly interpolates between the previous tick position
+            // and current position for all entities (fixes "renders on ground" bug).
+            Vec3d pos = player.getLerpedPos(tickDelta);
+
+            double x = pos.x - camPos.x;
+            double y = pos.y - camPos.y + player.getHeight() + 0.8;
+            double z = pos.z - camPos.z;
 
             matrices.push();
-            
-            double x = MathHelper.lerp(tickDelta, player.lastRenderX, player.getX()) - camPos.x;
-            double y = MathHelper.lerp(tickDelta, player.lastRenderY, player.getY()) - camPos.y + player.getHeight() + 0.8;
-            double z = MathHelper.lerp(tickDelta, player.lastRenderZ, player.getZ()) - camPos.z;
-            
             matrices.translate(x, y, z);
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-cam.getYaw()));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(cam.getPitch()));
             matrices.scale(-0.025f, -0.025f, 0.025f);
 
             float textWidth = mc.textRenderer.getWidth(armorInfo);
-            mc.textRenderer.draw(armorInfo, -textWidth / 2f, 0, 0xE5E7EB, false, 
-                               matrices.peek().getPositionMatrix(), vertexConsumers, 
+            mc.textRenderer.draw(armorInfo, -textWidth / 2f, 0, 0xE5E7EB, false,
+                               matrices.peek().getPositionMatrix(), vertexConsumers,
                                net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
 
             matrices.pop();
         }
-        
+
         vertexConsumers.draw();
     }
 
     private String getArmorInfo(PlayerEntity player) {
         StringBuilder info = new StringBuilder();
+        // Armor slots in PlayerInventory: 36=boots, 37=leggings, 38=chestplate, 39=helmet
         ItemStack[] armor = {
-            player.getInventory().getStack(3 + 36), // Helmet
-            player.getInventory().getStack(2 + 36), // Chestplate
-            player.getInventory().getStack(1 + 36), // Leggings
-            player.getInventory().getStack(0 + 36)  // Boots
+            player.getInventory().getStack(39), // Helmet
+            player.getInventory().getStack(38), // Chestplate
+            player.getInventory().getStack(37), // Leggings
+            player.getInventory().getStack(36)  // Boots
         };
-        
-        String[] names = {"H", "C", "L", "B"};
-        
+        String[] labels = {"H", "C", "L", "B"};
+
         for (int i = 0; i < armor.length; i++) {
             ItemStack stack = armor[i];
             if (!stack.isEmpty()) {
                 if (info.length() > 0) info.append(" ");
                 if (stack.isDamageable()) {
                     int durability = stack.getMaxDamage() - stack.getDamage();
-                    info.append(names[i]).append(":").append(durability);
+                    info.append(labels[i]).append(":").append(durability);
                 } else {
-                    info.append(names[i]).append(":∞");
+                    info.append(labels[i]).append(":∞");
                 }
             }
         }
-        
         return info.toString();
     }
 }

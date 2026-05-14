@@ -1,5 +1,6 @@
 package dev.i726.rocky.module.modules.render;
 
+import org.lwjgl.opengl.GL11;
 import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.event.events.TickListener;
 import dev.i726.rocky.module.CategoryManager;
@@ -13,7 +14,6 @@ import net.minecraft.block.Blocks;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
-import org.lwjgl.opengl.GL11;
 
 import java.awt.Color;
 import java.util.ArrayList;
@@ -26,15 +26,15 @@ public final class OreESP extends Module implements GameRenderListener, TickList
     private final NumberSetting fillAlpha = new NumberSetting(EncryptedString.of("Fill Alpha"), 0, 200, 40, 5)
             .setDescription(EncryptedString.of("Opacity of the filled box (0 = outline only)"));
 
-    private final BooleanSetting diamonds     = new BooleanSetting(EncryptedString.of("Diamonds"), true);
-    private final BooleanSetting gold         = new BooleanSetting(EncryptedString.of("Gold"), true);
-    private final BooleanSetting iron         = new BooleanSetting(EncryptedString.of("Iron"), true);
-    private final BooleanSetting emeralds     = new BooleanSetting(EncryptedString.of("Emeralds"), false);
+    private final BooleanSetting diamonds      = new BooleanSetting(EncryptedString.of("Diamonds"), true);
+    private final BooleanSetting gold          = new BooleanSetting(EncryptedString.of("Gold"), true);
+    private final BooleanSetting iron          = new BooleanSetting(EncryptedString.of("Iron"), true);
+    private final BooleanSetting emeralds      = new BooleanSetting(EncryptedString.of("Emeralds"), false);
     private final BooleanSetting ancientDebris = new BooleanSetting(EncryptedString.of("Ancient Debris"), true);
-    private final BooleanSetting redstone     = new BooleanSetting(EncryptedString.of("Redstone"), false);
-    private final BooleanSetting lapis        = new BooleanSetting(EncryptedString.of("Lapis"), false);
-    private final BooleanSetting coal         = new BooleanSetting(EncryptedString.of("Coal"), false);
-    private final BooleanSetting copper       = new BooleanSetting(EncryptedString.of("Copper"), false);
+    private final BooleanSetting redstone      = new BooleanSetting(EncryptedString.of("Redstone"), false);
+    private final BooleanSetting lapis         = new BooleanSetting(EncryptedString.of("Lapis"), false);
+    private final BooleanSetting coal          = new BooleanSetting(EncryptedString.of("Coal"), false);
+    private final BooleanSetting copper        = new BooleanSetting(EncryptedString.of("Copper"), false);
 
     private record OreEntry(BlockPos pos, Color color) {}
 
@@ -54,7 +54,7 @@ public final class OreESP extends Module implements GameRenderListener, TickList
     public void onEnable() {
         eventManager.add(GameRenderListener.class, this);
         eventManager.add(TickListener.class, this);
-        tickCount = UPDATE_TICKS; // scan immediately on enable
+        tickCount = UPDATE_TICKS;
         super.onEnable();
     }
 
@@ -87,7 +87,6 @@ public final class OreESP extends Module implements GameRenderListener, TickList
             }
         }
 
-        // Swap to render cache (avoid concurrent modification during render)
         synchronized (renderCache) {
             renderCache.clear();
             renderCache.addAll(cache);

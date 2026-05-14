@@ -85,6 +85,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new AutoRespawn());
                 add(new DragClick());
                 add(new VersionSpoof());
+                add(new BypassAssist());
 
                 //Render
                 add(new HUD());

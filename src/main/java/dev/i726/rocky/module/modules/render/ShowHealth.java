@@ -70,7 +70,8 @@ public final class ShowHealth extends Module implements GameRenderListener {
             matrices.multiply(rotation);
 
             // Scale to world-space text size; negative Y flips the text right-side up.
-            matrices.scale(-0.025f, -0.025f, 0.025f);
+            // 0.018 keeps the label compact — same ballpark as vanilla name tags.
+            matrices.scale(-0.018f, -0.018f, 0.018f);
 
             float textWidth = mc.textRenderer.getWidth(healthText);
             mc.textRenderer.draw(healthText, -textWidth / 2f, 0, color, false,

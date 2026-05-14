@@ -70,15 +70,8 @@ public final class PlayerESP extends Module implements GameRenderListener {
                         // Build the lerped bounding box by offsetting the server-tick box
                         Box lerpedBox = player.getBoundingBox().offset(lerpDelta);
 
-                        // Subtle fill — low default opacity so players remain visible through it
-                        RenderUtils.renderFilledBox(matrices,
-                                lerpedBox.minX, lerpedBox.minY, lerpedBox.minZ,
-                                lerpedBox.maxX, lerpedBox.maxY, lerpedBox.maxZ,
-                                getColor(opacity.getValueInt()));
-
-                        // Solid outline on the lerped box
-                        RenderUtils.drawOutlinedBox(matrices, lerpedBox,
-                                getColor(Math.min(255, opacity.getValueInt() + 130)));
+                        // Outline only — no fill, so players are not obscured
+                        RenderUtils.drawOutlinedBox(matrices, lerpedBox, getColor(opacity.getValueInt()));
 
                         if (tracers.getValue()) {
                                 Vec3d target = pos.add(0, player.getHeight() / 2.0, 0);

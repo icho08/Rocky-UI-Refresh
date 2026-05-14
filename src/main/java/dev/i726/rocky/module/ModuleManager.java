@@ -59,6 +59,9 @@ public final class ModuleManager implements ButtonListener {
                 add(new Velocity());
 
                 //Misc
+                add(new ChestStealer());
+                add(new AutoArmor());
+                add(new AntiAFK());
                 add(new AutoXP());
                 add(new NoJumpDelay());
                 add(new PingSpoof());
@@ -72,6 +75,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new BridgeAssist());
                 add(new GodBridge());
                 add(new SmartBridge());
+                add(new Scaffold());
                 add(new FastUse());
                 add(new AutoTool());
                 add(new AutoRespawn());
@@ -88,6 +92,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new TargetHud());
                 add(new ShowHealth());
                 add(new ShowArmor());
+                add(new OreESP());
 
                 //Client
                 add(new ClickGUI());

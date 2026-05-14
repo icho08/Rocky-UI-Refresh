@@ -11,13 +11,14 @@ import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.opengl.GL11;
 
 import java.awt.*;
 
 public final class PlayerESP extends Module implements GameRenderListener {
-        private final NumberSetting opacity = new NumberSetting(EncryptedString.of("Opacity"), 0, 255, 100, 1);
+        private final NumberSetting opacity = new NumberSetting(EncryptedString.of("Opacity"), 0, 255, 40, 1);
         private final NumberSetting range = new NumberSetting(EncryptedString.of("Range"), 10, 500, 100, 10);
         private final BooleanSetting tracers = new BooleanSetting(EncryptedString.of("Tracers"), false)
                         .setDescription(EncryptedString.of("Draws a line from your player to the other"));
@@ -61,20 +62,23 @@ public final class PlayerESP extends Module implements GameRenderListener {
                         if (player == mc.player || player.isDead() || player.isRemoved()) continue;
                         if (mc.player.distanceTo(player) > range.getValue()) continue;
 
-                        // getLerpedPos interpolates between prevX/Y/Z and current position —
-                        // correct for all entities including newly-joined remote players.
+                        // Lerped position for smooth interpolation between ticks
                         Vec3d pos = player.getLerpedPos(tickDelta);
+                        Vec3d rawPos = player.getPos();
+                        Vec3d lerpDelta = pos.subtract(rawPos);
 
+                        // Build the lerped bounding box by offsetting the server-tick box
+                        Box lerpedBox = player.getBoundingBox().offset(lerpDelta);
+
+                        // Subtle fill — low default opacity so players remain visible through it
                         RenderUtils.renderFilledBox(matrices,
-                                pos.x - player.getWidth() / 2f,
-                                pos.y,
-                                pos.z - player.getWidth() / 2f,
-                                pos.x + player.getWidth() / 2f,
-                                pos.y + player.getHeight(),
-                                pos.z + player.getWidth() / 2f,
+                                lerpedBox.minX, lerpedBox.minY, lerpedBox.minZ,
+                                lerpedBox.maxX, lerpedBox.maxY, lerpedBox.maxZ,
                                 getColor(opacity.getValueInt()));
 
-                        RenderUtils.drawOutlinedBox(matrices, player.getBoundingBox(), getColor(Math.min(255, opacity.getValueInt() + 100)));
+                        // Solid outline on the lerped box
+                        RenderUtils.drawOutlinedBox(matrices, lerpedBox,
+                                getColor(Math.min(255, opacity.getValueInt() + 130)));
 
                         if (tracers.getValue()) {
                                 Vec3d target = pos.add(0, player.getHeight() / 2.0, 0);
@@ -82,7 +86,6 @@ public final class PlayerESP extends Module implements GameRenderListener {
                         }
                 }
 
-                mc.getBufferBuilders().getEntityVertexConsumers().draw();
                 GL11.glEnable(GL11.GL_DEPTH_TEST);
                 matrices.pop();
         }

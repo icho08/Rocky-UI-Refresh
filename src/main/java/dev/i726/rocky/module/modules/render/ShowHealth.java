@@ -9,8 +9,8 @@ import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Quaternionf;
 
 public final class ShowHealth extends Module implements GameRenderListener {
     private final NumberSetting range = new NumberSetting(EncryptedString.of("Range"), 10, 100, 50, 5);
@@ -53,19 +53,23 @@ public final class ShowHealth extends Module implements GameRenderListener {
             String healthText = String.format("%.1f", health);
             int color = health > 15 ? 0xFF22C55E : health > 10 ? 0xFFFBBF24 : 0xFFEF4444;
 
-            // getLerpedPos correctly interpolates between the previous tick position
-            // and current position for all entities (fixes "renders on ground" bug).
+            // Lerped position for smooth interpolation
             Vec3d pos = player.getLerpedPos(tickDelta);
 
-            // Offset to camera-relative space — WorldRendererMixin passes identity MatrixStack
+            // Camera-relative translation
             double x = pos.x - camPos.x;
-            double y = pos.y - camPos.y + player.getHeight() + 0.5;
+            double y = pos.y - camPos.y + player.getHeight() + 0.35;
             double z = pos.z - camPos.z;
 
             matrices.push();
             matrices.translate(x, y, z);
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-cam.getYaw()));
-            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(cam.getPitch()));
+
+            // Use the camera's own rotation quaternion — this is the correct way to
+            // make text always face the camera regardless of pitch/yaw.
+            Quaternionf rotation = new Quaternionf(cam.getRotation());
+            matrices.multiply(rotation);
+
+            // Scale to world-space text size; negative Y flips the text right-side up.
             matrices.scale(-0.025f, -0.025f, 0.025f);
 
             float textWidth = mc.textRenderer.getWidth(healthText);

@@ -77,7 +77,9 @@ public final class ProfileManager {
                                         
                                         JsonObject moduleConfig = moduleJson.getAsJsonObject();
                                         JsonElement enabledJson = moduleConfig.get("enabled");
-                                        if (enabledJson != null) module.setEnabledStatus(enabledJson.getAsBoolean());
+                                        boolean shouldEnable = enabledJson != null && enabledJson.getAsBoolean();
+                                        // Always start from a clean disabled state before applying saved config
+                                        module.setEnabledStatus(false);
 
                                         // Load category
                                         JsonElement categoryJson = moduleConfig.get("category");
@@ -114,6 +116,10 @@ public final class ProfileManager {
                                                         }
                                                 } catch (Exception e) {}
                                         }
+
+                                        // Fire onEnable AFTER all settings are loaded so the module
+                                        // starts up with the correct configuration already in place.
+                                        if (shouldEnable) module.setEnabled(true);
                                 }
                         }
 

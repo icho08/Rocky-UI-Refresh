@@ -23,14 +23,30 @@ public final class StandaloneBootstrap {
         System.out.println("------------------------------------------");
 
         try {
-            System.out.println("[+] Clearing old JAR cache...");
+            System.out.println("[+] Clearing old temp-JAR cache...");
             clearOldJars();
+
+            // Copy to a STABLE location that persists between injector runs.
+            // Users add -javaagent pointing here ONCE; it auto-updates every time
+            // they run this tool.
+            File jarFile  = new File(StandaloneBootstrap.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI());
+            File stableDir = new File(System.getProperty("user.home"), ".rocky");
+            stableDir.mkdirs();
+            File stableJar = new File(stableDir, "rocky-agent.jar");
+            Files.copy(jarFile.toPath(), stableJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("[+] Agent JAR updated: " + stableJar.getAbsolutePath());
+
+            // Also stage a temp copy for the dynamic-attach path (agentmain needs it)
+            File tempJar = new File(System.getProperty("user.home"),
+                    ".rocky-final-" + System.currentTimeMillis() + ".jar");
+            Files.copy(jarFile.toPath(), tempJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
 
             // Score and rank all candidate processes; prefer the deepest child
             List<ProcessHandle> matches = findMinecraftProcesses();
             if (matches.isEmpty()) {
                 System.err.println("[!] No running Minecraft / Lunar process found.");
-                printAgentFallback(null);
+                printAgentFallback(stableJar.getAbsolutePath());
                 return;
             }
 
@@ -51,22 +67,15 @@ public final class StandaloneBootstrap {
                 target = matches.get(scanner.nextInt() - 1);
             }
 
-            // Prepare the temp JAR
-            File jarFile = new File(StandaloneBootstrap.class.getProtectionDomain()
-                    .getCodeSource().getLocation().toURI());
-            File tempJar = new File(System.getProperty("user.home"),
-                    ".rocky-final-" + System.currentTimeMillis() + ".jar");
-            Files.copy(jarFile.toPath(), tempJar.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("[+] Temp JAR staged for attach: " + tempJar.getName());
 
-            System.out.println("[+] JAR staged: " + tempJar.getName());
-
-            // Try injection with the primary PID, and if that fails scan children
+            // Try dynamic injection; falls back to javaagent instructions if unsupported
             boolean ok = tryInjectWithFallback(target, tempJar.getAbsolutePath());
             if (ok) {
                 System.out.println("[✔] Injected successfully!");
                 System.out.println("------------------------------------------");
             } else {
-                printAgentFallback(tempJar.getAbsolutePath());
+                printAgentFallback(stableJar.getAbsolutePath());
             }
 
         } catch (Exception e) {

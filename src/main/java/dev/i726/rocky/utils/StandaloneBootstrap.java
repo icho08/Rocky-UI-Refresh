@@ -308,17 +308,41 @@ public final class StandaloneBootstrap {
      * Returns the C source for the runtime loader shim.
      * The shim is compiled with -fPIC -shared and loaded via GDB + dlopen.
      */
-    private static String buildNativeLoaderSource(String jarPath) {
-        // Escape backslashes and quotes for embedding in a C string literal
-        String escaped = jarPath.replace("\\", "\\\\").replace("\"", "\\\"");
-        return """
+    // @@JAR_PATH@@ is replaced via String.replace() so no Java format specifiers
+    // are needed — avoiding conflicts with C's own % signs inside fprintf calls.
+    private static final String NATIVE_LOADER_TEMPLATE = """
 #include <jni.h>
-#include <jvmti.h>
 #include <dlfcn.h>
 #include <stdio.h>
-#include <time.h>
+#include <string.h>
+
+/*
+ * Rocky native loader — injected via GDB + dlopen.
+ *
+ * Why URLClassLoader, not AddToBootstrapClassLoaderSearch:
+ * AgentTarget references MinecraftClient (Knot-loaded).  Bootstrap can't
+ * see Knot's classes, so loading AgentTarget from bootstrap gives
+ * ClassNotFoundException on the first MC reference.
+ *
+ * Correct hierarchy:
+ *   URLClassLoader          <-- Rocky JAR
+ *     parent: KnotClassLoader  <-- Minecraft + Fabric API
+ *       parent: bootstrap
+ *
+ * Thread.currentThread().getContextClassLoader() on a thread attached via
+ * AttachCurrentThreadAsDaemon returns the JVM system class loader, which in
+ * Fabric/Lunar IS KnotClassLoader.
+ */
 
 typedef jint (*GetJavaVMs_fn)(JavaVM**, jsize, jsize*);
+
+static int check_ex(JNIEnv *env, const char *where) {
+    if (!(*env)->ExceptionCheck(env)) return 0;
+    fprintf(stderr, "[Rocky/native] exception @ %s\\n", where);
+    (*env)->ExceptionDescribe(env);
+    (*env)->ExceptionClear(env);
+    return 1;
+}
 
 static void do_init(JavaVM *jvm) {
     JNIEnv *env = NULL;
@@ -327,50 +351,81 @@ static void do_init(JavaVM *jvm) {
         return;
     }
 
-    /* Add Rocky JAR to bootstrap class loader via JVMTI */
-    jvmtiEnv *jvmti = NULL;
-    (*jvm)->GetEnv(jvm, (void**)&jvmti, JVMTI_VERSION_1_2);
-    if (jvmti) {
-        jvmtiError err = (*jvmti)->AddToBootstrapClassLoaderSearch(jvmti, "%s");
-        if (err != JVMTI_ERROR_NONE)
-            fprintf(stderr, "[Rocky/native] AddToBootstrapClassLoaderSearch err %%d\\n", err);
-    } else {
-        fprintf(stderr, "[Rocky/native] Could not get jvmtiEnv\\n");
+    /* 1. Get KnotClassLoader = Thread.currentThread().getContextClassLoader() */
+    jclass tCls = (*env)->FindClass(env, "java/lang/Thread");
+    if (check_ex(env, "FindClass Thread") || !tCls) return;
+    jmethodID curM = (*env)->GetStaticMethodID(env, tCls, "currentThread", "()Ljava/lang/Thread;");
+    if (check_ex(env, "currentThread mid") || !curM) return;
+    jobject t = (*env)->CallStaticObjectMethod(env, tCls, curM);
+    if (check_ex(env, "currentThread call") || !t) return;
+    jmethodID getCtx = (*env)->GetMethodID(env, tCls, "getContextClassLoader", "()Ljava/lang/ClassLoader;");
+    if (check_ex(env, "getContextClassLoader mid") || !getCtx) return;
+    jobject knot = (*env)->CallObjectMethod(env, t, getCtx);
+    check_ex(env, "getContextClassLoader call");
+    if (!knot) {
+        jclass clsCls = (*env)->FindClass(env, "java/lang/ClassLoader");
+        jmethodID sysM = (*env)->GetStaticMethodID(env, clsCls, "getSystemClassLoader", "()Ljava/lang/ClassLoader;");
+        if (!check_ex(env, "getSystemClassLoader mid") && sysM)
+            knot = (*env)->CallStaticObjectMethod(env, clsCls, sysM);
+        check_ex(env, "getSystemClassLoader call");
     }
 
-    /* Small delay so bootstrap class loader can process the new entry */
-    struct timespec ts = {0, 250 * 1000000L};
-    nanosleep(&ts, NULL);
+    /* 2. URLClassLoader(new URL[]{ new URL("file:@@JAR_PATH@@") }, knot) */
+    jclass urlCls = (*env)->FindClass(env, "java/net/URL");
+    if (check_ex(env, "FindClass URL") || !urlCls) return;
+    jmethodID urlCtor = (*env)->GetMethodID(env, urlCls, "<init>", "(Ljava/lang/String;)V");
+    if (check_ex(env, "URL ctor mid") || !urlCtor) return;
+    jstring urlStr = (*env)->NewStringUTF(env, "file:@@JAR_PATH@@");
+    jobject urlObj = (*env)->NewObject(env, urlCls, urlCtor, urlStr);
+    if (check_ex(env, "new URL") || !urlObj) return;
+    jobjectArray urlArr = (*env)->NewObjectArray(env, 1, urlCls, urlObj);
+    if (check_ex(env, "NewObjectArray") || !urlArr) return;
 
-    /* AgentTarget.init(String, Instrumentation) — Instrumentation param unused */
-    jclass cls = (*env)->FindClass(env, "dev/i726/rocky/utils/AgentTarget");
-    if (!cls) { (*env)->ExceptionClear(env);
-        fprintf(stderr, "[Rocky/native] AgentTarget not found\\n"); return; }
+    jclass uclCls = (*env)->FindClass(env, "java/net/URLClassLoader");
+    if (check_ex(env, "FindClass URLClassLoader") || !uclCls) return;
+    jmethodID uclCtor = (*env)->GetMethodID(env, uclCls, "<init>",
+        "([Ljava/net/URL;Ljava/lang/ClassLoader;)V");
+    if (check_ex(env, "UCL ctor mid") || !uclCtor) return;
+    jobject ucl = (*env)->NewObject(env, uclCls, uclCtor, urlArr, knot);
+    if (check_ex(env, "new UCL") || !ucl) return;
 
-    jmethodID m = (*env)->GetStaticMethodID(env, cls, "init",
+    /* 3. ucl.loadClass("dev.i726.rocky.utils.AgentTarget") */
+    jclass ldrCls = (*env)->FindClass(env, "java/lang/ClassLoader");
+    jmethodID loadM = (*env)->GetMethodID(env, ldrCls, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;");
+    if (check_ex(env, "loadClass mid") || !loadM) return;
+    jstring cn = (*env)->NewStringUTF(env, "dev.i726.rocky.utils.AgentTarget");
+    jclass agentCls = (jclass)(*env)->CallObjectMethod(env, ucl, loadM, cn);
+    if (check_ex(env, "loadClass AgentTarget") || !agentCls) {
+        fprintf(stderr, "[Rocky/native] AgentTarget not found in JAR\\n"); return;
+    }
+
+    /* 4. AgentTarget.init("", null)  — Instrumentation is unused in the body */
+    jmethodID initM = (*env)->GetStaticMethodID(env, agentCls, "init",
         "(Ljava/lang/String;Ljava/lang/instrument/Instrumentation;)V");
-    if (!m) { (*env)->ExceptionClear(env);
-        fprintf(stderr, "[Rocky/native] AgentTarget.init not found\\n"); return; }
-
-    jstring arg = (*env)->NewStringUTF(env, "");
-    (*env)->CallStaticVoidMethod(env, cls, m, arg, NULL);
-    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionDescribe(env);
-    (*env)->ExceptionClear(env);
-
+    if (check_ex(env, "init mid") || !initM) return;
+    jstring empty = (*env)->NewStringUTF(env, "");
+    (*env)->CallStaticVoidMethod(env, agentCls, initM, empty, NULL);
+    check_ex(env, "init call");
     fprintf(stderr, "[Rocky/native] Rocky init dispatched!\\n");
 }
 
-__attribute__((constructor)) static void rocky_loader_ctor(void) {
-    fprintf(stderr, "[Rocky/native] Loader constructor running\\n");
+__attribute__((constructor)) static void rocky_ctor(void) {
+    fprintf(stderr, "[Rocky/native] constructor entered\\n");
     GetJavaVMs_fn fn = (GetJavaVMs_fn)dlsym(RTLD_DEFAULT, "JNI_GetCreatedJavaVMs");
-    if (!fn) { fprintf(stderr, "[Rocky/native] JNI_GetCreatedJavaVMs not found\\n"); return; }
+    if (!fn) { fprintf(stderr, "[Rocky/native] JNI_GetCreatedJavaVMs missing\\n"); return; }
     JavaVM *vms[1]; jsize n = 0;
     if (fn(vms, 1, &n) != JNI_OK || n == 0) {
-        fprintf(stderr, "[Rocky/native] No JVM instances found\\n"); return;
+        fprintf(stderr, "[Rocky/native] no JVM\\n"); return;
     }
     do_init(vms[0]);
 }
-""".formatted(escaped);
+""";
+
+    private static String buildNativeLoaderSource(String jarPath) {
+        // Escape for C string literal (backslashes and double-quotes only)
+        String escaped = jarPath.replace("\\", "\\\\").replace("\"", "\\\"");
+        // Use replace(), not formatted() — avoids conflicts with C's own % in fprintf
+        return NATIVE_LOADER_TEMPLATE.replace("@@JAR_PATH@@", escaped);
     }
 
     /**

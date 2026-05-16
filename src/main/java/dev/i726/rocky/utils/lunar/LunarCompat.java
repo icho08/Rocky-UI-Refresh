@@ -83,6 +83,9 @@ public final class LunarCompat {
                     return;
                 }
 
+                // Init ESP renderer (non-fatal if it fails)
+                LunarESP.init(gameLoader);
+
                 // Hook the Netty pipeline for packet interception
                 hookNetty(mc);
 
@@ -96,7 +99,8 @@ public final class LunarCompat {
                 System.out.println("[Rocky/Lunar] Lunar compatibility engine active.");
                 System.out.println("[Rocky/Lunar] Modules: NoFall=" + LunarHooks.noFallEnabled
                         + "  Sprint=" + LunarHooks.sprintEnabled
-                        + "  Velocity=" + LunarHooks.velocityEnabled);
+                        + "  Velocity=" + LunarHooks.velocityEnabled
+                        + "  PlayerESP=" + LunarESP.enabled);
             } catch (Throwable t) {
                 System.err.println("[Rocky/Lunar] Fatal error: " + t);
                 t.printStackTrace();
@@ -241,6 +245,7 @@ public final class LunarCompat {
     private static void startFeatureLoop(Object mc) {
         new Thread(() -> {
             int rehookTimer = 0;
+            int espFrameTimer = 0;
             while (true) {
                 try {
                     Thread.sleep(50); // ~20 ticks/sec
@@ -250,6 +255,12 @@ public final class LunarCompat {
 
                     // Run tick-based module logic (sprint, velocity)
                     LunarHooks.onClientTick(mc);
+
+                    // Schedule ESP render frame (~16 ms = ~60 fps cadence via every 3rd 50ms tick)
+                    if (++espFrameTimer >= 1) {
+                        espFrameTimer = 0;
+                        LunarESP.scheduleFrame(mc);
+                    }
 
                     // Periodically re-hook in case player changed server
                     if (++rehookTimer >= 100) {
@@ -279,6 +290,9 @@ public final class LunarCompat {
         LunarHooks.velocityEnabled = readFlag("Velocity",    false);
         LunarHooks.velocityH       = 0.0f;
         LunarHooks.velocityV       = 1.0f;
+
+        // ESP
+        LunarESP.enabled  = readFlag("Player ESP", true);
     }
 
     private static boolean readFlag(String name, boolean def) {
@@ -311,5 +325,9 @@ public final class LunarCompat {
         LunarHooks.velocityEnabled = enabled;
         LunarHooks.velocityH = h;
         LunarHooks.velocityV = v;
+    }
+    public static void setESP(boolean enabled, int argbColor) {
+        LunarESP.enabled   = enabled;
+        LunarESP.espColor  = argbColor;
     }
 }

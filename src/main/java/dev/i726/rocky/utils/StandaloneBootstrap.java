@@ -3,11 +3,15 @@ package dev.i726.rocky.utils;
 import java.io.File;
 import java.lang.instrument.Instrumentation;
 import java.lang.reflect.Method;
+import java.net.StandardProtocolFamily;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.net.UnixDomainSocketAddress;
+import java.nio.ByteBuffer;
+import java.nio.channels.SocketChannel;
+import java.nio.channels.WritableByteChannel;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -162,18 +166,117 @@ public final class StandaloneBootstrap {
                 .inheritIO().start().waitFor();
     }
 
-    /** Raw VirtualMachine attach + loadAgent call. */
+    /**
+     * Injects the agent JAR into the target JVM.
+     *
+     * Strategy (tried in order):
+     *   1. Direct Unix-socket protocol — bypasses the MonitoredHost/hsperfdata
+     *      pre-flight check that Lunar suppresses with -XX:-UsePerfData.
+     *      The JVM attach listener can still be running even when perfdata is off.
+     *   2. com.sun.tools.attach.VirtualMachine — standard path for plain Fabric.
+     */
     private static void injectNow(String pid, String jarPath) throws Exception {
-        Class<?> vmClass    = Class.forName("com.sun.tools.attach.VirtualMachine");
-        Method attach       = vmClass.getMethod("attach", String.class);
-        Method loadAgent    = vmClass.getMethod("loadAgent", String.class);
-        Method detach       = vmClass.getMethod("detach");
-        Object vm = attach.invoke(null, pid);
+        // ── Path 1: direct socket attach (works when -XX:-UsePerfData is set) ──
         try {
-            loadAgent.invoke(vm, jarPath);
-        } finally {
-            try { detach.invoke(vm); } catch (Throwable ignored) {}
+            directSocketInject(Long.parseLong(pid), jarPath);
+            return;
+        } catch (Exception socketEx) {
+            // Socket not ready yet or truly disabled — fall through to VirtualMachine
+            System.out.printf("[~] Direct socket failed for PID %s: %s\n", pid, socketEx.getMessage());
         }
+
+        // ── Path 2: standard VirtualMachine.attach() (Fabric / non-hardened JVMs) ─
+        Class<?> vmClass  = Class.forName("com.sun.tools.attach.VirtualMachine");
+        Method   attach   = vmClass.getMethod("attach", String.class);
+        Method   loadAgt  = vmClass.getMethod("loadAgent", String.class);
+        Method   detach   = vmClass.getMethod("detach");
+        Object   vm       = attach.invoke(null, pid);
+        try { loadAgt.invoke(vm, jarPath); }
+        finally { try { detach.invoke(vm); } catch (Throwable ignored) {} }
+    }
+
+    // ── Direct HotSpot attach-socket protocol ─────────────────────────────────
+
+    /**
+     * Implements the HotSpot attach wire protocol over a Unix domain socket.
+     *
+     * The protocol (identical on Linux and macOS):
+     *   1.  Create /tmp/.attach_pid{PID} sentinel + send SIGQUIT to start the
+     *       attach listener if it isn't running yet.
+     *   2.  Wait up to 8 s for /tmp/.java_pid{PID} (the socket) to appear.
+     *   3.  Connect and send 5 null-terminated strings:
+     *         "1\0"            protocol version
+     *         "load\0"         command
+     *         "instrument\0"   built-in JVMTI agent (handles -javaagent jars)
+     *         "false\0"        isAbsolute (false = instrument is a built-in name)
+     *         jarPath + "\0"   options passed to the instrument agent (= JAR path)
+     *   4.  Read the ASCII status line; 0 = success.
+     */
+    private static void directSocketInject(long pid, String jarPath) throws Exception {
+        String tmpdir     = System.getProperty("java.io.tmpdir", "/tmp");
+        File   socketFile = new File(tmpdir, ".java_pid" + pid);
+
+        // Wake the attach listener (sentinel file + SIGQUIT)
+        wakeAttachListener(pid);
+
+        // Wait for the socket to appear (up to 3 s, re-signaling at 1.5 s)
+        for (int i = 0; i < 15; i++) {
+            if (socketFile.exists()) break;
+            Thread.sleep(200);
+            if (i == 7) wakeAttachListener(pid); // one re-signal at 1.5 s
+        }
+        if (!socketFile.exists()) {
+            throw new Exception("Attach socket " + socketFile + " did not appear — "
+                    + "JVM may have -XX:+DisableAttachMechanism.");
+        }
+
+        // Connect and run the load-agent command
+        try (SocketChannel ch = SocketChannel.open(StandardProtocolFamily.UNIX)) {
+            ch.connect(UnixDomainSocketAddress.of(socketFile.toPath()));
+
+            // Send protocol payload
+            writeAttach(ch, "1");           // version
+            writeAttach(ch, "load");        // command
+            writeAttach(ch, "instrument");  // JVMTI instrument library (built-in)
+            writeAttach(ch, "false");       // isAbsolute = false
+            writeAttach(ch, jarPath);       // options → interpreted as JAR path
+
+            // Read response: first line = decimal status code
+            String response = readAttachResponse(ch);
+            String firstLine = response.split("\n", 2)[0].trim();
+            int status;
+            try {
+                status = Integer.parseInt(firstLine);
+            } catch (NumberFormatException e) {
+                throw new Exception("Unexpected attach response: " + response);
+            }
+            if (status != 0) {
+                String detail = response.contains("\n")
+                        ? response.substring(response.indexOf('\n') + 1).trim() : "";
+                throw new Exception("Agent load returned status " + status
+                        + (detail.isEmpty() ? "" : " — " + detail));
+            }
+        }
+    }
+
+    /** Writes a null-terminated UTF-8 string to the attach socket. */
+    private static void writeAttach(WritableByteChannel ch, String s) throws Exception {
+        byte[] bytes = (s + "\0").getBytes(StandardCharsets.UTF_8);
+        ByteBuffer buf = ByteBuffer.wrap(bytes);
+        while (buf.hasRemaining()) ch.write(buf);
+    }
+
+    /** Reads the full response from the attach socket as a String. */
+    private static String readAttachResponse(SocketChannel ch) throws Exception {
+        StringBuilder sb  = new StringBuilder();
+        ByteBuffer    buf = ByteBuffer.allocate(256);
+        int read;
+        while ((read = ch.read(buf)) > 0) {
+            buf.flip();
+            while (buf.hasRemaining()) sb.append((char) (buf.get() & 0xFF));
+            buf.clear();
+        }
+        return sb.toString();
     }
 
     private static java.util.Optional<ProcessHandle> ph(long pid) {

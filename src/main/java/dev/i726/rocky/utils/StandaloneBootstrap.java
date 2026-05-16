@@ -202,27 +202,44 @@ public final class StandaloneBootstrap {
             System.out.println("[+] Loader compiled: " + soFile.getName());
 
             // ── 4. Inject via GDB ─────────────────────────────────────────────
-            // RTLD_NOW = 2 — resolves symbols immediately, constructor fires inline
-            // ProcessBuilder passes the -ex value as a single argument (no shell
-            // word-splitting), so we only need standard C string quoting for GDB.
+            // RTLD_NOW = 2 — resolves symbols immediately, constructor fires inline.
+            // ProcessBuilder passes -ex values as separate argv entries, so no
+            // shell quoting is needed for the path.
             String dlopen = String.format(
                     "call (void*)dlopen(\"%s\", 2)", soFile.getAbsolutePath());
-            Process gdb = new ProcessBuilder(
-                    "gdb", "-p", String.valueOf(pid), "-batch",
-                    "-ex", "set confirm off",
-                    "-ex", dlopen,
-                    "-ex", "detach",
-                    "-ex", "quit"
-            ).inheritIO().start();
-            int gdbExit = gdb.waitFor();
-            if (gdbExit != 0) {
-                System.out.println("[~] GDB inject: gdb exited with code " + gdbExit
-                        + " (not installed or permission denied).");
+            String output = runGdb(pid, dlopen, false);
+
+            if (output == null) {
+                // gdb not on PATH
+                System.out.println("[~] GDB inject: gdb not found on PATH.");
+                return false;
+            }
+
+            if (output.contains("ptrace: Operation not permitted")) {
+                System.out.println("[~] ptrace blocked (ptrace_scope=1) — retrying with sudo...");
+                output = runGdb(pid, dlopen, true);  // sudo gdb
+                if (output == null) {
+                    System.out.println("[!] GDB inject: sudo gdb failed or not available.");
+                    System.out.println("    → Either run this injector with sudo:");
+                    System.out.println("        sudo java -jar " + jarPath);
+                    System.out.println("    → Or allow ptrace once (resets on reboot):");
+                    System.out.println("        echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope");
+                    return false;
+                }
+            }
+
+            // GDB exits 0 even on failure — check actual output for real success
+            if (output.contains("ptrace:") && !output.contains("0x0000000")) {
+                System.out.println("[~] GDB inject: ptrace error — " + firstLine(output, "ptrace:"));
+                return false;
+            }
+            if (output.contains("= (void *) 0x0\n") || output.contains("= (void *) 0x0 \n")) {
+                System.out.println("[~] GDB inject: dlopen returned NULL (library failed to load).");
                 return false;
             }
 
             // Give the constructor thread a moment to start Rocky
-            Thread.sleep(500);
+            Thread.sleep(800);
             System.out.println("[✔] Native GDB injection dispatched.");
             return true;
 
@@ -230,6 +247,47 @@ public final class StandaloneBootstrap {
             System.out.println("[~] GDB inject error: " + e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Runs GDB in batch mode against {@code pid}, executing the given
+     * expression with the "call" command.  Returns the combined stdout+stderr
+     * of GDB, or {@code null} if gdb is not on PATH.
+     *
+     * @param useSudo  prefix the command with "sudo -n" (non-interactive sudo)
+     */
+    private static String runGdb(long pid, String callExpr, boolean useSudo) {
+        try {
+            List<String> cmd = new ArrayList<>();
+            if (useSudo) { cmd.add("sudo"); cmd.add("-n"); }
+            cmd.addAll(List.of(
+                    "gdb", "-p", String.valueOf(pid), "-batch",
+                    "-ex", "set confirm off",
+                    "-ex", callExpr,
+                    "-ex", "detach",
+                    "-ex", "quit"
+            ));
+            Process p = new ProcessBuilder(cmd)
+                    .redirectErrorStream(true)   // merge stderr into stdout
+                    .start();
+            byte[] raw = p.getInputStream().readAllBytes();
+            p.waitFor();
+            return new String(raw, StandardCharsets.UTF_8);
+        } catch (java.io.IOException e) {
+            // "error=2, No such file or directory" → gdb not installed
+            if (e.getMessage() != null && e.getMessage().contains("No such file")) return null;
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Returns the first complete line in {@code text} that contains {@code marker}. */
+    private static String firstLine(String text, String marker) {
+        for (String line : text.split("\n")) {
+            if (line.contains(marker)) return line.trim();
+        }
+        return marker;
     }
 
     /** Finds the JDK home that has include/jni.h. */

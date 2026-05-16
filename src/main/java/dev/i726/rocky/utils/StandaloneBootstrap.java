@@ -247,26 +247,26 @@ public final class StandaloneBootstrap {
             URL jarUrl = files[0].toURI().toURL();
             URLClassLoader bridgeLoader = new URLClassLoader(new URL[]{jarUrl}, gameLoader);
 
+            // ── Shared init path: AgentTarget works for both Fabric and Lunar ──
+            // Lunar runs on top of Fabric and uses the same intermediary class
+            // names that Rocky's JAR is compiled against.  AgentTarget.init()
+            // therefore works unchanged in Lunar.
+            Class<?> targetClass = Class.forName(
+                    "dev.i726.rocky.utils.AgentTarget", true, bridgeLoader);
+            Method initMethod = targetClass.getMethod("init", String.class, Instrumentation.class);
+            initMethod.invoke(null, args, inst);
+
             if (isLunar) {
-                // ── LUNAR PATH ─────────────────────────────────────────────────
-                // LunarCompat / LunarHooks use only reflection — safe to load here.
-                Class<?> compat = Class.forName(
-                        "dev.i726.rocky.utils.lunar.LunarCompat", true, bridgeLoader);
-
-                // Mark as Lunar so hooks know which API to use
-                Method detect = compat.getMethod("detect", ClassLoader.class);
-                detect.invoke(null, gameLoader);
-
-                // Start the Lunar engine (Netty hook + polling loop)
-                Method init = compat.getMethod("init", Instrumentation.class, ClassLoader.class);
-                init.invoke(null, inst, gameLoader);
-
-            } else {
-                // ── FABRIC PATH ────────────────────────────────────────────────
-                Class<?> targetClass = Class.forName(
-                        "dev.i726.rocky.utils.AgentTarget", true, bridgeLoader);
-                Method initMethod = targetClass.getMethod("init", String.class, Instrumentation.class);
-                initMethod.invoke(null, args, inst);
+                // ── LUNAR EXTRA: event bridge replaces missing Mixin hooks ─────
+                // Rocky's Mixins (ClientConnectionMixin, ClientPlayerEntityMixin,
+                // etc.) are never registered in Lunar because Rocky is loaded as
+                // a -javaagent, not as a Fabric mod.  LunarEventBridge hooks the
+                // Netty pipeline and fires the same events the Mixins would have.
+                Class<?> bridge = Class.forName(
+                        "dev.i726.rocky.utils.lunar.LunarEventBridge", true, bridgeLoader);
+                Method setup = bridge.getMethod("setup");
+                setup.invoke(null);
+                System.out.println("[Rocky] Lunar event bridge started.");
             }
 
         } catch (Throwable t) {
@@ -278,30 +278,29 @@ public final class StandaloneBootstrap {
     // ── Lunar detection ───────────────────────────────────────────────────────
 
     /**
-     * Returns true if the JVM is running Lunar Client.
-     * Checks for Mojang-mapped class {@code net.minecraft.client.Minecraft}
-     * while confirming Fabric intermediary classes are absent.
+     * Returns true if the JVM is Lunar Client.
+     *
+     * Contrary to what you might expect, Lunar runs on top of Fabric and uses
+     * Fabric intermediary class names (net.minecraft.class_XXX), NOT Mojang
+     * names.  The reliable distinguisher is the com.moonsworth.* launcher
+     * classes that are always present in Lunar's JVM.
      */
     private static boolean detectLunar(ClassLoader loader) {
-        // 1. Mojang class must exist
+        // Primary: Lunar's Genesis launcher is always present
         try {
-            Class.forName("net.minecraft.client.Minecraft", false, loader);
-        } catch (ClassNotFoundException e) {
-            return false;
-        }
-        // 2. Fabric intermediary class must NOT exist (would mean Fabric runtime)
+            Class.forName("com.moonsworth.lunar.genesis.Genesis", false, loader);
+            return true;
+        } catch (ClassNotFoundException ignored) {}
+        // Fallback: older / variant Lunar builds
         try {
-            Class.forName("net.minecraft.class_310", false, loader);
-            return false; // Fabric is present
-        } catch (ClassNotFoundException ok) { /* expected in Lunar */ }
-
-        // 3. Extra: Fabric loader itself must be absent
+            Class.forName("com.moonsworth.lunar.client.LunarClient", false, loader);
+            return true;
+        } catch (ClassNotFoundException ignored) {}
         try {
-            Class.forName("net.fabricmc.loader.api.FabricLoader", false, loader);
-            return false;
-        } catch (ClassNotFoundException ok) { /* expected in Lunar */ }
-
-        return true;
+            Class.forName("com.moonsworth.lunar.patcher.LunarPatcher", false, loader);
+            return true;
+        } catch (ClassNotFoundException ignored) {}
+        return false;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

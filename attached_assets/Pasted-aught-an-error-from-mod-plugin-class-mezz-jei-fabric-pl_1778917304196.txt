@@ -1,0 +1,85 @@
+aught an error from mod plugin: class mezz.jei.fabric.plugins.fabric.FabricGuiPlugin jei:fabric_gui
+13:24:53
+java.lang.ArrayIndexOutOfBoundsException: Index 0 out of bounds for length 0
+13:24:53
+	at java.base/java.util.ImmutableCollections$ListN.get(Unknown Source) ~[?:?]
+13:24:53
+	at java.base/java.util.Collections$UnmodifiableList.get(Unknown Source) ~[?:?]
+13:24:53
+	at Genesis/mezz.jei.gui.recipes.lookups.IngredientLookupState.getFocusedRecipes(IngredientLookupState.java:151) ~[IngredientLookupState.class:?]
+13:24:53
+	at Genesis/mezz.jei.gui.recipes.RecipeGuiLogic.hasMultiplePages(RecipeGuiLogic.java:315) ~[RecipeGuiLogic.class:?]
+13:24:53
+	at Genesis/mezz.jei.gui.recipes.RecipesGui$3.updateState(RecipesGui.java:205) ~[RecipesGui$3.class:?]
+13:24:53
+	at Genesis/mezz.jei.gui.recipes.RecipesGui$3.initState(RecipesGui.java:200) ~[RecipesGui$3.class:?]
+13:24:53
+	at Genesis/mezz.jei.gui.elements.IconButton.<init>(IconButton.java:29) ~[IconButton.class:?]
+13:24:53
+	at Genesis/mezz.jei.gui.recipes.RecipesGui.<init>(RecipesGui.java:190) ~[RecipesGui.class:?]
+13:24:53
+	at Genesis/mezz.jei.gui.startup.JeiGuiStarter.start(JeiGuiStarter.java:204) ~[JeiGuiStarter.class:?]
+13:24:53
+	at Genesis/mezz.jei.fabric.plugins.fabric.FabricGuiPlugin.registerRuntime(FabricGuiPlugin.java:34) ~[FabricGuiPlugin.class:?]
+13:24:53
+	at Genesis/mezz.jei.library.startup.JeiStarter.lambda$start$2(JeiStarter.java:174) ~[JeiStarter.class:?]
+13:24:53
+	at Genesis/mezz.jei.library.load.PluginCaller.callOnPlugins(PluginCaller.java:26) ~[PluginCaller.class:?]
+13:24:53
+	at Genesis/mezz.jei.library.startup.JeiStarter.start(JeiStarter.java:174) ~[JeiStarter.class:?]
+13:24:53
+	at Genesis/mezz.jei.fabric.startup.ClientLifecycleHandler.startJei(ClientLifecycleHandler.java:91) ~[ClientLifecycleHandler.class:?]
+13:24:53
+	at Genesis/mezz.jei.fabric.startup.ClientLifecycleHandler.lambda$registerEvents$1(ClientLifecycleHandler.java:58) ~[ClientLifecycleHandler.class:?]
+13:24:53
+	at Genesis/net.fabricmc.fabric.api.client.screen.v1.ScreenEvents.lambda$static$2(ScreenEvents.java:101) ~[ScreenEvents.class:?]
+13:24:53
+	at Genesis/net.minecraft.class_437.afterInit(SourceFile:2999) ~[?:?]
+13:24:53
+	at Genesis/net.minecraft.class_437.handler$ceg000$fabric-screen-api-v1$afterInitScreen(SourceFile:2948) ~[?:?]
+13:24:53
+	at Genesis/net.minecraft.class_437.method_25423$mixinextras$wrapped$152(SourceFile:339) ~[?:?]
+13:24:53
+	at Genesis/net.minecraft.class_437.mixinextras$bridge$method_25423$mixinextras$wrapped$152$153(SourceFile) ~[?:?]
+13:24:53
+	at Genesis/net.minecraft.class_437.wrapMethod$zgf000$lunar$wrapSetWorldAndResolution$v1_21_11(SourceFile:1541) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_437.method_25423(SourceFile) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_310.method_1507(SourceFile:1237) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_3929$class_3930.method_17543(SourceFile:60) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_3929.method_17541(SourceFile:47) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_634.method_17587(SourceFile:1385) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_3944.method_17591(SourceFile:38) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_3944.method_65081(SourceFile:13) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_11980$class_11981.method_74450(SourceFile:55) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_11980.method_74449(SourceFile:38) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_310.method_1523(SourceFile:1337) [?:?]
+13:24:53
+	at Genesis/net.minecraft.class_310.method_1514(SourceFile:966) [?:?]
+13:24:53
+	at Genesis/net.minecraft.client.main.Main.main(SourceFile:250) [Main.class:?]
+13:24:53
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(Unknown Source) ~[?:?]
+13:24:53
+	at java.base/java.lang.reflect.Method.invoke(Unknown Source) ~[?:?]
+13:24:53
+	at com.moonsworth.lunar.genesis.ClientGameBootstrap.apply(Unknown Source) [genesis-0.1.0-SNAPSHOT-all.jar:9.9]
+13:24:53
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(Unknown Source) ~[?:?]
+13:24:53
+	at java.base/java.lang.reflect.Method.invoke(Unknown Source) ~[?:?]
+13:24:53
+	at com.moonsworth.lunar.genesis.ICOOCHOIRIRRHIOHCIIHOHICCRIHIH.ICOOCHOIRIRRHIOHCIIHOHICCRIHIH(Unknown Source) [genesis-0.1.0-SNAPSHOT-all.jar:9.9]
+13:24:53
+	at com.moonsworth.lunar.genesis.Genesis.run(Unknown Source) [genesis-0.1.0-SNAPSHOT-all.jar:9.9]
+13:24:53
+	at com.moonsworth.lunar.genesis.Genesis.main(Unknown Source) [genesis-0.1.0-SNAPSHOT-all.jar:9.9]

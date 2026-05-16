@@ -19,6 +19,10 @@
     public static ** setVelocity(boolean, float, float);
 }
 -keep class dev.i726.rocky.utils.lunar.LunarHooks { *; }
+-keep class dev.i726.rocky.utils.lunar.LunarEventBridge {
+    public static ** setup();
+    public static ** shutdown();
+}
 
 # Keep all classes in rocky package
 -keep class dev.i726.rocky.** { *; }

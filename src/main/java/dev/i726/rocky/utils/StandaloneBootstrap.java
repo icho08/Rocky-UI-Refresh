@@ -91,13 +91,17 @@ public final class StandaloneBootstrap {
     // ── Injection with retry + child-process fallback ─────────────────────────
 
     /**
-     * Attempts to attach to {@code target}.  If that fails with
-     * AttachNotSupportedException (common on Lunar / Java 21+), scans the
-     * process's children for the actual game JVM and retries.  Returns true
-     * on success.
+     * Attempts to attach to {@code target}. Injection order:
+     *   1. Native GDB injection  — works even when -XX:+DisableAttachMechanism is set
+     *   2. Direct Unix-socket attach — for standard Fabric JVMs
+     *   3. VirtualMachine.attach() — standard JDK path
+     *   4. Child-process scan + retry of all above
      */
     private static boolean tryInjectWithFallback(ProcessHandle primary, String jarPath) {
-        // First try: wake up the attach listener and retry up to 3 times
+        // ── Attempt 1: Native GDB injection (bypasses DisableAttachMechanism) ──
+        if (tryNativeInject(primary.pid(), jarPath)) return true;
+
+        // ── Attempt 2-3: Java attach paths (Fabric / non-hardened JVMs) ────────
         if (tryInject(primary, jarPath, 3)) return true;
 
         System.out.println("[~] Primary PID failed — scanning child processes...");
@@ -105,6 +109,7 @@ public final class StandaloneBootstrap {
         for (ProcessHandle child : children) {
             System.out.printf("[~] Trying child PID %d (%s)...\n",
                     child.pid(), getProcessLabel(child));
+            if (tryNativeInject(child.pid(), jarPath)) return true;
             if (tryInject(child, jarPath, 2)) return true;
         }
         return false;
@@ -130,12 +135,184 @@ public final class StandaloneBootstrap {
                 System.out.printf("[~] Attempt %d/%d for PID %d: %s\n",
                         attempt, maxAttempts, pid, msg);
                 if (attempt < maxAttempts) {
-                    // Re-send SIGQUIT each retry; some JVMs need multiple signals
                     try { wakeAttachListener(pid); } catch (Exception ignored) {}
                 }
             }
         }
         return false;
+    }
+
+    // ── Native GDB injection (bypasses -XX:+DisableAttachMechanism) ──────────
+
+    /**
+     * Compiles a tiny C shim and injects it into the target JVM via GDB + dlopen.
+     *
+     * Flow:
+     *   1. Compile rocky_loader.c  →  /tmp/rocky_loader_{pid}.so
+     *      using the current JDK's jni.h / jvmti.h headers.
+     *   2. gdb -p PID  →  call dlopen("/tmp/rocky_loader_{pid}.so", RTLD_NOW)
+     *      GDB uses ptrace internally; this works even with DisableAttachMechanism.
+     *   3. The library's __attribute__((constructor)) fires immediately inside
+     *      the JVM process:
+     *        • dlsym(RTLD_DEFAULT, "JNI_GetCreatedJavaVMs") — already in libjvm.so
+     *        • jvmti->AddToBootstrapClassLoaderSearch(rockyJar)
+     *        • JNI FindClass + CallStaticVoidMethod → AgentTarget.init("", null)
+     *          (Instrumentation param is unused in AgentTarget.init body)
+     *
+     * Requires: gcc + gdb on PATH.
+     */
+    private static boolean tryNativeInject(long pid, String jarPath) {
+        try {
+            System.out.println("[+] Trying native GDB injection (bypasses DisableAttachMechanism)...");
+
+            // ── 1. Locate JDK include directory ──────────────────────────────
+            String javaHome = resolveJavaHome();
+            if (javaHome == null) {
+                System.out.println("[~] GDB inject: cannot find JDK include headers.");
+                return false;
+            }
+            String os = System.getProperty("os.name", "").toLowerCase();
+            String platformDir = os.contains("mac") ? "darwin" : "linux";
+            String incMain     = javaHome + "/include";
+            String incPlatform = incMain + "/" + platformDir;
+
+            // ── 2. Write C source ─────────────────────────────────────────────
+            File cFile = File.createTempFile("rocky_loader_" + pid + "_", ".c");
+            cFile.deleteOnExit();
+            Files.writeString(cFile.toPath(), buildNativeLoaderSource(jarPath));
+
+            // ── 3. Compile ────────────────────────────────────────────────────
+            File soFile = new File(System.getProperty("java.io.tmpdir"),
+                    "rocky_loader_" + pid + ".so");
+            soFile.deleteOnExit();
+            Process gcc = new ProcessBuilder(
+                    "gcc", "-shared", "-fPIC",
+                    "-o", soFile.getAbsolutePath(),
+                    cFile.getAbsolutePath(),
+                    "-I" + incMain,
+                    "-I" + incPlatform,
+                    "-ldl"
+            ).inheritIO().start();
+            int gccExit = gcc.waitFor();
+            cFile.delete();
+            if (gccExit != 0 || !soFile.exists()) {
+                System.out.println("[~] GDB inject: gcc failed (not installed or compile error).");
+                return false;
+            }
+            System.out.println("[+] Loader compiled: " + soFile.getName());
+
+            // ── 4. Inject via GDB ─────────────────────────────────────────────
+            // RTLD_NOW = 2 — resolves symbols immediately, constructor fires inline
+            // ProcessBuilder passes the -ex value as a single argument (no shell
+            // word-splitting), so we only need standard C string quoting for GDB.
+            String dlopen = String.format(
+                    "call (void*)dlopen(\"%s\", 2)", soFile.getAbsolutePath());
+            Process gdb = new ProcessBuilder(
+                    "gdb", "-p", String.valueOf(pid), "-batch",
+                    "-ex", "set confirm off",
+                    "-ex", dlopen,
+                    "-ex", "detach",
+                    "-ex", "quit"
+            ).inheritIO().start();
+            int gdbExit = gdb.waitFor();
+            if (gdbExit != 0) {
+                System.out.println("[~] GDB inject: gdb exited with code " + gdbExit
+                        + " (not installed or permission denied).");
+                return false;
+            }
+
+            // Give the constructor thread a moment to start Rocky
+            Thread.sleep(500);
+            System.out.println("[✔] Native GDB injection dispatched.");
+            return true;
+
+        } catch (Exception e) {
+            System.out.println("[~] GDB inject error: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /** Finds the JDK home that has include/jni.h. */
+    private static String resolveJavaHome() {
+        for (String candidate : new String[]{
+                System.getProperty("java.home"),
+                System.getenv("JAVA_HOME"),
+                System.getProperty("java.home") != null
+                        ? new File(System.getProperty("java.home")).getParent() : null
+        }) {
+            if (candidate == null) continue;
+            if (new File(candidate, "include/jni.h").exists()) return candidate;
+        }
+        return null;
+    }
+
+    /**
+     * Returns the C source for the runtime loader shim.
+     * The shim is compiled with -fPIC -shared and loaded via GDB + dlopen.
+     */
+    private static String buildNativeLoaderSource(String jarPath) {
+        // Escape backslashes and quotes for embedding in a C string literal
+        String escaped = jarPath.replace("\\", "\\\\").replace("\"", "\\\"");
+        return """
+#include <jni.h>
+#include <jvmti.h>
+#include <dlfcn.h>
+#include <stdio.h>
+#include <time.h>
+
+typedef jint (*GetJavaVMs_fn)(JavaVM**, jsize, jsize*);
+
+static void do_init(JavaVM *jvm) {
+    JNIEnv *env = NULL;
+    if ((*jvm)->AttachCurrentThreadAsDaemon(jvm, (void**)&env, NULL) != JNI_OK || !env) {
+        fprintf(stderr, "[Rocky/native] AttachCurrentThreadAsDaemon failed\\n");
+        return;
+    }
+
+    /* Add Rocky JAR to bootstrap class loader via JVMTI */
+    jvmtiEnv *jvmti = NULL;
+    (*jvm)->GetEnv(jvm, (void**)&jvmti, JVMTI_VERSION_1_2);
+    if (jvmti) {
+        jvmtiError err = (*jvmti)->AddToBootstrapClassLoaderSearch(jvmti, "%s");
+        if (err != JVMTI_ERROR_NONE)
+            fprintf(stderr, "[Rocky/native] AddToBootstrapClassLoaderSearch err %%d\\n", err);
+    } else {
+        fprintf(stderr, "[Rocky/native] Could not get jvmtiEnv\\n");
+    }
+
+    /* Small delay so bootstrap class loader can process the new entry */
+    struct timespec ts = {0, 250 * 1000000L};
+    nanosleep(&ts, NULL);
+
+    /* AgentTarget.init(String, Instrumentation) — Instrumentation param unused */
+    jclass cls = (*env)->FindClass(env, "dev/i726/rocky/utils/AgentTarget");
+    if (!cls) { (*env)->ExceptionClear(env);
+        fprintf(stderr, "[Rocky/native] AgentTarget not found\\n"); return; }
+
+    jmethodID m = (*env)->GetStaticMethodID(env, cls, "init",
+        "(Ljava/lang/String;Ljava/lang/instrument/Instrumentation;)V");
+    if (!m) { (*env)->ExceptionClear(env);
+        fprintf(stderr, "[Rocky/native] AgentTarget.init not found\\n"); return; }
+
+    jstring arg = (*env)->NewStringUTF(env, "");
+    (*env)->CallStaticVoidMethod(env, cls, m, arg, NULL);
+    if ((*env)->ExceptionCheck(env)) (*env)->ExceptionDescribe(env);
+    (*env)->ExceptionClear(env);
+
+    fprintf(stderr, "[Rocky/native] Rocky init dispatched!\\n");
+}
+
+__attribute__((constructor)) static void rocky_loader_ctor(void) {
+    fprintf(stderr, "[Rocky/native] Loader constructor running\\n");
+    GetJavaVMs_fn fn = (GetJavaVMs_fn)dlsym(RTLD_DEFAULT, "JNI_GetCreatedJavaVMs");
+    if (!fn) { fprintf(stderr, "[Rocky/native] JNI_GetCreatedJavaVMs not found\\n"); return; }
+    JavaVM *vms[1]; jsize n = 0;
+    if (fn(vms, 1, &n) != JNI_OK || n == 0) {
+        fprintf(stderr, "[Rocky/native] No JVM instances found\\n"); return;
+    }
+    do_init(vms[0]);
+}
+""".formatted(escaped);
     }
 
     /**

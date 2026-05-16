@@ -91,11 +91,12 @@ jar {
 
     manifest {
         attributes(
-                "Main-Class": "dev.i726.rocky.utils.StandaloneBootstrap",
-                "Agent-Class": "dev.i726.rocky.utils.StandaloneBootstrap",
-                "Can-Retransform-Classes": "true",
-                "Can-Redefine-Classes": "true",
-                "Permissions": "all-permissions"
+                "Main-Class":             "dev.i726.rocky.utils.StandaloneBootstrap",
+                "Agent-Class":            "dev.i726.rocky.utils.StandaloneBootstrap",
+                "Premain-Class":          "dev.i726.rocky.utils.StandaloneBootstrap",
+                "Can-Retransform-Classes":"true",
+                "Can-Redefine-Classes":   "true",
+                "Permissions":            "all-permissions"
         )
     }
 }

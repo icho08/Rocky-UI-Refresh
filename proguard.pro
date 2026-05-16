@@ -3,11 +3,22 @@
 -dontoptimize
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
-# Keep main class
+# Keep main class and all agent entry points
 -keep class dev.i726.rocky.utils.StandaloneBootstrap {
     public static void main(java.lang.String[]);
     public static void agentmain(java.lang.String, java.lang.instrument.Instrumentation);
+    public static void premain(java.lang.String, java.lang.instrument.Instrumentation);
 }
+
+# Keep Lunar compat layer — called via reflection, must not be renamed
+-keep class dev.i726.rocky.utils.lunar.LunarCompat {
+    public static ** detect(java.lang.ClassLoader);
+    public static ** init(java.lang.instrument.Instrumentation, java.lang.ClassLoader);
+    public static ** setNoFall(boolean);
+    public static ** setSprint(boolean);
+    public static ** setVelocity(boolean, float, float);
+}
+-keep class dev.i726.rocky.utils.lunar.LunarHooks { *; }
 
 # Keep all classes in rocky package
 -keep class dev.i726.rocky.** { *; }

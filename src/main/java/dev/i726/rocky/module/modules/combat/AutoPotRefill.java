@@ -1,7 +1,6 @@
 package dev.i726.rocky.module.modules.combat;
 
 import dev.i726.rocky.event.events.TickListener;
-import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
@@ -9,143 +8,154 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
+import dev.i726.rocky.utils.TimerUtils;
 import net.minecraft.client.gui.screen.ingame.InventoryScreen;
 import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.item.Items;
 import net.minecraft.screen.slot.SlotActionType;
 
 public final class AutoPotRefill extends Module implements TickListener {
-	public enum PotionType {
-		Health, Strength, Speed, FireResistance
-	}
 
-	private final ModeSetting<PotionType> potionType = new ModeSetting<>(EncryptedString.of("Potion Type"), PotionType.Health, PotionType.class)
-			.setDescription(EncryptedString.of("Type of potion to refill"));
-	private final NumberSetting minPotions = new NumberSetting(EncryptedString.of("Min Potions"), 1, 9, 3, 1)
-			.setDescription(EncryptedString.of("Minimum potions to keep in hotbar"));
-	private final NumberSetting delay = new NumberSetting(EncryptedString.of("Delay"), 0, 10, 1, 1);
-	private final BooleanSetting autoOpen = new BooleanSetting(EncryptedString.of("Auto Open"), true)
-			.setDescription(EncryptedString.of("Automatically open inventory"));
+    public enum PotionType { Health, Strength, Speed, FireResistance }
 
-	private int delayClock = 0;
+    private final ModeSetting<PotionType> potionType = new ModeSetting<>(
+            EncryptedString.of("Potion Type"), PotionType.Health, PotionType.class);
 
-	public AutoPotRefill() {
-		super(EncryptedString.of("Pot Refill"),
-                EncryptedString.of("Refills potions from inventory"),
-				-1,
-				CategoryManager.INVENTORY);
-		addSettings(potionType, minPotions, delay, autoOpen);
-	}
+    private final NumberSetting minPotions = new NumberSetting(
+            EncryptedString.of("Min Potions"), 1, 9, 3, 1)
+            .setDescription(EncryptedString.of("Refill hotbar when potions drop below this count"));
 
-	@Override
-	public void onEnable() {
-		eventManager.add(TickListener.class, this);
-		delayClock = 0;
-		super.onEnable();
-	}
+    private final NumberSetting delay = new NumberSetting(
+            EncryptedString.of("Delay"), 50, 1000, 200, 50)
+            .setDescription(EncryptedString.of("Milliseconds between each individual refill move"));
 
-	@Override
-	public void onDisable() {
-		eventManager.remove(TickListener.class, this);
-		if (mc.currentScreen instanceof InventoryScreen) {
-			mc.currentScreen.close();
-		}
-		super.onDisable();
-	}
+    private final BooleanSetting autoOpen = new BooleanSetting(
+            EncryptedString.of("Auto Open"), true)
+            .setDescription(EncryptedString.of("Automatically open inventory to refill (suppress screen render if Off)"));
 
-	private int countPotionsInHotbar() {
-		int count = 0;
-		for (int i = 0; i < 9; i++) {
-			if (isPotionOfType(mc.player.getInventory().getStack(i))) {
-				count++;
-			}
-		}
-		return count;
-	}
+    private final BooleanSetting autoClose = new BooleanSetting(
+            EncryptedString.of("Auto Close"), true)
+            .setDescription(EncryptedString.of("Close inventory once the hotbar is full"));
 
-	private boolean isPotionOfType(net.minecraft.item.ItemStack stack) {
-		return switch (potionType.getMode()) {
-			case Health -> InventoryUtils.isThatSplash(StatusEffects.INSTANT_HEALTH.value(), 1, 1, stack);
-			case Strength -> InventoryUtils.isThatSplash(StatusEffects.STRENGTH.value(), 1, 1, stack);
-			case Speed -> InventoryUtils.isThatSplash(StatusEffects.SPEED.value(), 1, 1, stack);
-			case FireResistance -> InventoryUtils.isThatSplash(StatusEffects.FIRE_RESISTANCE.value(), 1, 1, stack);
-		};
-	}
+    private final TimerUtils moveTimer = new TimerUtils();
+    private boolean wasAutoOpened = false;
 
-	private int findPotionInInventory() {
-		return switch (potionType.getMode()) {
-			case Health -> InventoryUtils.findPot(StatusEffects.INSTANT_HEALTH.value(), 1, 1);
-			case Strength -> InventoryUtils.findPot(StatusEffects.STRENGTH.value(), 1, 1);
-			case Speed -> InventoryUtils.findPot(StatusEffects.SPEED.value(), 1, 1);
-			case FireResistance -> InventoryUtils.findPot(StatusEffects.FIRE_RESISTANCE.value(), 1, 1);
-		};
-	}
+    public AutoPotRefill() {
+        super(EncryptedString.of("Pot Refill"),
+                EncryptedString.of("Refills potions from inventory to hotbar"),
+                -1, CategoryManager.INVENTORY);
+        addSettings(potionType, minPotions, delay, autoOpen, autoClose);
+    }
 
-	private int findEmptyHotbarSlot() {
-		for (int i = 0; i < 9; i++) {
-			if (mc.player.getInventory().getStack(i).isEmpty()) {
-				return i;
-			}
-		}
-		return -1;
-	}
+    @Override
+    public void onEnable() {
+        eventManager.add(TickListener.class, this);
+        wasAutoOpened = false;
+        moveTimer.reset();
+        super.onEnable();
+    }
 
-	private boolean needsRefill() {
-		return countPotionsInHotbar() < minPotions.getValue() && findPotionInInventory() != -1;
-	}
+    @Override
+    public void onDisable() {
+        eventManager.remove(TickListener.class, this);
+        if (wasAutoOpened && mc.currentScreen instanceof InventoryScreen) {
+            mc.currentScreen.close();
+        }
+        wasAutoOpened = false;
+        super.onDisable();
+    }
 
-	@Override
-	public void onTick() {
-		if (mc.player == null) return;
+    private int countPotionsInHotbar() {
+        int count = 0;
+        for (int i = 0; i < 9; i++) {
+            if (isPotionOfType(mc.player.getInventory().getStack(i))) count++;
+        }
+        return count;
+    }
 
-		boolean needsRefill = needsRefill();
+    private boolean isPotionOfType(net.minecraft.item.ItemStack stack) {
+        return switch (potionType.getMode()) {
+            case Health         -> InventoryUtils.isThatSplash(StatusEffects.INSTANT_HEALTH.value(), 1, 1, stack);
+            case Strength       -> InventoryUtils.isThatSplash(StatusEffects.STRENGTH.value(), 1, 1, stack);
+            case Speed          -> InventoryUtils.isThatSplash(StatusEffects.SPEED.value(), 1, 1, stack);
+            case FireResistance -> InventoryUtils.isThatSplash(StatusEffects.FIRE_RESISTANCE.value(), 1, 1, stack);
+        };
+    }
 
-		// Auto open inventory if needed
-		if (needsRefill && autoOpen.getValue() && !(mc.currentScreen instanceof InventoryScreen)) {
-			mc.setScreen(new InventoryScreen(mc.player));
-			return;
-		}
+    /**
+     * Returns the inventory slot index (9-35) where a matching potion was found,
+     * or -1 if none available.
+     */
+    private int findPotionInInventory() {
+        return switch (potionType.getMode()) {
+            case Health         -> InventoryUtils.findPot(StatusEffects.INSTANT_HEALTH.value(), 1, 1);
+            case Strength       -> InventoryUtils.findPot(StatusEffects.STRENGTH.value(), 1, 1);
+            case Speed          -> InventoryUtils.findPot(StatusEffects.SPEED.value(), 1, 1);
+            case FireResistance -> InventoryUtils.findPot(StatusEffects.FIRE_RESISTANCE.value(), 1, 1);
+        };
+    }
 
-		// Only work when inventory is open
-		if (!(mc.currentScreen instanceof InventoryScreen inventoryScreen)) {
-			delayClock = 0;
-			return;
-		}
+    /** Finds an empty hotbar slot (index 0-8) or one holding a non-useful item. */
+    private int findTargetHotbarSlot() {
+        // Prefer truly empty slots first
+        for (int i = 0; i < 9; i++) {
+            if (mc.player.getInventory().getStack(i).isEmpty()) return i;
+        }
+        // Then any non-potion slot
+        for (int i = 0; i < 9; i++) {
+            if (!isPotionOfType(mc.player.getInventory().getStack(i))) return i;
+        }
+        return -1;
+    }
 
-		// Don't auto-close if player manually opened inventory
-		if (!autoOpen.getValue() && mc.currentScreen instanceof InventoryScreen) {
-			// Still refill potions but don't auto-close
-		}
+    @Override
+    public void onTick() {
+        if (mc.player == null) return;
 
-		// Check if we need to refill
-		if (!needsRefill) {
-			delayClock = 0;
-			return;
-		}
+        boolean needsRefill = countPotionsInHotbar() < minPotions.getValue()
+                && findPotionInInventory() != -1;
 
-		// Delay handling
-		if (delayClock < delay.getValue()) {
-			delayClock++;
-			return;
-		}
+        if (!needsRefill) {
+            // Close if we auto-opened and refill is done
+            if (wasAutoOpened && autoClose.getValue()
+                    && mc.currentScreen instanceof InventoryScreen) {
+                mc.currentScreen.close();
+                wasAutoOpened = false;
+            }
+            return;
+        }
 
-		// Find empty slot in hotbar
-		int emptySlot = findEmptyHotbarSlot();
-		if (emptySlot == -1) return;
+        // Open inventory if needed
+        if (autoOpen.getValue() && !(mc.currentScreen instanceof InventoryScreen)) {
+            mc.setScreen(new InventoryScreen(mc.player));
+            wasAutoOpened = true;
+            return;
+        }
 
-		// Find potion in inventory
-		int potionSlot = findPotionInInventory();
-		if (potionSlot == -1) return;
+        if (!(mc.currentScreen instanceof InventoryScreen invScreen)) return;
 
-		// Move potion to hotbar
-		mc.interactionManager.clickSlot(
-			inventoryScreen.getScreenHandler().syncId,
-			potionSlot,
-			emptySlot,
-			SlotActionType.SWAP,
-			mc.player
-		);
+        if (!moveTimer.delay((int) delay.getValue())) return;
+        moveTimer.reset();
 
-		delayClock = 0;
-	}
+        int invSlot     = findPotionInInventory();   // inventory index 9-35
+        int hotbarSlot  = findTargetHotbarSlot();    // hotbar index 0-8
+        if (invSlot == -1 || hotbarSlot == -1) return;
+
+        int syncId = invScreen.getScreenHandler().syncId;
+
+        /*
+         * In PlayerScreenHandler (inventory open, no container):
+         *   Slots 9-35  → main inventory (matches inventory index directly)
+         *   Slots 36-44 → hotbar (inventory index + 36)
+         *
+         * SlotActionType.SWAP swaps handler-slot `slot` with hotbar key `button` (0-8).
+         * So: slot = invSlot (9-35 handler slot), button = hotbarSlot (0-8).
+         */
+        mc.interactionManager.clickSlot(
+                syncId,
+                invSlot,           // handler slot of the potion (9-35)
+                hotbarSlot,        // hotbar key 0-8
+                SlotActionType.SWAP,
+                mc.player
+        );
+    }
 }

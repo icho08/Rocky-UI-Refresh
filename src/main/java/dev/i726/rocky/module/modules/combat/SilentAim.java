@@ -18,37 +18,48 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 public final class SilentAim extends Module implements TickListener {
-    private final NumberSetting range = new NumberSetting(EncryptedString.of("Range"), 3.0, 5.0, 3.2, 0.1);
-    private final NumberSetting fov = new NumberSetting(EncryptedString.of("FOV"), 5, 360, 90, 1);
-    private final NumberSetting smoothing = new NumberSetting(EncryptedString.of("Smoothing"), 0, 10, 2, 0.1)
-            .setDescription(EncryptedString.of("Higher values make rotations slower and more legit-looking on the server"));
+
+    private final NumberSetting range    = new NumberSetting(EncryptedString.of("Range"), 3.0, 6.0, 3.5, 0.1);
+    private final NumberSetting fov      = new NumberSetting(EncryptedString.of("FOV"), 5, 360, 90, 1);
+    private final NumberSetting smoothing = new NumberSetting(EncryptedString.of("Smoothing"), 0, 10, 3, 0.1)
+            .setDescription(EncryptedString.of("Higher = slower, more legit rotations on the server side"));
     private final BooleanSetting players = new BooleanSetting(EncryptedString.of("Players"), true);
-    private final BooleanSetting mobs = new BooleanSetting(EncryptedString.of("Mobs"), false);
+    private final BooleanSetting mobs    = new BooleanSetting(EncryptedString.of("Mobs"), false);
     private final BooleanSetting weaponOnly = new BooleanSetting(EncryptedString.of("Weapon Only"), true);
-    private final BooleanSetting predict = new BooleanSetting(EncryptedString.of("Prediction"), true)
-            .setDescription(EncryptedString.of("Predicts target movement for better accuracy"));
+    private final BooleanSetting predict    = new BooleanSetting(EncryptedString.of("Prediction"), true)
+            .setDescription(EncryptedString.of("Leads the target by one tick of velocity"));
     private final BooleanSetting overrideCrosshair = new BooleanSetting(EncryptedString.of("Override Crosshair"), true)
-            .setDescription(EncryptedString.of("Makes other modules see the target through your crosshair"));
+            .setDescription(EncryptedString.of("Lets other modules (AutoCrystal, etc.) see through the silent crosshair"));
+    private final BooleanSetting gcdCorrection = new BooleanSetting(EncryptedString.of("GCD Correction"), true)
+            .setDescription(EncryptedString.of("Snaps rotation deltas to DPI-quantised steps so Grim can't distinguish them from real mouse"));
+    private final BooleanSetting randomBodyPart = new BooleanSetting(EncryptedString.of("Random Body Part"), true)
+            .setDescription(EncryptedString.of("Slightly randomises the aim point so it never locks dead-centre each tick"));
 
     private Entity target;
     private Rotation targetRotation;
     private float serverYaw, serverPitch;
     private boolean rotating;
 
+    // Smoothly drifting aim offset — avoids constant dead-centre aim
+    private float aimOffsetYaw   = 0f;
+    private float aimOffsetPitch = 0f;
+
     public SilentAim() {
         super(EncryptedString.of("Silent Aim"),
-                EncryptedString.of("Aims without rotating your view"),
-                -1,
-                CategoryManager.PVP);
-        addSettings(range, fov, smoothing, players, mobs, weaponOnly, predict, overrideCrosshair);
+                EncryptedString.of("Silently rotates on the server without moving your view"),
+                -1, CategoryManager.PVP);
+        addSettings(range, fov, smoothing, players, mobs, weaponOnly, predict,
+                overrideCrosshair, gcdCorrection, randomBodyPart);
     }
 
     @Override
     public void onEnable() {
         if (mc.player != null) {
-            serverYaw = mc.player.getYaw();
+            serverYaw   = mc.player.getYaw();
             serverPitch = mc.player.getPitch();
         }
+        aimOffsetYaw   = 0f;
+        aimOffsetPitch = 0f;
         eventManager.add(TickListener.class, this);
         super.onEnable();
     }
@@ -56,9 +67,9 @@ public final class SilentAim extends Module implements TickListener {
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
-        target = null;
+        target         = null;
         targetRotation = null;
-        rotating = false;
+        rotating       = false;
         super.onDisable();
     }
 
@@ -66,14 +77,16 @@ public final class SilentAim extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null || mc.world == null) return;
 
-        if (weaponOnly.getValue() && !(WorldUtils.isSword(mc.player.getMainHandStack().getItem()) || mc.player.getMainHandStack().getItem() instanceof AxeItem || mc.player.getMainHandStack().getItem() instanceof MaceItem)) {
-            target = null;
+        if (weaponOnly.getValue() && !(WorldUtils.isSword(mc.player.getMainHandStack().getItem())
+                || mc.player.getMainHandStack().getItem() instanceof AxeItem
+                || mc.player.getMainHandStack().getItem() instanceof MaceItem)) {
+            target         = null;
             targetRotation = null;
-            rotating = false;
+            rotating       = false;
             return;
         }
 
-        target = null;
+        target        = null;
         double closestAngle = Double.MAX_VALUE;
 
         for (Entity entity : mc.world.getEntities()) {
@@ -86,46 +99,83 @@ public final class SilentAim extends Module implements TickListener {
             if (dist > range.getValue()) continue;
 
             Vec3d targetPos = entity.getEyePos();
+
             if (predict.getValue()) {
+                // Lead target by exactly one tick — multiplier >1 causes overshoot
                 Vec3d velocity = entity.getVelocity();
-                targetPos = targetPos.add(velocity.x * 2.0, velocity.y * 2.0, velocity.z * 2.0);
+                targetPos = targetPos.add(velocity.x, velocity.y * 0.5, velocity.z);
             }
 
-            Rotation rot = RotationUtils.getDirection(mc.player.getEyePos(), targetPos);
-            double angle = RotationUtils.getAngleToRotation(rot);
+            Rotation rot   = RotationUtils.getDirection(mc.player.getEyePos(), targetPos);
+            double   angle = RotationUtils.getAngleToRotation(rot);
 
-            if (angle < (fov.getValue() / 2.0)) {
-                if (angle < closestAngle) {
-                    closestAngle = angle;
-                    target = entity;
-                    targetRotation = rot;
-                }
+            if (angle < (fov.getValue() / 2.0) && angle < closestAngle) {
+                closestAngle   = angle;
+                target         = entity;
+                targetRotation = rot;
             }
         }
 
         if (target != null && targetRotation != null) {
             rotating = true;
-            float smooth = smoothing.getValueFloat();
-            if (smooth <= 0) {
-                serverYaw = (float) targetRotation.yaw();
-                serverPitch = (float) targetRotation.pitch();
+
+            // Slowly drift aim point so we never lock 100 % dead-centre
+            if (randomBodyPart.getValue()) {
+                aimOffsetYaw   = aimOffsetYaw   * 0.8f + (float)(Math.random() - 0.5) * 0.06f;
+                aimOffsetPitch = aimOffsetPitch * 0.8f + (float)(Math.random() - 0.5) * 0.06f;
             } else {
-                serverYaw = MathHelper.lerpAngleDegrees(1.0f / (smooth * 2.0f), serverYaw, (float) targetRotation.yaw());
-                serverPitch = MathHelper.lerpAngleDegrees(1.0f / (smooth * 2.0f), serverPitch, (float) targetRotation.pitch());
+                aimOffsetYaw   = 0;
+                aimOffsetPitch = 0;
             }
 
+            float targetYaw   = (float) targetRotation.yaw()   + aimOffsetYaw;
+            float targetPitch = (float) targetRotation.pitch() + aimOffsetPitch;
+
+            float smooth = smoothing.getValueFloat();
+            if (smooth <= 0) {
+                serverYaw   = targetYaw;
+                serverPitch = targetPitch;
+            } else {
+                // Lerp speed inversely proportional to smoothing
+                float t = 1.0f / (smooth * 1.5f + 1.0f);
+                serverYaw   = MathHelper.lerpAngleDegrees(t, serverYaw,   targetYaw);
+                serverPitch = MathHelper.lerpAngleDegrees(t, serverPitch, targetPitch);
+            }
+
+            // GCD correction — makes the rotation delta pattern match real mouse DPI steps
+            if (gcdCorrection.getValue()) {
+                float gcd = calcGcd();
+                if (gcd > 0) {
+                    float yawDelta   = MathHelper.wrapDegrees(serverYaw   - mc.player.getYaw());
+                    float pitchDelta = serverPitch - mc.player.getPitch();
+                    yawDelta   -= yawDelta   % gcd;
+                    pitchDelta -= pitchDelta % gcd;
+                    serverYaw   = mc.player.getYaw()   + yawDelta;
+                    serverPitch = mc.player.getPitch() + pitchDelta;
+                }
+            }
+
+            serverPitch = MathHelper.clamp(serverPitch, -90f, 90f);
+
             if (overrideCrosshair.getValue()) {
-                HitResult silentResult = WorldUtils.getHitResult(mc.player, false, serverYaw, serverPitch, range.getValue());
+                HitResult silentResult = WorldUtils.getHitResult(
+                        mc.player, false, serverYaw, serverPitch, range.getValue());
                 if (silentResult != null && silentResult.getType() != HitResult.Type.MISS) {
                     mc.crosshairTarget = silentResult;
                 }
             }
+
         } else {
-            // Gradually return to player's look direction or just stop
-            rotating = false;
-            serverYaw = mc.player.getYaw();
+            rotating    = false;
+            serverYaw   = mc.player.getYaw();
             serverPitch = mc.player.getPitch();
         }
+    }
+
+    private float calcGcd() {
+        double sens = mc.options.getMouseSensitivity().getValue();
+        double f    = sens * 0.6 + 0.2;
+        return (float)(f * f * f * 1.2);
     }
 
     public Entity getTarget() {

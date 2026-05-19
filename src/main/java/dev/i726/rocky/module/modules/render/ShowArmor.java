@@ -3,8 +3,10 @@ package dev.i726.rocky.module.modules.render;
 import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
+import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
+import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
@@ -14,14 +16,27 @@ import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
 
 public final class ShowArmor extends Module implements GameRenderListener {
-    private final NumberSetting range = new NumberSetting(EncryptedString.of("Range"), 10, 100, 30, 5);
+
+    private final NumberSetting range = new NumberSetting(
+            EncryptedString.of("Range"), 10, 100, 30, 5);
+
+    private final BooleanSetting showDurability = new BooleanSetting(
+            EncryptedString.of("Show Durability"), true)
+            .setDescription(EncryptedString.of("Show remaining durability numbers"));
+
+    private final BooleanSetting showPiece = new BooleanSetting(
+            EncryptedString.of("Show Piece Label"), true)
+            .setDescription(EncryptedString.of("Show H/C/L/B labels next to durability"));
+
+    private final BooleanSetting colorWarning = new BooleanSetting(
+            EncryptedString.of("Low Durability Warning"), true)
+            .setDescription(EncryptedString.of("Turn red when a piece is below 10% durability"));
 
     public ShowArmor() {
         super(EncryptedString.of("Armor Display"),
                 EncryptedString.of("Shows player armor durability above their head"),
-              -1,
-              CategoryManager.ESP);
-        addSettings(range);
+                -1, CategoryManager.ESP);
+        addSettings(range, showDurability, showPiece, colorWarning);
     }
 
     @Override
@@ -40,67 +55,94 @@ public final class ShowArmor extends Module implements GameRenderListener {
     public void onGameRender(GameRenderEvent event) {
         if (mc.player == null || mc.world == null) return;
 
+        Camera    cam    = mc.gameRenderer.getCamera();
+        Vec3d     camPos = cam.getPos();
+        float     tickDelta = mc.getRenderTickCounter().getTickProgress(true);
+
+        /*
+         * Use a fresh Immediate provider each render so we don't touch the shared
+         * entity buffers and cause mid-frame flushes.  We build our own immediate
+         * backed by the overlay buffer (same path vanilla nametags use).
+         */
+        VertexConsumerProvider.Immediate immediate =
+                mc.getBufferBuilders().getEffectVertexConsumers();
+
         MatrixStack matrices = event.matrices;
-        Camera cam = mc.gameRenderer.getCamera();
-        Vec3d camPos = cam.getPos();
-        VertexConsumerProvider.Immediate vertexConsumers = mc.getBufferBuilders().getEntityVertexConsumers();
-        float tickDelta = mc.getRenderTickCounter().getTickProgress(true);
 
         for (PlayerEntity player : mc.world.getPlayers()) {
             if (player == mc.player || !player.isAlive()) continue;
             if (mc.player.distanceTo(player) > range.getValue()) continue;
 
-            String armorInfo = getArmorInfo(player);
-            if (armorInfo.isEmpty()) continue;
+            String text  = buildArmorText(player);
+            if (text.isEmpty()) continue;
 
-            // getLerpedPos correctly interpolates between the previous tick position
-            // and current position for all entities (fixes "renders on ground" bug).
             Vec3d pos = player.getLerpedPos(tickDelta);
+            double dx = pos.x - camPos.x;
+            double dy = pos.y - camPos.y + player.getHeight() + 0.35;
+            double dz = pos.z - camPos.z;
 
-            double x = pos.x - camPos.x;
-            double y = pos.y - camPos.y + player.getHeight() + 0.8;
-            double z = pos.z - camPos.z;
+            // Low-durability warning colour
+            boolean lowDurability = hasLowDurability(player);
+            int textColor = (colorWarning.getValue() && lowDurability) ? 0xFF4444 : 0xE5E7EB;
 
             matrices.push();
-            matrices.translate(x, y, z);
+            matrices.translate(dx, dy, dz);
             matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-cam.getYaw()));
             matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(cam.getPitch()));
             matrices.scale(-0.025f, -0.025f, 0.025f);
 
-            float textWidth = mc.textRenderer.getWidth(armorInfo);
-            mc.textRenderer.draw(armorInfo, -textWidth / 2f, 0, 0xE5E7EB, false,
-                               matrices.peek().getPositionMatrix(), vertexConsumers,
-                               net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+            float w = mc.textRenderer.getWidth(text) / 2f;
+            mc.textRenderer.draw(
+                    text, -w, 0, textColor, false,
+                    matrices.peek().getPositionMatrix(),
+                    immediate,
+                    TextRenderer.TextLayerType.SEE_THROUGH,
+                    0x50000000,   // slight background tint
+                    15728880      // full bright
+            );
 
             matrices.pop();
         }
 
-        vertexConsumers.draw();
+        // Flush our own immediate — doesn't affect any other render state
+        immediate.draw();
     }
 
-    private String getArmorInfo(PlayerEntity player) {
-        StringBuilder info = new StringBuilder();
-        // Armor slots in PlayerInventory: 36=boots, 37=leggings, 38=chestplate, 39=helmet
-        ItemStack[] armor = {
+    private String buildArmorText(PlayerEntity player) {
+        // Inventory armor slots: 36=boots, 37=leggings, 38=chestplate, 39=helmet
+        ItemStack[] armor  = {
             player.getInventory().getStack(39), // Helmet
             player.getInventory().getStack(38), // Chestplate
             player.getInventory().getStack(37), // Leggings
             player.getInventory().getStack(36)  // Boots
         };
-        String[] labels = {"H", "C", "L", "B"};
+        String[] labels = { "H", "C", "L", "B" };
+        StringBuilder sb = new StringBuilder();
 
         for (int i = 0; i < armor.length; i++) {
             ItemStack stack = armor[i];
-            if (!stack.isEmpty()) {
-                if (info.length() > 0) info.append(" ");
+            if (stack.isEmpty()) continue;
+            if (sb.length() > 0) sb.append(' ');
+            if (showPiece.getValue()) sb.append(labels[i]).append(':');
+            if (showDurability.getValue()) {
                 if (stack.isDamageable()) {
-                    int durability = stack.getMaxDamage() - stack.getDamage();
-                    info.append(labels[i]).append(":").append(durability);
+                    sb.append(stack.getMaxDamage() - stack.getDamage());
                 } else {
-                    info.append(labels[i]).append(":∞");
+                    sb.append('∞');
                 }
             }
         }
-        return info.toString();
+        return sb.toString();
+    }
+
+    private boolean hasLowDurability(PlayerEntity player) {
+        int[] slots = { 39, 38, 37, 36 };
+        for (int slot : slots) {
+            ItemStack s = player.getInventory().getStack(slot);
+            if (s.isEmpty() || !s.isDamageable()) continue;
+            double ratio = (double)(s.getMaxDamage() - s.getDamage()) / s.getMaxDamage();
+            if (ratio < 0.10) return true;
+        }
+        return false;
     }
 }

@@ -13,6 +13,7 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
+import net.minecraft.util.math.Vec3d;
 
 import java.awt.Color;
 
@@ -67,18 +68,22 @@ public final class Tracers extends Module implements GameRenderListener {
         Color accent = GuiTheme.accent();
         Color tracerColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 200);
         double rangeSq = maxRange.getValue() * maxRange.getValue();
+        float tickDelta = event.delta;
 
         for (Entity entity : mc.world.getEntities()) {
             if (mc.player.squaredDistanceTo(entity) > rangeSq) continue;
 
+            Vec3d lerpedPos = entity.getLerpedPos(tickDelta);
+            Vec3d center = lerpedPos.add(0, entity.getHeight() / 2.0, 0);
+
             if (players.getValue() && entity instanceof AbstractClientPlayerEntity player) {
                 if (player == mc.player) continue;
-                RenderUtils.drawTracer(event.matrices, player.getBoundingBox().getCenter(), tracerColor);
+                RenderUtils.drawTracer(event.matrices, center, tracerColor);
             } else if (mobs.getValue() && entity instanceof MobEntity mob) {
                 if (hostilesOnly.getValue() && !(mob instanceof HostileEntity)) continue;
-                RenderUtils.drawTracer(event.matrices, mob.getBoundingBox().getCenter(), tracerColor);
-            } else if (items.getValue() && entity instanceof ItemEntity item) {
-                RenderUtils.drawTracer(event.matrices, item.getBoundingBox().getCenter(), tracerColor);
+                RenderUtils.drawTracer(event.matrices, center, tracerColor);
+            } else if (items.getValue() && entity instanceof ItemEntity) {
+                RenderUtils.drawTracer(event.matrices, center, tracerColor);
             }
         }
     }

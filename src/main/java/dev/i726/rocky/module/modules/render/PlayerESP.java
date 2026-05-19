@@ -10,6 +10,7 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
 
 import java.awt.Color;
 import java.util.List;
@@ -58,14 +59,20 @@ public final class PlayerESP extends Module implements GameRenderListener {
 
         List<AbstractClientPlayerEntity> players = mc.world.getPlayers();
         EspMode currentMode = mode.getMode();
-
         boolean drawBox = currentMode == EspMode.Box || currentMode == EspMode.Both;
         boolean drawTracer = currentMode == EspMode.Tracer || currentMode == EspMode.Both;
+        float tickDelta = event.delta;
 
         for (AbstractClientPlayerEntity player : players) {
             if (player == mc.player) continue;
 
-            Box box = player.getBoundingBox();
+            Vec3d lerpedPos = player.getLerpedPos(tickDelta);
+            float hw = player.getWidth() / 2f;
+            float h = player.getHeight();
+            Box box = new Box(
+                    lerpedPos.x - hw, lerpedPos.y,      lerpedPos.z - hw,
+                    lerpedPos.x + hw, lerpedPos.y + h,  lerpedPos.z + hw
+            );
 
             if (drawBox) {
                 RenderUtils.drawOutlinedBox(event.matrices, box, outlineColor);

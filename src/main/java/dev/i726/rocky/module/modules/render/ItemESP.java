@@ -12,6 +12,7 @@ import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.Vec3d;
 
 import java.awt.Color;
 
@@ -63,15 +64,21 @@ public final class ItemESP extends Module implements GameRenderListener {
 
         double rangeSq = maxRange.getValue() * maxRange.getValue();
         EspMode currentMode = mode.getMode();
-
         boolean drawBox = currentMode == EspMode.Box || currentMode == EspMode.Both;
         boolean drawTracer = currentMode == EspMode.Tracer || currentMode == EspMode.Both;
+        float tickDelta = event.delta;
 
         for (Entity entity : mc.world.getEntities()) {
             if (!(entity instanceof ItemEntity)) continue;
             if (mc.player.squaredDistanceTo(entity) > rangeSq) continue;
 
-            Box box = entity.getBoundingBox();
+            Vec3d lerpedPos = entity.getLerpedPos(tickDelta);
+            float hw = entity.getWidth() / 2f;
+            float h = entity.getHeight();
+            Box box = new Box(
+                    lerpedPos.x - hw, lerpedPos.y,      lerpedPos.z - hw,
+                    lerpedPos.x + hw, lerpedPos.y + h,  lerpedPos.z + hw
+            );
 
             if (drawBox) {
                 RenderUtils.drawOutlinedBox(event.matrices, box, outlineColor);

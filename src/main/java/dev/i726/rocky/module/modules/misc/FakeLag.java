@@ -17,8 +17,10 @@ import net.minecraft.item.Items;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
 import net.minecraft.network.packet.c2s.play.HandSwingC2SPacket;
+import net.minecraft.network.packet.c2s.play.KeepAliveC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
+import net.minecraft.network.packet.c2s.play.ResourcePackStatusC2SPacket;
 import net.minecraft.network.packet.s2c.play.ExplosionS2CPacket;
 import net.minecraft.util.math.Vec3d;
 
@@ -26,8 +28,14 @@ import java.util.Queue;
 
 public final class FakeLag extends Module implements PlayerTickListener, PacketReceiveListener, PacketSendListener {
 
+    /**
+     * Hard ceiling on how long any packet batch can be held.
+     * Most servers kick after 15–30 s of silence; we stay well under that.
+     */
+    private static final long MAX_HOLD_MS = 8_000;
+
     /** Queued outgoing packets. ConcurrentLinkedQueue is thread-safe for poll/add. */
-    public final Queue<Packet<?>> packetQueue = Queues.newConcurrentLinkedQueue();
+    public final Queue<TimedPacket> packetQueue = Queues.newConcurrentLinkedQueue();
 
     /** Guards against re-queuing packets that we are currently flushing. */
     public volatile boolean flushing = false;
@@ -36,8 +44,8 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
     public TimerUtils timerUtil = new TimerUtils();
 
     private final MinMaxSetting lagDelay = new MinMaxSetting(
-            EncryptedString.of("Lag Delay"), 0, 2000, 1, 100, 300)
-            .setDescription(EncryptedString.of("Random ms to hold packets before flushing"));
+            EncryptedString.of("Lag Delay"), 0, 1000, 1, 50, 250)
+            .setDescription(EncryptedString.of("Random ms to hold packets before flushing (hard cap: 8 s)"));
 
     private final NumberSetting maxQueueSize = new NumberSetting(
             EncryptedString.of("Max Queue"), 10, 200, 60, 5)
@@ -91,8 +99,18 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
     @Override
     public void onPacketSend(PacketSendEvent event) {
         if (mc.world == null || mc.player == null) return;
-        if (flushing) return;   // don't re-queue packets we're currently flushing
+        if (flushing) return;
         if (mc.player.isUsingItem() || mc.player.isDead()) return;
+
+        // ── Critical packets that must NEVER be queued ─────────────────────────
+        // Holding keepalives causes ReadTimeoutException kicks on all servers.
+        if (event.packet instanceof KeepAliveC2SPacket
+                || event.packet instanceof ResourcePackStatusC2SPacket) {
+            // Let these pass through instantly — flush anything waiting first so
+            // the server sees packets in order.
+            flush();
+            return;
+        }
 
         // Interaction or inventory packets break the lag — flush immediately
         if (event.packet instanceof PlayerInteractEntityC2SPacket
@@ -121,7 +139,7 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
             return;
         }
 
-        packetQueue.add(event.packet);
+        packetQueue.add(new TimedPacket(event.packet));
         event.cancel();
     }
 
@@ -129,9 +147,17 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
     public void onPlayerTick() {
         if (mc.player == null || mc.player.isUsingItem()) return;
 
+        // ── Time-based flush ──────────────────────────────────────────────────
         if (timerUtil.delay(delay)) {
             flush();
             delay = lagDelay.getRandomValueInt();
+            return;
+        }
+
+        // ── Safety cap — flush any packet held longer than MAX_HOLD_MS ─────────
+        TimedPacket oldest = packetQueue.peek();
+        if (oldest != null && (System.currentTimeMillis() - oldest.queuedAt) >= MAX_HOLD_MS) {
+            flush();
         }
     }
 
@@ -142,12 +168,24 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
         }
 
         flushing = true;
-        Packet<?> pkt;
-        while ((pkt = packetQueue.poll()) != null) {
-            mc.getNetworkHandler().getConnection().send(pkt, null, false);
+        TimedPacket tp;
+        while ((tp = packetQueue.poll()) != null) {
+            mc.getNetworkHandler().getConnection().send(tp.packet, null, false);
         }
         flushing = false;
         timerUtil.reset();
         if (mc.player != null) pos = mc.player.getEntityPos();
+    }
+
+    // ── Wrapper to track when each packet entered the queue ──────────────────
+
+    public static final class TimedPacket {
+        public final Packet<?> packet;
+        public final long      queuedAt;
+
+        TimedPacket(Packet<?> packet) {
+            this.packet   = packet;
+            this.queuedAt = System.currentTimeMillis();
+        }
     }
 }

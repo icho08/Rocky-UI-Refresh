@@ -1,7 +1,7 @@
 package dev.i726.rocky.module.modules.render;
 import dev.i726.rocky.gui.GuiTheme;
 
-import org.lwjgl.opengl.GL11;
+import com.mojang.blaze3d.opengl.GlStateManager;
 import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
@@ -77,7 +77,9 @@ public final class PlayerESP extends Module implements GameRenderListener {
                 MatrixStack matrices = event.matrices;
                 matrices.push();
 
-                GL11.glDisable(GL11.GL_DEPTH_TEST);
+                GlStateManager._disableDepthTest();
+                GlStateManager._enableBlend();
+                GlStateManager._blendFuncSeparate(770, 771, 1, 0);
 
                 try {
                         for (PlayerEntity player : mc.world.getPlayers()) {
@@ -95,7 +97,8 @@ public final class PlayerESP extends Module implements GameRenderListener {
 
                         mc.getBufferBuilders().getEntityVertexConsumers().draw();
                 } finally {
-                        GL11.glEnable(GL11.GL_DEPTH_TEST);
+                        GlStateManager._enableDepthTest();
+                        GlStateManager._disableBlend();
                 }
                 matrices.pop();
         }

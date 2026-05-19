@@ -9,6 +9,7 @@ import net.minecraft.client.util.ObjectAllocator;
 import net.minecraft.client.util.math.MatrixStack;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import org.joml.Matrix4f;
+import org.joml.Quaternionf;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -23,19 +24,20 @@ public class WorldRendererMixin {
                           Camera camera, Matrix4f matrix4f, Matrix4f matrix4f2, Matrix4f matrix4f3,
                           GpuBufferSlice gpuBufferSlice, Vector4f vector4f, boolean bl, CallbackInfo ci) {
         /*
-         * Build a MatrixStack whose position matrix is the camera's rotation.
+         * Build a MatrixStack for world-space ESP rendering.
          *
-         * RenderUtils subtracts the camera world-position from every vertex, so
-         * the coordinates it emits are already camera-relative (camera = origin).
-         * Applying the camera rotation here transforms those coords into proper
-         * view-space so the perspective projection in RenderSystem renders them at
-         * the correct screen position regardless of which direction you look.
+         * RenderUtils subtracts the camera world-position from every vertex so
+         * all coordinates are already camera-relative (camera = origin).
          *
-         * With an identity matrix the ESP would only look correct when facing a
-         * specific direction; with the rotation it tracks head movement correctly.
+         * We apply the CONJUGATE (inverse) of the camera's rotation quaternion.
+         * camera.getRotation() is the camera's world-space orientation; to
+         * transform camera-relative world coords into view/eye space we need
+         * the inverse rotation so that world objects stay anchored in place as
+         * the player looks around, rather than rotating with the mouse.
          */
         MatrixStack matrices = new MatrixStack();
-        matrices.peek().getPositionMatrix().rotate(camera.getRotation());
+        Quaternionf viewRot = new Quaternionf(camera.getRotation()).conjugate();
+        matrices.peek().getPositionMatrix().rotate(viewRot);
 
         EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getTickProgress(true)));
 

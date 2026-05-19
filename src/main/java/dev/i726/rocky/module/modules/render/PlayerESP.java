@@ -1,7 +1,7 @@
 package dev.i726.rocky.module.modules.render;
 import dev.i726.rocky.gui.GuiTheme;
 
-import com.mojang.blaze3d.systems.RenderSystem;
+import org.lwjgl.opengl.GL11;
 import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
@@ -77,11 +77,9 @@ public final class PlayerESP extends Module implements GameRenderListener {
                 MatrixStack matrices = event.matrices;
                 matrices.push();
 
-                // Use RenderSystem so MC's render-state manager tracks the change.
-                // GL11 calls directly bypass that in 1.21.x and the change is ignored.
-                RenderSystem.disableDepthTest();
-                RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
+                GL11.glDisable(GL11.GL_DEPTH_TEST);
+                GL11.glEnable(GL11.GL_BLEND);
+                GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
                 for (PlayerEntity player : mc.world.getPlayers()) {
                         if (player == mc.player || player.isDead() || player.isRemoved()) continue;
@@ -98,8 +96,8 @@ public final class PlayerESP extends Module implements GameRenderListener {
 
                 mc.getBufferBuilders().getEntityVertexConsumers().draw();
 
-                RenderSystem.disableBlend();
-                RenderSystem.enableDepthTest();
+                GL11.glDisable(GL11.GL_BLEND);
+                GL11.glEnable(GL11.GL_DEPTH_TEST);
                 matrices.pop();
         }
 

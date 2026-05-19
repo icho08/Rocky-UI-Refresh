@@ -10,6 +10,7 @@ import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.render.Camera;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.RotationAxis;
@@ -59,11 +60,6 @@ public final class ShowArmor extends Module implements GameRenderListener {
         Vec3d     camPos = cam.getPos();
         float     tickDelta = mc.getRenderTickCounter().getTickProgress(true);
 
-        /*
-         * Use a fresh Immediate provider each render so we don't touch the shared
-         * entity buffers and cause mid-frame flushes.  We build our own immediate
-         * backed by the overlay buffer (same path vanilla nametags use).
-         */
         VertexConsumerProvider.Immediate immediate =
                 mc.getBufferBuilders().getEffectVertexConsumers();
 
@@ -73,7 +69,7 @@ public final class ShowArmor extends Module implements GameRenderListener {
             if (player == mc.player || !player.isAlive()) continue;
             if (mc.player.distanceTo(player) > range.getValue()) continue;
 
-            String text  = buildArmorText(player);
+            String text = buildArmorText(player);
             if (text.isEmpty()) continue;
 
             Vec3d pos = player.getLerpedPos(tickDelta);
@@ -81,7 +77,6 @@ public final class ShowArmor extends Module implements GameRenderListener {
             double dy = pos.y - camPos.y + player.getHeight() + 0.35;
             double dz = pos.z - camPos.z;
 
-            // Low-durability warning colour
             boolean lowDurability = hasLowDurability(player);
             int textColor = (colorWarning.getValue() && lowDurability) ? 0xFF4444 : 0xE5E7EB;
 
@@ -97,30 +92,23 @@ public final class ShowArmor extends Module implements GameRenderListener {
                     matrices.peek().getPositionMatrix(),
                     immediate,
                     TextRenderer.TextLayerType.SEE_THROUGH,
-                    0x50000000,   // slight background tint
-                    15728880      // full bright
+                    0x50000000,
+                    15728880
             );
 
             matrices.pop();
         }
 
-        // Flush our own immediate — doesn't affect any other render state
         immediate.draw();
     }
 
     private String buildArmorText(PlayerEntity player) {
-        // Inventory armor slots: 36=boots, 37=leggings, 38=chestplate, 39=helmet
-        ItemStack[] armor  = {
-            player.getInventory().getStack(39), // Helmet
-            player.getInventory().getStack(38), // Chestplate
-            player.getInventory().getStack(37), // Leggings
-            player.getInventory().getStack(36)  // Boots
-        };
-        String[] labels = { "H", "C", "L", "B" };
+        EquipmentSlot[] slots  = { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET };
+        String[]        labels = { "H", "C", "L", "B" };
         StringBuilder sb = new StringBuilder();
 
-        for (int i = 0; i < armor.length; i++) {
-            ItemStack stack = armor[i];
+        for (int i = 0; i < slots.length; i++) {
+            ItemStack stack = player.getEquippedStack(slots[i]);
             if (stack.isEmpty()) continue;
             if (sb.length() > 0) sb.append(' ');
             if (showPiece.getValue()) sb.append(labels[i]).append(':');
@@ -136,9 +124,8 @@ public final class ShowArmor extends Module implements GameRenderListener {
     }
 
     private boolean hasLowDurability(PlayerEntity player) {
-        int[] slots = { 39, 38, 37, 36 };
-        for (int slot : slots) {
-            ItemStack s = player.getInventory().getStack(slot);
+        for (EquipmentSlot slot : new EquipmentSlot[]{ EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET }) {
+            ItemStack s = player.getEquippedStack(slot);
             if (s.isEmpty() || !s.isDamageable()) continue;
             double ratio = (double)(s.getMaxDamage() - s.getDamage()) / s.getMaxDamage();
             if (ratio < 0.10) return true;

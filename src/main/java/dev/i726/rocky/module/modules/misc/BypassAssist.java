@@ -4,7 +4,10 @@ import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.events.TickListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
+import dev.i726.rocky.module.modules.combat.AimAssist;
 import dev.i726.rocky.module.modules.combat.Criticals;
+import dev.i726.rocky.module.modules.combat.Reach;
+import dev.i726.rocky.module.modules.combat.Velocity;
 import dev.i726.rocky.module.modules.movement.NoFall;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
@@ -20,11 +23,16 @@ import java.util.Random;
  * make flagging by movement-based anti-cheats harder.
  *
  * Strategies used:
- * 1. Motion Noise   — sends micro-offset position packets each tick so the
- *                     movement trace is not perfectly smooth (bots are).
- * 2. Flag Detect    — watches for server velocity corrections; on detection
- *                     temporarily suppresses NoFall & Criticals so the server
- *                     does not see suspicious packets piling up during a flag.
+ * 1. Motion Noise      — sends micro-offset position packets each tick so the
+ *                        movement trace is not perfectly smooth (bots are).
+ * 2. Rotation Noise    — jitters the sent yaw/pitch by a tiny sub-GCD amount
+ *                        to mimic natural hand tremor.
+ * 3. Flag Detect       — watches for server velocity corrections; on detection
+ *                        temporarily suppresses NoFall, Criticals, Velocity,
+ *                        Reach, and AimAssist so the server does not see
+ *                        suspicious packets piling up during a flag.
+ * 4. Packet Jitter     — randomly skips one noise packet per interval so the
+ *                        send pattern is not perfectly periodic.
  */
 public final class BypassAssist extends Module implements TickListener {
 
@@ -37,8 +45,14 @@ public final class BypassAssist extends Module implements TickListener {
     private final BooleanSetting motionNoise = new BooleanSetting(EncryptedString.of("Motion Noise"), true)
             .setDescription(EncryptedString.of("Sends micro-offset position packets to break linear movement detection"));
 
+    private final BooleanSetting rotationNoise = new BooleanSetting(EncryptedString.of("Rotation Noise"), true)
+            .setDescription(EncryptedString.of("Adds tiny sub-GCD jitter to sent rotations to mimic hand tremor"));
+
     private final BooleanSetting flagDetect = new BooleanSetting(EncryptedString.of("Flag Detect"), true)
             .setDescription(EncryptedString.of("Detects server velocity corrections and pauses aggressive modules"));
+
+    private final BooleanSetting packetJitter = new BooleanSetting(EncryptedString.of("Packet Jitter"), true)
+            .setDescription(EncryptedString.of("Randomly skips noise packets so the send pattern is not perfectly periodic"));
 
     private final NumberSetting flagCooldown = new NumberSetting(
             EncryptedString.of("Flag Cooldown"), 20, 200, 60, 5)
@@ -55,18 +69,28 @@ public final class BypassAssist extends Module implements TickListener {
     private Vec3d prevVelocity      = null;
     private double prevY            = Double.NaN;
 
+    // Smoothed rotation offset for rotation noise
+    private float rotNoiseYaw   = 0f;
+    private float rotNoisePitch = 0f;
+
     // Track which modules we suppressed so we can restore them after cooldown
     private boolean suppressedCriticals = false;
     private boolean suppressedNoFall    = false;
+    private boolean suppressedVelocity  = false;
+    private boolean suppressedReach     = false;
+    private boolean suppressedAimAssist = false;
 
     private Criticals criticals;
     private NoFall    noFall;
+    private Velocity  velocity;
+    private Reach     reach;
+    private AimAssist aimAssist;
 
     public BypassAssist() {
         super(EncryptedString.of("Bypass Assist"),
                 EncryptedString.of("Human-like randomisation to reduce anticheat flags"),
                 -1, CategoryManager.NETWORK);
-        addSettings(strictness, motionNoise, flagDetect, flagCooldown, noiseInterval);
+        addSettings(strictness, motionNoise, rotationNoise, flagDetect, packetJitter, flagCooldown, noiseInterval);
     }
 
     @Override
@@ -76,8 +100,13 @@ public final class BypassAssist extends Module implements TickListener {
         noiseTick           = 0;
         prevVelocity        = null;
         prevY               = Double.NaN;
+        rotNoiseYaw         = 0f;
+        rotNoisePitch       = 0f;
         suppressedCriticals = false;
         suppressedNoFall    = false;
+        suppressedVelocity  = false;
+        suppressedReach     = false;
+        suppressedAimAssist = false;
         cacheModules();
         super.onEnable();
     }
@@ -85,7 +114,6 @@ public final class BypassAssist extends Module implements TickListener {
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
-        // Restore any suppressed modules when we turn off
         restoreSuppressedModules();
         super.onDisable();
     }
@@ -105,10 +133,6 @@ public final class BypassAssist extends Module implements TickListener {
                         Math.pow(vel.x - prevVelocity.x, 2) +
                         Math.pow(vel.z - prevVelocity.z, 2));
 
-                // Threshold raised to 0.4 to avoid triggering on normal step movement.
-                // Also skip detection if the player is stepping upward (Y increased
-                // by a step-like amount) — that is expected Step module behaviour,
-                // not a server rubber-band.
                 boolean steppingUp = !Double.isNaN(prevY) && (currentY - prevY) > 0.05 && (currentY - prevY) < 1.5;
 
                 if (dh > 0.4 && !mc.player.isOnGround() && !steppingUp) {
@@ -123,18 +147,37 @@ public final class BypassAssist extends Module implements TickListener {
         if (flagTicks > 0) {
             flagTicks--;
             if (flagTicks == 0) {
-                // Cooldown expired — restore any modules we suppressed
                 restoreSuppressedModules();
             }
             return;
         }
 
-        // ── 2. Motion noise (while moving on the ground) ──────────────────────
+        // ── 2. Rotation noise — applied every tick while moving ───────────────
+        if (rotationNoise.getValue() && mc.player.isOnGround() && mc.options.forwardKey.isPressed()) {
+            double amp = noiseAmplitude() * 0.5;
+            rotNoiseYaw   = rotNoiseYaw   * 0.6f + (float)((rng.nextDouble() - 0.5) * amp);
+            rotNoisePitch = rotNoisePitch * 0.6f + (float)((rng.nextDouble() - 0.5) * amp * 0.5);
+
+            float newYaw   = mc.player.getYaw()   + rotNoiseYaw;
+            float newPitch = net.minecraft.util.math.MathHelper.clamp(
+                    mc.player.getPitch() + rotNoisePitch, -90f, 90f);
+
+            mc.getNetworkHandler().sendPacket(
+                    new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.Full(
+                            mc.player.getX(), mc.player.getY(), mc.player.getZ(),
+                            newYaw, newPitch,
+                            mc.player.isOnGround(), mc.player.horizontalCollision));
+        }
+
+        // ── 3. Motion noise (while moving on the ground) ──────────────────────
         if (motionNoise.getValue() && mc.player.isOnGround()) {
             noiseTick++;
             if (noiseTick >= noiseInterval.getValueInt()) {
                 noiseTick = 0;
-                sendNoisePacket();
+                // Packet jitter: randomly skip ~20% of packets for irregular timing
+                if (!packetJitter.getValue() || rng.nextDouble() > 0.2) {
+                    sendNoisePacket();
+                }
             }
         }
     }
@@ -144,7 +187,6 @@ public final class BypassAssist extends Module implements TickListener {
     private void triggerFlagResponse() {
         flagTicks = flagCooldown.getValueInt();
 
-        // Suppress (not permanently toggle off) — remember state so we can restore
         if (criticals != null && criticals.isEnabled()) {
             criticals.toggle();
             suppressedCriticals = true;
@@ -153,25 +195,41 @@ public final class BypassAssist extends Module implements TickListener {
             noFall.toggle();
             suppressedNoFall = true;
         }
+        if (velocity != null && velocity.isEnabled()) {
+            velocity.toggle();
+            suppressedVelocity = true;
+        }
+        if (reach != null && reach.isEnabled()) {
+            reach.toggle();
+            suppressedReach = true;
+        }
+        if (aimAssist != null && aimAssist.isEnabled()) {
+            aimAssist.toggle();
+            suppressedAimAssist = true;
+        }
     }
 
     private void restoreSuppressedModules() {
-        if (suppressedCriticals && criticals != null && !criticals.isEnabled()) {
-            criticals.toggle();
-        }
+        if (suppressedCriticals && criticals != null && !criticals.isEnabled()) criticals.toggle();
         suppressedCriticals = false;
 
-        if (suppressedNoFall && noFall != null && !noFall.isEnabled()) {
-            noFall.toggle();
-        }
+        if (suppressedNoFall && noFall != null && !noFall.isEnabled()) noFall.toggle();
         suppressedNoFall = false;
+
+        if (suppressedVelocity && velocity != null && !velocity.isEnabled()) velocity.toggle();
+        suppressedVelocity = false;
+
+        if (suppressedReach && reach != null && !reach.isEnabled()) reach.toggle();
+        suppressedReach = false;
+
+        if (suppressedAimAssist && aimAssist != null && !aimAssist.isEnabled()) aimAssist.toggle();
+        suppressedAimAssist = false;
     }
 
     // ── Motion noise packet ───────────────────────────────────────────────────
 
     private void sendNoisePacket() {
         if (mc.player == null || mc.getNetworkHandler() == null) return;
-        // Only inject while walking/sprinting in a straight line
         if (mc.options.forwardKey.isPressed()) {
             double amp = noiseAmplitude();
             double nx  = (rng.nextDouble() - 0.5) * amp;
@@ -190,8 +248,11 @@ public final class BypassAssist extends Module implements TickListener {
 
     private void cacheModules() {
         if (Rocky.INSTANCE == null || Rocky.INSTANCE.getModuleManager() == null) return;
-        criticals = Rocky.INSTANCE.getModuleManager().getModule(Criticals.class);
-        noFall    = Rocky.INSTANCE.getModuleManager().getModule(NoFall.class);
+        criticals  = Rocky.INSTANCE.getModuleManager().getModule(Criticals.class);
+        noFall     = Rocky.INSTANCE.getModuleManager().getModule(NoFall.class);
+        velocity   = Rocky.INSTANCE.getModuleManager().getModule(Velocity.class);
+        reach      = Rocky.INSTANCE.getModuleManager().getModule(Reach.class);
+        aimAssist  = Rocky.INSTANCE.getModuleManager().getModule(AimAssist.class);
     }
 
     private double noiseAmplitude() {

@@ -1,7 +1,6 @@
 package dev.i726.rocky.module.modules.render;
 
 import dev.i726.rocky.event.events.GameRenderListener;
-import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
@@ -26,6 +25,10 @@ public final class ShowHealth extends Module implements GameRenderListener {
             EncryptedString.of("Range"), 5, 100, 30, 5
     ).setDescription(EncryptedString.of("Maximum distance to show health labels"));
 
+    private final NumberSetting yOffset = new NumberSetting(
+            EncryptedString.of("Y Offset"), -2.0, 2.0, 0.3, 0.05
+    ).setDescription(EncryptedString.of("Move the text up (+) or down (-) relative to the head"));
+
     public ShowHealth() {
         super(
                 EncryptedString.of("ShowHealth"),
@@ -33,7 +36,7 @@ public final class ShowHealth extends Module implements GameRenderListener {
                 -1,
                 CategoryManager.ESP
         );
-        addSettings(absorption, range);
+        addSettings(absorption, range, yOffset);
     }
 
     @Override
@@ -76,7 +79,7 @@ public final class ShowHealth extends Module implements GameRenderListener {
 
             Vec3d pos = player.getLerpedPos(tickDelta);
             double x = pos.x - camPos.x;
-            double y = pos.y - camPos.y + player.getHeight() + 0.3;
+            double y = pos.y - camPos.y + player.getHeight() + yOffset.getValue();
             double z = pos.z - camPos.z;
 
             matrices.push();

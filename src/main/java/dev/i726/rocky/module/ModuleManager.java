@@ -100,6 +100,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new TargetHud());
                 add(new ShowHealth());
                 add(new ShowArmor());
+                add(new HidePlayers());
 
                 //Client
                 add(new ClickGUI());

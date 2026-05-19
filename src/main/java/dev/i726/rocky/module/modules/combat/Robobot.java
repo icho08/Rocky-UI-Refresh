@@ -19,8 +19,8 @@ public final class Robobot extends Module implements AttackListener, TickListene
     private float health = 100f; // Increased health
 
     public Robobot() {
-        super(EncryptedString.of("Kill Aura"),
-                EncryptedString.of("Attacks nearby entities"),
+        super(EncryptedString.of("Robobot"),
+                EncryptedString.of("Spawns a fake player entity for testing"),
                 -1,
                 CategoryManager.AUTOMATION);
     }

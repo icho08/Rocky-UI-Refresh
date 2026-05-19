@@ -173,7 +173,8 @@ public final class RenderUtils {
 
         public static void renderLine(MatrixStack matrices, Color color, Vec3d start, Vec3d end) {
                 Matrix4f matrix = matrices.peek().getPositionMatrix();
-                VertexConsumer buffer = mc.getBufferBuilders().getEntityVertexConsumers().getBuffer(RenderLayer.getLines());
+                VertexConsumer buffer = mc.getBufferBuilders().getEntityVertexConsumers()
+                                .getBuffer(RenderLayer.getDebugLineStrip(1.0));
                 Vec3d cam = getCameraPos();
 
                 float r = color.getRed() / 255f;
@@ -188,21 +189,8 @@ public final class RenderUtils {
                 float ey = (float)(end.y - cam.y);
                 float ez = (float)(end.z - cam.z);
 
-                // Compute line direction, then cross with world-up to get a proper
-                // screen-space normal. Fall back to world-right if the line is vertical.
-                float dx = ex - sx, dy = ey - sy, dz = ez - sz;
-                float len = (float) Math.sqrt(dx*dx + dy*dy + dz*dz);
-                if (len < 1e-6f) return;
-                dx /= len; dy /= len; dz /= len;
-
-                // cross(dir, up=(0,1,0)) = (dz, 0, -dx)
-                float nx = dz, ny = 0f, nz = -dx;
-                float nLen = (float) Math.sqrt(nx*nx + nz*nz);
-                if (nLen < 1e-6f) { nx = 1f; ny = 0f; nz = 0f; } // line is vertical, use right
-                else { nx /= nLen; nz /= nLen; }
-
-                buffer.vertex(matrix, sx, sy, sz).color(r, g, b, a).normal(matrices.peek(), nx, ny, nz);
-                buffer.vertex(matrix, ex, ey, ez).color(r, g, b, a).normal(matrices.peek(), nx, ny, nz);
+                buffer.vertex(matrix, sx, sy, sz).color(r, g, b, a);
+                buffer.vertex(matrix, ex, ey, ez).color(r, g, b, a);
         }
 
         public static void renderFilledBox(MatrixStack matrices, double x1, double y1, double z1, double x2, double y2, double z2, Color color) {

@@ -19,12 +19,23 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class WorldRendererMixin {
 
     @Inject(method = "render", at = @At("TAIL"))
-    private void onRender(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline, Camera camera, Matrix4f matrix4f, Matrix4f matrix4f2, Matrix4f matrix4f3, GpuBufferSlice gpuBufferSlice, Vector4f vector4f, boolean bl, CallbackInfo ci) {
-        // Use an identity MatrixStack — RenderUtils methods subtract camera position
-        // from world coordinates internally, giving camera-relative vertices.
-        // Applying matrix4f or an extra translate(-cam) here would double/triple-offset
-        // every world coordinate and break all 3-D ESP rendering.
+    private void onRender(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline,
+                          Camera camera, Matrix4f matrix4f, Matrix4f matrix4f2, Matrix4f matrix4f3,
+                          GpuBufferSlice gpuBufferSlice, Vector4f vector4f, boolean bl, CallbackInfo ci) {
+        /*
+         * Build a MatrixStack whose position matrix is the camera's rotation.
+         *
+         * RenderUtils subtracts the camera world-position from every vertex, so
+         * the coordinates it emits are already camera-relative (camera = origin).
+         * Applying the camera rotation here transforms those coords into proper
+         * view-space so the perspective projection in RenderSystem renders them at
+         * the correct screen position regardless of which direction you look.
+         *
+         * With an identity matrix the ESP would only look correct when facing a
+         * specific direction; with the rotation it tracks head movement correctly.
+         */
         MatrixStack matrices = new MatrixStack();
+        matrices.peek().getPositionMatrix().rotate(camera.getRotation());
 
         EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getTickProgress(true)));
 

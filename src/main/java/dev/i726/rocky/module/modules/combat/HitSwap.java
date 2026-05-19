@@ -58,13 +58,40 @@ public final class HitSwap extends Module implements AttackListener, PostAttackL
     @Override
     public void onAttack(AttackEvent event) {
         if (mc.player == null) return;
-        if (originalSlot != -1) return; // Already in a swap sequence
+
+        int currentSlot = mc.player.getInventory().getSelectedSlot();
+
+        // Safety recovery: if the player manually switched back to the original slot
+        // while we thought we were in a swap sequence, clear the stale state so
+        // future attacks are not permanently blocked by the guard below.
+        if (originalSlot != -1 && currentSlot == originalSlot) {
+            originalSlot = -1;
+            ticksLeft = -1;
+        }
+
+        if (originalSlot != -1) {
+            // Still in an active swap sequence (axe/mace is held).
+            // Refresh the swap-back timer so rapid consecutive attacks don't cause
+            // a premature swap-back mid-combo — the countdown resets on every hit.
+            if (swapBack.getValue() && delay.getValueInt() > 0) {
+                ticksLeft = delay.getValueInt();
+            }
+            return;
+        }
 
         int slot = -1;
 
         switch (mode.getMode()) {
             case CustomSlot -> slot = targetSlot.getValueInt() - 1;
-            case Axe -> slot = InventoryUtils.getAxeSlot();
+            case Axe -> {
+                // In Axe mode, only swap if currently holding a sword — this is what
+                // "sword+axe combo" means: sword for sustain, axe for shield-break.
+                // If already holding the axe (or something else), skip.
+                if (dev.i726.rocky.utils.WorldUtils.isSword(
+                        mc.player.getInventory().getStack(currentSlot).getItem())) {
+                    slot = InventoryUtils.getAxeSlot();
+                }
+            }
             case Mace -> {
                 for (int i = 0; i < 9; i++) {
                     if (mc.player.getInventory().getStack(i).getItem() instanceof MaceItem) {
@@ -75,15 +102,11 @@ public final class HitSwap extends Module implements AttackListener, PostAttackL
             }
         }
 
-        if (slot == -1 || slot == mc.player.getInventory().getSelectedSlot()) return;
+        if (slot == -1 || slot == currentSlot) return;
 
-        // Save original slot
-        originalSlot = mc.player.getInventory().getSelectedSlot();
-
-        // Switch to the target slot immediately
+        originalSlot = currentSlot;
         InventoryUtils.setInvSlot(slot);
 
-        // If swap back is disabled, we stay on the new slot
         if (!swapBack.getValue()) {
             originalSlot = -1;
         } else if (delay.getValueInt() > 0) {
@@ -94,8 +117,8 @@ public final class HitSwap extends Module implements AttackListener, PostAttackL
     @Override
     public void onPostAttack(PostAttackEvent event) {
         if (mc.player == null) return;
-        
-        // If delay is 0, we swap back immediately at the end of the attack sequence
+        // Instant swap-back (delay == 0): return to original slot at the end of the
+        // attack so the next hit re-evaluates whether to swap again.
         if (originalSlot != -1 && swapBack.getValue() && delay.getValueInt() == 0) {
             InventoryUtils.setInvSlot(originalSlot);
             originalSlot = -1;
@@ -104,13 +127,12 @@ public final class HitSwap extends Module implements AttackListener, PostAttackL
 
     @Override
     public void onTick() {
-        if (originalSlot != -1 && ticksLeft != -1) {
-            if (ticksLeft <= 0) {
+        if (originalSlot != -1 && ticksLeft > 0) {
+            ticksLeft--;
+            if (ticksLeft == 0) {
                 InventoryUtils.setInvSlot(originalSlot);
                 originalSlot = -1;
                 ticksLeft = -1;
-            } else {
-                ticksLeft--;
             }
         }
     }

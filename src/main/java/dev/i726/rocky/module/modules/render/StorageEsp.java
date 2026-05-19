@@ -9,7 +9,15 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.block.entity.*;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.render.Camera;
+import net.minecraft.client.render.VertexConsumerProvider;
+import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.inventory.Inventory;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.math.Box;
+import net.minecraft.util.math.RotationAxis;
+import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.chunk.WorldChunk;
 
 import java.awt.Color;
@@ -52,6 +60,10 @@ public final class StorageEsp extends Module implements GameRenderListener {
             EncryptedString.of("Tracers"), false
     ).setDescription(EncryptedString.of("Draw tracer lines to storage blocks"));
 
+    private final BooleanSetting showContents = new BooleanSetting(
+            EncryptedString.of("Show Contents"), true
+    ).setDescription(EncryptedString.of("Show item count above the container — green = has items, red = empty"));
+
     public StorageEsp() {
         super(
                 EncryptedString.of("StorageESP"),
@@ -59,7 +71,7 @@ public final class StorageEsp extends Module implements GameRenderListener {
                 -1,
                 CategoryManager.ESP
         );
-        addSettings(chests, barrels, shulkers, furnaces, hoppers, fill, fillOpacity, outlineOpacity, tracers);
+        addSettings(chests, barrels, shulkers, furnaces, hoppers, fill, fillOpacity, outlineOpacity, tracers, showContents);
     }
 
     @Override
@@ -82,7 +94,14 @@ public final class StorageEsp extends Module implements GameRenderListener {
         int fA = (int) fillOpacity.getValue();
         int oA = (int) outlineOpacity.getValue();
         Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), oA);
-        Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), fA);
+        Color fillColor    = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), fA);
+
+        Camera cam    = mc.gameRenderer.getCamera();
+        Vec3d  camPos = cam.getPos();
+        float  td     = mc.getRenderTickCounter().getTickProgress(true);
+
+        VertexConsumerProvider.Immediate immediate =
+                mc.getBufferBuilders().getEffectVertexConsumers();
 
         int playerCX = mc.player.getBlockX() >> 4;
         int playerCZ = mc.player.getBlockZ() >> 4;
@@ -113,9 +132,65 @@ public final class StorageEsp extends Module implements GameRenderListener {
                     if (tracers.getValue()) {
                         RenderUtils.drawTracer(event.matrices, box.getCenter(), outlineColor);
                     }
+
+                    if (showContents.getValue() && be instanceof Inventory inv) {
+                        renderContentLabel(event.matrices, immediate, cam, camPos,
+                                x + 0.5, y + 1.15, z + 0.5, inv);
+                    }
                 }
             }
         }
+
+        immediate.draw();
+    }
+
+    private void renderContentLabel(MatrixStack matrices,
+                                    VertexConsumerProvider.Immediate immediate,
+                                    Camera cam, Vec3d camPos,
+                                    double wx, double wy, double wz,
+                                    Inventory inv) {
+        int filled = 0;
+        int total  = inv.size();
+        for (int i = 0; i < total; i++) {
+            ItemStack s = inv.getStack(i);
+            if (!s.isEmpty()) filled++;
+        }
+
+        // Choose color: green gradient from empty→full, red when completely empty
+        int textColor;
+        if (filled == 0) {
+            textColor = 0xFF4444; // red — empty
+        } else if (filled == total) {
+            textColor = 0xFF4444; // red — full (no more room)
+        } else {
+            float ratio = (float) filled / total;
+            int r = (int)((1f - ratio) * 220);
+            int g = (int)(ratio * 220);
+            textColor = new Color(r, g, 40, 255).getRGB();
+        }
+
+        String label = filled + "/" + total;
+
+        double dx = wx - camPos.x;
+        double dy = wy - camPos.y;
+        double dz = wz - camPos.z;
+
+        matrices.push();
+        matrices.translate(dx, dy, dz);
+        matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-cam.getYaw()));
+        matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(cam.getPitch()));
+        matrices.scale(-0.02f, -0.02f, 0.02f);
+
+        float w = mc.textRenderer.getWidth(label) / 2f;
+        mc.textRenderer.draw(
+                label, -w, 0, textColor, false,
+                matrices.peek().getPositionMatrix(),
+                immediate,
+                TextRenderer.TextLayerType.SEE_THROUGH,
+                0x40000000,
+                15728880
+        );
+        matrices.pop();
     }
 
     private boolean shouldRender(BlockEntity be) {

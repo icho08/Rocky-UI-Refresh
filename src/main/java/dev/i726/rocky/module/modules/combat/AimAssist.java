@@ -28,6 +28,12 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
     private final BooleanSetting randomOffset  = new BooleanSetting(EncryptedString.of("Random Offset"), true)
             .setDescription(EncryptedString.of("Slightly randomizes the aim point within the hitbox"));
 
+    // ── Sticky Aim ────────────────────────────────────────────────────────────
+    private final BooleanSetting stickyAim = new BooleanSetting(EncryptedString.of("Sticky Aim"), false)
+            .setDescription(EncryptedString.of("Locks onto the first target acquired — won't switch even if they leave FOV"));
+    private final NumberSetting stickyRange = new NumberSetting(EncryptedString.of("Sticky Range"), 1, 12, 6.0, 0.1)
+            .setDescription(EncryptedString.of("Distance at which the sticky lock is released"));
+
     private final NumberSetting range          = new NumberSetting(EncryptedString.of("Range"), 1, 10, 4.5, 0.1);
     private final NumberSetting fov            = new NumberSetting(EncryptedString.of("FOV"), 5, 180, 60, 1);
     private final MinMaxSetting speed          = new MinMaxSetting(EncryptedString.of("Speed"), 0.1, 15, 0.1, 1.5, 4.5);
@@ -39,9 +45,11 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
     private float currentSpeed;
     private float lerpFactor = 0;
 
-    // Smoothed random aim-point offset — evolves slowly to avoid identical-frame patterns
     private float aimOffsetYaw   = 0f;
     private float aimOffsetPitch = 0f;
+
+    /** The target currently locked by Sticky Aim. Null when sticky is off or no lock. */
+    private PlayerEntity lockedTarget = null;
 
     public enum AimMode { Head, Chest, Legs }
 
@@ -49,16 +57,18 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         super(EncryptedString.of("Aim Assist"),
                 EncryptedString.of("Smoothly aims at nearby players"),
                 -1, CategoryManager.PVP);
-        addSettings(onlyWeapon, onLeftClick, aimAt, stopAtTarget, gcdCorrection, randomOffset,
-                range, fov, speed, acceleration, jitterEnabled, jitterAmount);
+        addSettings(onlyWeapon, onLeftClick, aimAt, stopAtTarget, stickyAim, stickyRange,
+                gcdCorrection, randomOffset, range, fov, speed, acceleration,
+                jitterEnabled, jitterAmount);
     }
 
     @Override
     public void onEnable() {
-        currentSpeed = speed.getRandomValueFloat();
-        lerpFactor = 0;
-        aimOffsetYaw = 0f;
+        currentSpeed  = speed.getRandomValueFloat();
+        lerpFactor    = 0;
+        aimOffsetYaw  = 0f;
         aimOffsetPitch = 0f;
+        lockedTarget  = null;
         eventManager.add(HudListener.class, this);
         eventManager.add(MouseMoveListener.class, this);
         super.onEnable();
@@ -66,6 +76,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 
     @Override
     public void onDisable() {
+        lockedTarget = null;
         eventManager.remove(HudListener.class, this);
         eventManager.remove(MouseMoveListener.class, this);
         super.onDisable();
@@ -81,13 +92,20 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         if (onLeftClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(),
                 GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS) {
             lerpFactor = 0;
+            if (!stickyAim.getValue()) lockedTarget = null;
             return;
         }
 
-        PlayerEntity target = WorldUtils.findNearestPlayer(mc.player, range.getValueFloat(), true, true);
+        PlayerEntity target = resolveTarget();
         if (target == null || target.isDead() || target.isRemoved()) {
-            lerpFactor = 0;
+            lerpFactor   = 0;
+            lockedTarget = null;
             return;
+        }
+
+        // Acquire sticky lock on first contact
+        if (stickyAim.getValue() && lockedTarget == null) {
+            lockedTarget = target;
         }
 
         if (speedRerollTimer.delay(500)) {
@@ -95,7 +113,6 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
             speedRerollTimer.reset();
         }
 
-        // Slowly drift aim offset so the aim point isn't pixel-perfect identical each frame
         if (randomOffset.getValue()) {
             aimOffsetYaw   = aimOffsetYaw   * 0.85f + (float)(Math.random() - 0.5) * 0.08f;
             aimOffsetPitch = aimOffsetPitch * 0.85f + (float)(Math.random() - 0.5) * 0.08f;
@@ -108,7 +125,6 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         if (aimAt.isMode(AimMode.Chest)) targetPos = targetPos.add(0, -height * 0.4, 0);
         else if (aimAt.isMode(AimMode.Legs)) targetPos = targetPos.add(0, -height * 0.8, 0);
 
-        // Predict target movement slightly
         Vec3d vel = target.getVelocity();
         targetPos = targetPos.add(vel.x * 0.5, vel.y * 0.3, vel.z * 0.5);
 
@@ -116,7 +132,9 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         if (rotation == null) return;
 
         double angleToRotation = RotationUtils.getAngleToRotation(rotation);
-        if (angleToRotation > (double) fov.getValueInt() / 2) {
+
+        // Non-sticky: respect FOV cutoff. Sticky: always rotate toward locked target.
+        if (!stickyAim.getValue() && angleToRotation > (double) fov.getValueInt() / 2) {
             lerpFactor = 0;
             return;
         }
@@ -133,7 +151,6 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         float delta = (float) RenderUtils.deltaTime();
         lerpFactor = Math.min(1.0f, lerpFactor + delta * acceleration.getValueFloat() * 2.0f);
 
-        // Speed is now in degrees/tick equivalent — scale makes it feel responsive yet smooth
         float strength = (currentSpeed / 20.0f) * lerpFactor;
 
         float newYaw   = lerp(strength, mc.player.getYaw(),   (float) rotation.yaw()   + aimOffsetYaw);
@@ -145,7 +162,6 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
             newPitch += (float)((Math.random() - 0.5) * jitter);
         }
 
-        // GCD correction — snap rotation deltas to mouse-DPI-quantised steps
         if (gcdCorrection.getValue()) {
             float gcd = calcGcd();
             if (gcd > 0) {
@@ -162,7 +178,23 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         mc.player.setPitch(MathHelper.clamp(newPitch, -90, 90));
     }
 
-    /** GCD formula mirrors Minecraft's Mouse.java: (sens*0.6+0.2)^3 * 8.0 */
+    /**
+     * Returns the target to aim at.
+     * With Sticky Aim on: returns the locked target if it is still valid,
+     * otherwise falls back to nearest and re-acquires.
+     */
+    private PlayerEntity resolveTarget() {
+        if (stickyAim.getValue() && lockedTarget != null) {
+            if (!lockedTarget.isAlive() || lockedTarget.isRemoved()
+                    || mc.player.distanceTo(lockedTarget) > stickyRange.getValue()) {
+                lockedTarget = null;
+            } else {
+                return lockedTarget;
+            }
+        }
+        return WorldUtils.findNearestPlayer(mc.player, range.getValueFloat(), true, true);
+    }
+
     private float calcGcd() {
         double sens = mc.options.getMouseSensitivity().getValue();
         double f    = sens * 0.6 + 0.2;

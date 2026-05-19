@@ -1,8 +1,6 @@
 package dev.i726.rocky.mixin;
 
 import com.mojang.authlib.GameProfile;
-import dev.i726.rocky.Rocky;
-import dev.i726.rocky.module.modules.combat.SilentAim;
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.MovementPacketListener;
 import dev.i726.rocky.event.events.PlayerTickListener;
@@ -31,32 +29,10 @@ public class ClientPlayerEntityMixin extends AbstractClientPlayerEntity {
         @Inject(method = "sendMovementPackets", at = @At("HEAD"))
         private void onSendMovementPackets(CallbackInfo ci) {
                 EventManager.fire(new MovementPacketListener.MovementPacketEvent());
-                SilentAim sa = Rocky.INSTANCE.getModuleManager().getModule(SilentAim.class);
-                rocky_needsRotationRestore = false;
-                if (sa != null && sa.isEnabled() && sa.getRotation() != null) {
-                        rocky_lastYaw = this.getYaw();
-                        rocky_lastPitch = this.getPitch();
-                        this.setYaw((float) sa.getRotation().yaw());
-                        this.setPitch((float) sa.getRotation().pitch());
-                        rocky_needsRotationRestore = true;
-                }
         }
-
-        @Inject(method = "sendMovementPackets", at = @At("RETURN"))
-        private void onSendMovementPacketsReturn(CallbackInfo ci) {
-                if (rocky_needsRotationRestore) {
-                        this.setYaw(rocky_lastYaw);
-                        this.setPitch(rocky_lastPitch);
-                        rocky_needsRotationRestore = false;
-                }
-        }
-
-        private float rocky_lastYaw, rocky_lastPitch;
-        private boolean rocky_needsRotationRestore = false;
 
         @Inject(method = "tick", at = @At("HEAD"))
         private void onPlayerTick(CallbackInfo ci) {
                 EventManager.fire(new PlayerTickListener.PlayerTickEvent());
         }
-        //@Inject(method = "sendMovementPackets", at = @At("HEAD"))
 }

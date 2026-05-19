@@ -102,7 +102,8 @@ public final class DoubleAnchor extends Module implements TickListener {
     // IDLE: find a valid target position in front of the player and kick off
     // ──────────────────────────────────────────────────────────────────────
     private void handleIdle() {
-        if (!InventoryUtils.selectItemFromHotbar(Items.RESPAWN_ANCHOR)) return;
+        // Only activate when the player is already holding a Respawn Anchor
+        if (!mc.player.getMainHandStack().isOf(Items.RESPAWN_ANCHOR)) return;
         if (!hasGlowstone()) return;
 
         BlockPos target = findPlacementPos();

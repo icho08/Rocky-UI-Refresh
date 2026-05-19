@@ -61,6 +61,7 @@ public final class ModuleManager implements ButtonListener {
 
                 //Misc
                 add(new ChestStealer());
+                add(new HandDump());
                 add(new AutoArmor());
                 add(new AutoEat());
                 add(new AntiAFK());

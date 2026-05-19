@@ -275,11 +275,7 @@ public final class RenderUtils {
         }
 
         public static void drawTracer(MatrixStack matrices, Vec3d end, Color color) {
-                Vec3d start = new Vec3d(0, 0, 1)
-                                .rotateX(-(float) Math.toRadians(mc.player.getPitch()))
-                                .rotateY(-(float) Math.toRadians(mc.player.getYaw()))
-                                .add(getCameraPos());
-                renderLine(matrices, color, start, end);
+                renderLine(matrices, color, getCameraPos(), end);
         }
 
         public static void setScissorRegion(DrawContext context, int x, int y, int width, int height) {

@@ -3,6 +3,7 @@ package dev.i726.rocky.mixin;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.AttackListener;
+import dev.i726.rocky.event.events.PostAttackListener;
 import dev.i726.rocky.module.modules.misc.NoBreakDelay;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
 import net.minecraft.entity.Entity;
@@ -32,5 +33,10 @@ public class ClientPlayerInteractionManagerMixin {
 		AttackListener.AttackEvent event = new AttackListener.AttackEvent(target);
 		EventManager.fire(event);
 		if (event.isCancelled()) ci.cancel();
+	}
+
+	@Inject(method = "attackEntity", at = @At("RETURN"))
+	private void onAttackEntityPost(PlayerEntity player, Entity target, CallbackInfo ci) {
+		EventManager.fire(new PostAttackListener.PostAttackEvent(target));
 	}
 }

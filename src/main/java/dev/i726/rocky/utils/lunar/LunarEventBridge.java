@@ -38,9 +38,12 @@ import java.util.concurrent.TimeUnit;
 public final class LunarEventBridge {
 
     private static final String HANDLER_NAME = "rocky_event_bridge";
-
     private static ScheduledExecutorService scheduler;
     private static volatile Channel activeChannel;
+
+    // Reflection cache
+    private static Field itemUseCooldownField;
+    private static boolean hooksInitialized = false;
 
     // ── Public API ────────────────────────────────────────────────────────────
 
@@ -54,6 +57,29 @@ public final class LunarEventBridge {
         });
         // 50 ms = 1 MC tick period; initial delay 2 s to let MC/Genesis finish loading
         scheduler.scheduleAtFixedRate(LunarEventBridge::tick, 2000, 50, TimeUnit.MILLISECONDS);
+        
+        // Start the frame-based loop for rendering-intensive hooks (Chams/ESP)
+        scheduler.schedule(LunarEventBridge::runFrameLoop, 3, TimeUnit.SECONDS);
+    }
+
+    private static void runFrameLoop() {
+        try {
+            MinecraftClient mc = MinecraftClient.getInstance();
+            if (mc == null || dev.i726.rocky.module.modules.client.SelfDestruct.destruct) return;
+
+            mc.execute(() -> {
+                try {
+                    if (mc.player != null && mc.world != null) {
+                        handleRenderHooks(mc);
+                    }
+                } catch (Throwable ignored) {}
+                
+                // Reschedule for next frame
+                if (!dev.i726.rocky.module.modules.client.SelfDestruct.destruct) {
+                    mc.execute(LunarEventBridge::runFrameLoop);
+                }
+            });
+        } catch (Throwable ignored) {}
     }
 
     // ── Per-tick work (runs on the scheduler thread, then dispatches to MC) ──
@@ -68,6 +94,12 @@ public final class LunarEventBridge {
                 try {
                     if (mc.player == null) return;
 
+                    // Initialize hooks on first valid tick
+                    if (!hooksInitialized) {
+                        setupHooks(mc);
+                        hooksInitialized = true;
+                    }
+
                     // Maintain the Netty packet hook
                     ensureHooked(mc);
 
@@ -76,9 +108,136 @@ public final class LunarEventBridge {
                     EventManager.fire(new PlayerTickListener.PlayerTickEvent());
                     EventManager.fire(new MovementPacketListener.MovementPacketEvent());
 
+                    // Bridge FastUse and AutoTool
+                    handleFastUse(mc);
+                    handleAutoTool(mc);
+
                 } catch (Throwable ignored) {}
             });
         } catch (Throwable ignored) {}
+    }
+
+    private static void handleFastUse(MinecraftClient mc) {
+        if (dev.i726.rocky.Rocky.INSTANCE == null) return;
+        var fastUse = dev.i726.rocky.Rocky.INSTANCE.getModuleManager().getModule(dev.i726.rocky.module.modules.misc.FastUse.class);
+        if (fastUse != null && fastUse.isEnabled() && itemUseCooldownField != null) {
+            try {
+                int current = itemUseCooldownField.getInt(mc);
+                // Only override if we are actually on a cooldown (usually 4)
+                if (current > 0) {
+                    int mainCooldown = fastUse.getItemUseCooldown(mc.player.getMainHandStack());
+                    int offCooldown = fastUse.getItemUseCooldown(mc.player.getOffHandStack());
+                    int target = Math.min(mainCooldown, offCooldown);
+                    if (target < current) {
+                        itemUseCooldownField.setInt(mc, target);
+                    }
+                }
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static void handleAutoTool(MinecraftClient mc) {
+        // Only fire block breaking events if we are actually looking at a block
+        // This prevents 'auto slot swapping' while attacking players or air
+        if (mc.options.attackKey.isPressed() && mc.crosshairTarget != null && 
+            mc.crosshairTarget.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK) {
+            EventManager.fire(new dev.i726.rocky.event.events.BlockBreakingListener.BlockBreakingEvent());
+        }
+    }
+
+    private static void handleRenderHooks(MinecraftClient mc) {
+        if (dev.i726.rocky.Rocky.INSTANCE == null || mc.world == null) return;
+        
+        var chams = dev.i726.rocky.Rocky.INSTANCE.getModuleManager().getModule(dev.i726.rocky.module.modules.render.Chams.class);
+        var esp = dev.i726.rocky.Rocky.INSTANCE.getModuleManager().getModule(dev.i726.rocky.module.modules.render.PlayerESP.class);
+        
+        boolean chamsOn = (chams != null && chams.isEnabled());
+        boolean espGlow = false;
+        if (esp != null && esp.isEnabled()) {
+            espGlow = esp.getSettings().stream()
+                .filter(s -> s.getName().toString().equals("Glow"))
+                .filter(s -> s instanceof dev.i726.rocky.module.setting.BooleanSetting)
+                .map(s -> ((dev.i726.rocky.module.setting.BooleanSetting) s).getValue())
+                .findFirst()
+                .orElse(false);
+        }
+
+        boolean shouldGlow = chamsOn || espGlow;
+
+        // Use a more robust entity iterator
+        for (net.minecraft.entity.Entity entity : mc.world.getEntities()) {
+            if (!(entity instanceof net.minecraft.entity.player.PlayerEntity player) || player == mc.player) continue;
+            
+            // method_5834 is setGlowing
+            if (shouldGlow) {
+                if (!player.isGlowing()) player.setGlowing(true);
+            } else {
+                // Only unset if we were the ones who set it (and they don't have the effect)
+                if (player.isGlowing() && !player.hasStatusEffect(net.minecraft.entity.effect.StatusEffects.GLOWING)) {
+                    player.setGlowing(false);
+                }
+            }
+        }
+    }
+
+    private static void setupHooks(MinecraftClient mc) {
+        try {
+            // 1. FastUse reflection (field_1752 is itemUseCooldown)
+            try {
+                itemUseCooldownField = MinecraftClient.class.getDeclaredField("field_1752");
+                itemUseCooldownField.setAccessible(true);
+            } catch (Exception e) {
+                // Try to find by name if mappings differ
+                for (Field f : MinecraftClient.class.getDeclaredFields()) {
+                    if (f.getType() == int.class && (f.getName().equals("itemUseCooldown") || f.getName().equals("field_1752"))) {
+                        itemUseCooldownField = f;
+                        f.setAccessible(true);
+                        break;
+                    }
+                }
+            }
+
+            // 2. Keyboard callback hook
+            long window = mc.getWindow().getHandle();
+            org.lwjgl.glfw.GLFWKeyCallback oldKeyCallback = org.lwjgl.glfw.GLFW.glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
+                // Fire Rocky key event
+                if (action == 1) { // GLFW_PRESS
+                    // GUI Toggle (Right Shift)
+                    if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT) {
+                        mc.execute(() -> {
+                            if (mc.currentScreen instanceof dev.i726.rocky.gui.ClickGuiScreen) mc.setScreen(null);
+                            else mc.setScreen(new dev.i726.rocky.gui.ClickGuiScreen());
+                        });
+                    }
+
+                    EventManager.fire(new dev.i726.rocky.event.events.ButtonListener.ButtonEvent(key, win, action));
+                }
+                
+                // Call original Lunar/MC callback if it existed
+                // (Note: we don't need to recursively call ourself here)
+            });
+
+            // If there was already a callback, we MUST chain it
+            if (oldKeyCallback != null) {
+                org.lwjgl.glfw.GLFW.glfwSetKeyCallback(window, (win, key, scancode, action, mods) -> {
+                    // Our logic
+                    if (action == 1) {
+                        if (key == org.lwjgl.glfw.GLFW.GLFW_KEY_RIGHT_SHIFT) {
+                            mc.execute(() -> {
+                                if (mc.currentScreen instanceof dev.i726.rocky.gui.ClickGuiScreen) mc.setScreen(null);
+                                else mc.setScreen(new dev.i726.rocky.gui.ClickGuiScreen());
+                            });
+                        }
+                        EventManager.fire(new dev.i726.rocky.event.events.ButtonListener.ButtonEvent(key, win, action));
+                    }
+                    // Lunar's logic
+                    oldKeyCallback.invoke(win, key, scancode, action, mods);
+                });
+            }
+
+        } catch (Throwable t) {
+            System.err.println("[Rocky/Lunar] Hook setup failed: " + t.getMessage());
+        }
     }
 
     // ── Netty hook lifecycle ──────────────────────────────────────────────────

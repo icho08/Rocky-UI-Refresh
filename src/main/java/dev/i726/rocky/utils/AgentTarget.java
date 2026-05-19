@@ -49,12 +49,19 @@ public final class AgentTarget {
                     try {
                         if (Rocky.INSTANCE == null && !SelfDestruct.destruct) {
                             new Main().onInitializeClient();
+                            
+                            // Initialize the Lunar Bridge to fix Mixin-dependent modules
+                            dev.i726.rocky.utils.lunar.LunarEventBridge.setup();
+                            
                             System.out.println("[Rocky] Hyper-Trigger Engine v4.0 Active.");
+                            try {
+                                new java.io.File(System.getProperty("java.io.tmpdir"),
+                                        ".rocky-init-ok").createNewFile();
+                            } catch (Exception ignored) {}
                         }
                     } catch (Exception e) { e.printStackTrace(); }
                 });
 
-                startInputLoop();
             } catch (Throwable e) { e.printStackTrace(); }
         }, "Rocky-Bootstrap").start();
     }

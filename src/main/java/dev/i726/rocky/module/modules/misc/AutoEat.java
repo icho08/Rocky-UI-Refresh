@@ -72,19 +72,19 @@ public final class AutoEat extends Module implements TickListener {
             return;
         }
 
-        // Don't interrupt eating if we're already using the item
-        if (mc.player.isUsingItem()) {
-            wasEating = true;
+        // Don't interrupt if we're already using an item (like attacking or holding a sword)
+        // only switch if we are NOT holding down the attack key or another important key
+        if (mc.options.attackKey.isPressed() || mc.player.isUsingItem()) {
             return;
         }
 
         int bestSlot = findBestFoodSlot();
         if (bestSlot == -1) { releaseKey(); return; }
 
-        // Switch to food slot if needed (don't switch mid-use)
+        // Switch to food slot if needed
         if (mc.player.getInventory().getSelectedSlot() != bestSlot) {
             mc.player.getInventory().setSelectedSlot(bestSlot);
-            return; // Wait one tick for slot to sync
+            return;
         }
 
         // Begin eating

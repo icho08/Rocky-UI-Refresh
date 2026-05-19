@@ -162,11 +162,11 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         mc.player.setPitch(MathHelper.clamp(newPitch, -90, 90));
     }
 
-    /** GCD of rotation steps mirrors what real mouse input produces at this sensitivity. */
+    /** GCD formula mirrors Minecraft's Mouse.java: (sens*0.6+0.2)^3 * 8.0 */
     private float calcGcd() {
         double sens = mc.options.getMouseSensitivity().getValue();
         double f    = sens * 0.6 + 0.2;
-        return (float)(f * f * f * 1.2);
+        return (float)(f * f * f * 8.0);
     }
 
     private float lerp(float delta, float start, float end) {

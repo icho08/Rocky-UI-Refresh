@@ -17,10 +17,11 @@ import net.minecraft.item.Items;
 import net.minecraft.network.packet.Packet;
 import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
 import net.minecraft.network.packet.c2s.play.HandSwingC2SPacket;
-import net.minecraft.network.packet.c2s.play.KeepAliveC2SPacket;
+import net.minecraft.network.packet.c2s.common.CommonPongC2SPacket;
+import net.minecraft.network.packet.c2s.common.KeepAliveC2SPacket;
+import net.minecraft.network.packet.c2s.common.ResourcePackStatusC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
-import net.minecraft.network.packet.c2s.play.ResourcePackStatusC2SPacket;
 import net.minecraft.network.packet.s2c.play.ExplosionS2CPacket;
 import net.minecraft.util.math.Vec3d;
 
@@ -105,6 +106,7 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
         // ── Critical packets that must NEVER be queued ─────────────────────────
         // Holding keepalives causes ReadTimeoutException kicks on all servers.
         if (event.packet instanceof KeepAliveC2SPacket
+                || event.packet instanceof CommonPongC2SPacket
                 || event.packet instanceof ResourcePackStatusC2SPacket) {
             // Let these pass through instantly — flush anything waiting first so
             // the server sees packets in order.

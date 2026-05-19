@@ -11,7 +11,6 @@ import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.attribute.EntityAttributeModifier;
 import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.item.ArmorItem;
 import net.minecraft.item.ItemStack;
 import net.minecraft.screen.slot.SlotActionType;
 
@@ -52,8 +51,8 @@ public final class AutoArmor extends Module implements TickListener {
         if (mc.player == null || mc.currentScreen != null) return;
         if (!timer.hasReached(delay.getValue())) return;
 
-        EquipmentSlot[]   slots   = { EquipmentSlot.HEAD,  EquipmentSlot.CHEST, EquipmentSlot.LEGS,  EquipmentSlot.FEET };
-        BooleanSetting[]  guards  = { helmet,               chestplate,           leggings,             boots };
+        EquipmentSlot[]  slots  = { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET };
+        BooleanSetting[] guards = { helmet, chestplate, leggings, boots };
 
         for (int s = 0; s < slots.length; s++) {
             if (!guards[s].getValue()) continue;
@@ -72,29 +71,29 @@ public final class AutoArmor extends Module implements TickListener {
              *   36-44    = hotbar (inv index 0-8)
              *   45       = offhand
              *
-             * Our betterInvIdx comes from the PlayerInventory (0-8 hotbar, 9-35 main).
-             * We need to map it to the screen-handler slot number, then QUICK_MOVE it
-             * so Minecraft automatically places it in the correct armor slot.
+             * betterInvIdx comes from the PlayerInventory (0-8 hotbar, 9-35 main).
+             * We QUICK_MOVE it so Minecraft places it in the correct armor slot.
              */
             int handlerSlot = betterInvIdx < 9
-                    ? betterInvIdx + 36   // hotbar
-                    : betterInvIdx;       // main inventory (already matches)
+                    ? betterInvIdx + 36
+                    : betterInvIdx;
 
             mc.interactionManager.clickSlot(
                     mc.player.playerScreenHandler.syncId,
                     handlerSlot, 0, SlotActionType.QUICK_MOVE, mc.player);
 
             timer.reset();
-            return; // one piece per delay cycle
+            return;
         }
     }
 
     /**
      * Returns the inventory index (0-35) of a piece better than {@code current}
      * for the given equipment slot, or -1 if none found.
+     * Uses the EQUIPPABLE component (1.21+) to determine the correct slot.
      */
     private int findBetter(EquipmentSlot slot, ItemStack current) {
-        int currentProt = protection(slot, current);
+        int currentProt = protection(current);
         int bestSlot    = -1;
         int bestProt    = currentProt;
 
@@ -102,16 +101,10 @@ public final class AutoArmor extends Module implements TickListener {
             ItemStack stack = mc.player.getInventory().getStack(i);
             if (stack.isEmpty()) continue;
 
-            // Fast-path: ArmorItem knows its slot natively
-            if (stack.getItem() instanceof ArmorItem armorItem) {
-                if (armorItem.getSlotType() != slot) continue;
-            } else {
-                // Fallback: check EQUIPPABLE component
-                var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
-                if (equippable == null || equippable.slot() != slot) continue;
-            }
+            var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+            if (equippable == null || equippable.slot() != slot) continue;
 
-            int prot = protection(slot, stack);
+            int prot = protection(stack);
             if (prot > bestProt) {
                 bestProt = prot;
                 bestSlot = i;
@@ -121,29 +114,21 @@ public final class AutoArmor extends Module implements TickListener {
     }
 
     /**
-     * Returns the total armor (protection) value of the item stack.
-     * Uses the ATTRIBUTE_MODIFIERS component first; falls back to ArmorItem tier value.
+     * Returns the total armor (protection) value via ATTRIBUTE_MODIFIERS component.
      */
-    private int protection(EquipmentSlot slot, ItemStack stack) {
+    private int protection(ItemStack stack) {
         if (stack.isEmpty()) return 0;
 
-        // Primary: read ATTRIBUTE_MODIFIERS component (1.21 data-driven items)
         var modifiers = stack.get(DataComponentTypes.ATTRIBUTE_MODIFIERS);
         if (modifiers != null) {
             int total = 0;
             for (var entry : modifiers.modifiers()) {
-                // Compare the underlying EntityAttribute singletons — safe in the registry system
                 if (entry.attribute().value() == EntityAttributes.ARMOR.value()) {
                     EntityAttributeModifier mod = entry.modifier();
                     total += (int) mod.value();
                 }
             }
             if (total > 0) return total;
-        }
-
-        // Fallback: ArmorItem exposes protection value directly
-        if (stack.getItem() instanceof ArmorItem armorItem) {
-            return armorItem.getDefensePoints();
         }
 
         return 0;

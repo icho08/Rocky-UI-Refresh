@@ -93,11 +93,13 @@ public final class ModuleManager implements ButtonListener {
                 add(new NoBounce());
                 add(new PlayerESP());
                 add(new StorageEsp());
+                add(new OreESP());
+                add(new ItemESP());
+                add(new Tracers());
                 add(new Chams());
                 add(new TargetHud());
                 add(new ShowHealth());
                 add(new ShowArmor());
-                add(new OreESP());
 
                 //Client
                 add(new ClickGUI());

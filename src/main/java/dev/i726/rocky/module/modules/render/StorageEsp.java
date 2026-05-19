@@ -5,6 +5,7 @@ import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
+import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.block.entity.*;
@@ -39,6 +40,14 @@ public final class StorageEsp extends Module implements GameRenderListener {
             EncryptedString.of("Fill"), true
     ).setDescription(EncryptedString.of("Fill the bounding box"));
 
+    private final NumberSetting fillOpacity = new NumberSetting(
+            EncryptedString.of("Fill Opacity"), 0, 255, 40, 5
+    ).setDescription(EncryptedString.of("Transparency of the box fill (0 = invisible, 255 = solid)"));
+
+    private final NumberSetting outlineOpacity = new NumberSetting(
+            EncryptedString.of("Outline Opacity"), 0, 255, 220, 5
+    ).setDescription(EncryptedString.of("Transparency of the box outline (0 = invisible, 255 = solid)"));
+
     private final BooleanSetting tracers = new BooleanSetting(
             EncryptedString.of("Tracers"), false
     ).setDescription(EncryptedString.of("Draw tracer lines to storage blocks"));
@@ -50,7 +59,7 @@ public final class StorageEsp extends Module implements GameRenderListener {
                 -1,
                 CategoryManager.ESP
         );
-        addSettings(chests, barrels, shulkers, furnaces, hoppers, fill, tracers);
+        addSettings(chests, barrels, shulkers, furnaces, hoppers, fill, fillOpacity, outlineOpacity, tracers);
     }
 
     @Override
@@ -70,8 +79,10 @@ public final class StorageEsp extends Module implements GameRenderListener {
         if (mc == null || mc.world == null || mc.player == null) return;
 
         Color accent = GuiTheme.accent();
-        Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 220);
-        Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 40);
+        int fA = (int) fillOpacity.getValue();
+        int oA = (int) outlineOpacity.getValue();
+        Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), oA);
+        Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), fA);
 
         int playerCX = mc.player.getBlockX() >> 4;
         int playerCZ = mc.player.getBlockZ() >> 4;

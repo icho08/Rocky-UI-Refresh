@@ -263,7 +263,14 @@ public final class RenderUtils {
         }
 
         public static void drawTracer(MatrixStack matrices, Vec3d end, Color color) {
-                renderLine(matrices, color, getCameraPos(), end);
+                // Do NOT start from the exact camera position: in perspective projection
+                // a vertex at the eye origin has w_clip = 0 (perspective divide by zero),
+                // which the GPU treats as a degenerate point and may discard the primitive.
+                // Shift 0.1 blocks forward along the look direction so z_view < 0.
+                net.minecraft.client.render.Camera cam = mc.gameRenderer.getCamera();
+                Vec3d forward = Vec3d.fromPolar(cam.getPitch(), cam.getYaw());
+                Vec3d origin = cam.getPos().add(forward.multiply(0.1));
+                renderLine(matrices, color, origin, end);
         }
 
         public static void setScissorRegion(DrawContext context, int x, int y, int width, int height) {

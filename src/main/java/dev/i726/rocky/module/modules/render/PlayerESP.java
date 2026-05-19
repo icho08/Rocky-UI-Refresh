@@ -6,6 +6,7 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
+import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.client.network.AbstractClientPlayerEntity;
@@ -27,6 +28,14 @@ public final class PlayerESP extends Module implements GameRenderListener {
             EncryptedString.of("Fill"), true
     ).setDescription(EncryptedString.of("Fill the bounding box"));
 
+    private final NumberSetting fillOpacity = new NumberSetting(
+            EncryptedString.of("Fill Opacity"), 0, 255, 40, 5
+    ).setDescription(EncryptedString.of("Transparency of the box fill (0 = invisible, 255 = solid)"));
+
+    private final NumberSetting outlineOpacity = new NumberSetting(
+            EncryptedString.of("Outline Opacity"), 0, 255, 220, 5
+    ).setDescription(EncryptedString.of("Transparency of the box outline (0 = invisible, 255 = solid)"));
+
     public PlayerESP() {
         super(
                 EncryptedString.of("PlayerESP"),
@@ -34,7 +43,7 @@ public final class PlayerESP extends Module implements GameRenderListener {
                 -1,
                 CategoryManager.ESP
         );
-        addSettings(mode, fill);
+        addSettings(mode, fill, fillOpacity, outlineOpacity);
     }
 
     @Override
@@ -54,8 +63,10 @@ public final class PlayerESP extends Module implements GameRenderListener {
         if (mc == null || mc.world == null || mc.player == null) return;
 
         Color accent = GuiTheme.accent();
-        Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 40);
-        Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 220);
+        int fA = (int) fillOpacity.getValue();
+        int oA = (int) outlineOpacity.getValue();
+        Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), fA);
+        Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), oA);
 
         List<AbstractClientPlayerEntity> players = mc.world.getPlayers();
         EspMode currentMode = mode.getMode();

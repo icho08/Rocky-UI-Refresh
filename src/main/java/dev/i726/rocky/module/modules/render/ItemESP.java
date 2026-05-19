@@ -28,6 +28,14 @@ public final class ItemESP extends Module implements GameRenderListener {
             EncryptedString.of("Fill"), true
     ).setDescription(EncryptedString.of("Fill the bounding box"));
 
+    private final NumberSetting fillOpacity = new NumberSetting(
+            EncryptedString.of("Fill Opacity"), 0, 255, 40, 5
+    ).setDescription(EncryptedString.of("Transparency of the box fill (0 = invisible, 255 = solid)"));
+
+    private final NumberSetting outlineOpacity = new NumberSetting(
+            EncryptedString.of("Outline Opacity"), 0, 255, 220, 5
+    ).setDescription(EncryptedString.of("Transparency of the box outline (0 = invisible, 255 = solid)"));
+
     private final NumberSetting maxRange = new NumberSetting(
             EncryptedString.of("Range"), 10, 256, 64, 5
     ).setDescription(EncryptedString.of("Maximum distance to show item ESP"));
@@ -39,7 +47,7 @@ public final class ItemESP extends Module implements GameRenderListener {
                 -1,
                 CategoryManager.ESP
         );
-        addSettings(mode, fill, maxRange);
+        addSettings(mode, fill, fillOpacity, outlineOpacity, maxRange);
     }
 
     @Override
@@ -59,8 +67,10 @@ public final class ItemESP extends Module implements GameRenderListener {
         if (mc == null || mc.world == null || mc.player == null) return;
 
         Color accent = GuiTheme.accent();
-        Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 220);
-        Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 40);
+        int fA = (int) fillOpacity.getValue();
+        int oA = (int) outlineOpacity.getValue();
+        Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), oA);
+        Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), fA);
 
         double rangeSq = maxRange.getValue() * maxRange.getValue();
         EspMode currentMode = mode.getMode();

@@ -78,26 +78,25 @@ public final class PlayerESP extends Module implements GameRenderListener {
                 matrices.push();
 
                 GL11.glDisable(GL11.GL_DEPTH_TEST);
-                GL11.glEnable(GL11.GL_BLEND);
-                GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
-                for (PlayerEntity player : mc.world.getPlayers()) {
-                        if (player == mc.player || player.isDead() || player.isRemoved()) continue;
+                try {
+                        for (PlayerEntity player : mc.world.getPlayers()) {
+                                if (player == mc.player || player.isDead() || player.isRemoved()) continue;
 
-                        double distance = mc.player.distanceTo(player);
-                        if (distance > range.getValue()) continue;
+                                double distance = mc.player.distanceTo(player);
+                                if (distance > range.getValue()) continue;
 
-                        render3D(player, matrices);
+                                render3D(player, matrices);
 
-                        if (tracers.getValue()) {
-                                renderTracer(player, matrices, cam);
+                                if (tracers.getValue()) {
+                                        renderTracer(player, matrices, cam);
+                                }
                         }
+
+                        mc.getBufferBuilders().getEntityVertexConsumers().draw();
+                } finally {
+                        GL11.glEnable(GL11.GL_DEPTH_TEST);
                 }
-
-                mc.getBufferBuilders().getEntityVertexConsumers().draw();
-
-                GL11.glDisable(GL11.GL_BLEND);
-                GL11.glEnable(GL11.GL_DEPTH_TEST);
                 matrices.pop();
         }
 

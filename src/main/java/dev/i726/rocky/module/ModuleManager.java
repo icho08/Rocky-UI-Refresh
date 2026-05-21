@@ -80,6 +80,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new SmartBridge());
                 add(new Scaffold());
                 add(new NoFall());
+                add(new Clutch());
                 add(new Step());
                 add(new FastUse());
                 add(new AutoTool());

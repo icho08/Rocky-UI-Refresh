@@ -7,6 +7,8 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
+import java.util.HashMap;
+import java.util.Map;
 import net.minecraft.block.entity.*;
 import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
 import net.minecraft.component.DataComponentTypes;
@@ -56,6 +58,12 @@ public final class ChestStealer extends Module implements TickListener {
     private final TimerUtils openTimer  = new TimerUtils();
     private int nextDelay = 80;
 
+    // Tracks chests we've fully looted so we don't immediately re-open them.
+    // Maps BlockPos → system time when looting finished (ms). Cleared on disable.
+    private static final long LOOTED_COOLDOWN_MS = 30_000L; // 30 seconds
+    private final Map<BlockPos, Long> lootedChests = new HashMap<>();
+    private BlockPos currentOpenedPos = null;
+
     public ChestStealer() {
         super(EncryptedString.of("Chest Stealer"),
                 EncryptedString.of("Automatically steals items from open chests"),
@@ -66,6 +74,8 @@ public final class ChestStealer extends Module implements TickListener {
     @Override
     public void onEnable() {
         eventManager.add(TickListener.class, this);
+        lootedChests.clear();
+        currentOpenedPos = null;
         rollDelay();
         super.onEnable();
     }
@@ -73,6 +83,8 @@ public final class ChestStealer extends Module implements TickListener {
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
+        lootedChests.clear();
+        currentOpenedPos = null;
         super.onDisable();
     }
 
@@ -81,10 +93,14 @@ public final class ChestStealer extends Module implements TickListener {
         if (mc.player == null || mc.world == null) return;
 
         // ── Auto-open: find and open a nearby storage block ──────────────────
+        // Purge expired looted-chest entries so we can revisit after cooldown.
+        lootedChests.entrySet().removeIf(e -> System.currentTimeMillis() - e.getValue() > LOOTED_COOLDOWN_MS);
+
         if (autoOpen.getValue() && !(mc.currentScreen instanceof GenericContainerScreen)) {
             if (openTimer.hasReached(500)) {
                 BlockPos nearest = findNearestStorage();
                 if (nearest != null) {
+                    currentOpenedPos = nearest;
                     openStorage(nearest);
                     openTimer.reset();
                 }
@@ -119,10 +135,13 @@ public final class ChestStealer extends Module implements TickListener {
             return;
         }
 
-        // Nothing left to steal
-        if (closeWhenDone.getValue()) {
-            mc.player.closeHandledScreen();
+        // Nothing left to steal — mark this chest as looted so autoOpen won't
+        // immediately reopen the same empty chest and loop forever.
+        if (currentOpenedPos != null) {
+            lootedChests.put(currentOpenedPos, System.currentTimeMillis());
+            currentOpenedPos = null;
         }
+        if (closeWhenDone.getValue()) mc.player.closeHandledScreen();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -137,12 +156,13 @@ public final class ChestStealer extends Module implements TickListener {
         nextDelay = (int) delay.getValue() + (int)(Math.random() * delayJitter.getValue());
     }
 
-    /** Scans nearby loaded chunks for the nearest openable storage block. */
+    /** Scans nearby loaded chunks for the nearest openable storage block,
+     *  skipping any chest that was recently fully looted by us. */
     private BlockPos findNearestStorage() {
-        Vec3d eye  = mc.player.getEyePos();
-        double maxR = autoOpenRange.getValue();
-        BlockPos best = null;
-        double  bestDist = Double.MAX_VALUE;
+        Vec3d eye    = mc.player.getEyePos();
+        double maxR  = autoOpenRange.getValue();
+        BlockPos best     = null;
+        double   bestDist = Double.MAX_VALUE;
 
         int playerCX = mc.player.getBlockX() >> 4;
         int playerCZ = mc.player.getBlockZ() >> 4;
@@ -153,6 +173,7 @@ public final class ChestStealer extends Module implements TickListener {
                 if (chunk == null) continue;
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
                     if (!isStorageBlock(be)) continue;
+                    if (lootedChests.containsKey(be.getPos())) continue; // skip recently looted
                     double d = eye.distanceTo(Vec3d.ofCenter(be.getPos()));
                     if (d <= maxR && d < bestDist) {
                         bestDist = d;
@@ -171,10 +192,22 @@ public final class ChestStealer extends Module implements TickListener {
                 || be instanceof ShulkerBoxBlockEntity;
     }
 
-    /** Sends a block interaction packet to open the storage block server-side. */
+    /** Sends a block interaction packet to open the storage block.
+     *  Computes the correct hit face from the player's eye position so
+     *  the server-side geometry check always passes. */
     private void openStorage(BlockPos pos) {
-        Vec3d hitVec = Vec3d.ofCenter(pos);
-        BlockHitResult hit = new BlockHitResult(hitVec, Direction.UP, pos, false);
+        Vec3d eye    = mc.player.getEyePos();
+        Vec3d center = Vec3d.ofCenter(pos);
+        Vec3d delta  = eye.subtract(center);
+
+        double ax = Math.abs(delta.x), ay = Math.abs(delta.y), az = Math.abs(delta.z);
+        Direction face;
+        if (ay >= ax && ay >= az) face = delta.y >= 0 ? Direction.UP    : Direction.DOWN;
+        else if (ax >= az)        face = delta.x >= 0 ? Direction.EAST  : Direction.WEST;
+        else                      face = delta.z >= 0 ? Direction.SOUTH : Direction.NORTH;
+
+        Vec3d hitVec = center.add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
+        BlockHitResult hit = new BlockHitResult(hitVec, face, pos, false);
         mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
     }
 

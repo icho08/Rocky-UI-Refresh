@@ -159,10 +159,9 @@ public final class HandDump extends Module implements TickListener {
             return;
         }
 
-        // Nothing left — optionally close
-        if (closeWhenDone.getValue()) {
-            mc.player.closeHandledScreen();
-        }
+        // Nothing left to dump — close and disable (HandDump is a one-shot action)
+        if (closeWhenDone.getValue()) mc.player.closeHandledScreen();
+        this.toggle();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -215,8 +214,18 @@ public final class HandDump extends Module implements TickListener {
     }
 
     private void openStorage(BlockPos pos) {
-        Vec3d hitVec = Vec3d.ofCenter(pos);
-        BlockHitResult hit = new BlockHitResult(hitVec, Direction.UP, pos, false);
+        Vec3d eye    = mc.player.getEyePos();
+        Vec3d center = Vec3d.ofCenter(pos);
+        Vec3d delta  = eye.subtract(center);
+
+        double ax = Math.abs(delta.x), ay = Math.abs(delta.y), az = Math.abs(delta.z);
+        Direction face;
+        if (ay >= ax && ay >= az) face = delta.y >= 0 ? Direction.UP   : Direction.DOWN;
+        else if (ax >= az)        face = delta.x >= 0 ? Direction.EAST  : Direction.WEST;
+        else                      face = delta.z >= 0 ? Direction.SOUTH : Direction.NORTH;
+
+        Vec3d hitVec = center.add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
+        BlockHitResult hit = new BlockHitResult(hitVec, face, pos, false);
         mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
     }
 

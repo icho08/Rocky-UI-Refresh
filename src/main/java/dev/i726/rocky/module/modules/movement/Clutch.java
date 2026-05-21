@@ -10,28 +10,46 @@ import dev.i726.rocky.utils.InventoryUtils;
 import dev.i726.rocky.utils.MouseSimulation;
 import net.minecraft.block.AirBlock;
 import net.minecraft.block.FluidBlock;
+import net.minecraft.client.network.ClientCommonNetworkHandler;
 import net.minecraft.item.BlockItem;
+import net.minecraft.network.ClientConnection;
+import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
+import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
+import java.lang.reflect.Field;
+
 /**
- * Clutch — places a block under your feet when you are falling to save you.
+ * Clutch — saves you from falling by silently rotating to face the block below,
+ * placing it, then restoring your original rotation. The server sees:
  *
- * Replicates Vape's Clutch behaviour:
- *   1. Watches for Y velocity below the trigger threshold while airborne.
- *   2. Optionally restricts activation to when no ground exists within
- *      "Void Check" blocks below (so it doesn't fire over normal terrain).
- *   3. Switches to a block in the hotbar if needed, places, and switches back.
+ *   1. LookAndOnGround  (yaw/pitch aimed at the block face)
+ *   2. PlayerInteractBlockC2SPacket  (the actual block placement)
+ *   3. LookAndOnGround  (original yaw/pitch restored)
+ *
+ * All three are delivered in the same server tick so there is no visible
+ * camera snap and Grim's "interact with what you look at" check passes.
+ *
+ * A public {@link #placing} flag is exposed so that SilentAim knows to
+ * skip its own rotation injection during this window.
  */
 public final class Clutch extends Module implements TickListener {
 
+    /**
+     * Set to true for the duration of a clutch placement so that other
+     * packet-level modules (e.g. SilentAim) skip their own injection and
+     * don't clobber our carefully crafted block-look rotation.
+     */
+    public static volatile boolean placing = false;
+
     private final NumberSetting fallSpeed = new NumberSetting(
             EncryptedString.of("Fall Speed"), 0.0, 5.0, 0.1, 0.05)
-            .setDescription(EncryptedString.of("Y velocity drop (negative) required to trigger. 0 = any downward motion"));
+            .setDescription(EncryptedString.of("Y velocity drop (negative) needed to trigger. 0 = any downward motion"));
 
     private final BooleanSetting onlyVoid = new BooleanSetting(
             EncryptedString.of("Only Void"), false)
@@ -39,7 +57,7 @@ public final class Clutch extends Module implements TickListener {
 
     private final NumberSetting voidCheck = new NumberSetting(
             EncryptedString.of("Void Check"), 2, 64, 5, 1)
-            .setDescription(EncryptedString.of("How many blocks to look below before deciding it is a void/gap"));
+            .setDescription(EncryptedString.of("Blocks to scan below before deciding it is a void/gap"));
 
     private final BooleanSetting onSneak = new BooleanSetting(
             EncryptedString.of("Only on Sneak"), false)
@@ -47,11 +65,11 @@ public final class Clutch extends Module implements TickListener {
 
     private final BooleanSetting switchToBlock = new BooleanSetting(
             EncryptedString.of("Switch to Block"), true)
-            .setDescription(EncryptedString.of("Auto-switch to the first block in your hotbar if you are not already holding one"));
+            .setDescription(EncryptedString.of("Auto-switch to the first block in your hotbar if not already holding one"));
 
     private final BooleanSetting switchBack = new BooleanSetting(
             EncryptedString.of("Switch Back"), true)
-            .setDescription(EncryptedString.of("Return to the original hotbar slot after placing"));
+            .setDescription(EncryptedString.of("Return to original hotbar slot after placing"));
 
     private final BooleanSetting clickSimulation = new BooleanSetting(
             EncryptedString.of("Click Simulation"), false)
@@ -69,12 +87,14 @@ public final class Clutch extends Module implements TickListener {
     @Override
     public void onEnable() {
         prevSlot = -1;
+        placing  = false;
         eventManager.add(TickListener.class, this);
         super.onEnable();
     }
 
     @Override
     public void onDisable() {
+        placing = false;
         tryRestoreSlot();
         eventManager.remove(TickListener.class, this);
         super.onDisable();
@@ -84,49 +104,64 @@ public final class Clutch extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
 
-        // Restore slot as soon as we land
         if (mc.player.isOnGround()) {
             tryRestoreSlot();
             return;
         }
 
-        // Gate: sneak required?
         if (onSneak.getValue() && !mc.player.isSneaking()) return;
 
-        // Gate: must be falling fast enough
         double vy = mc.player.getVelocity().y;
         if (vy >= -fallSpeed.getValue()) return;
 
-        // Gate: void check
         if (onlyVoid.getValue() && hasGroundBelow((int) voidCheck.getValue())) return;
 
-        // Ensure we're holding a block item
+        // Ensure we hold a block
         if (!holdingBlock()) {
             if (!switchToBlock.getValue()) return;
-            int blockSlot = findBlockInHotbar();
-            if (blockSlot == -1) return;
+            int slot = findBlockInHotbar();
+            if (slot == -1) return;
             if (prevSlot == -1) prevSlot = mc.player.getInventory().getSelectedSlot();
-            InventoryUtils.setInvSlot(blockSlot);
-            if (!holdingBlock()) return; // switch failed somehow
+            InventoryUtils.setInvSlot(slot);
+            if (!holdingBlock()) return;
         }
 
-        // Find the position one block below feet and build a placement hit
         BlockPos below = mc.player.getBlockPos().down();
-
-        // Don't place if something is already there
-        if (isSolid(below)) {
-            tryRestoreSlot();
-            return;
-        }
+        if (isSolid(below)) { tryRestoreSlot(); return; }
 
         BlockHitResult hit = buildPlaceHit(below);
         if (hit == null) return;
 
-        if (clickSimulation.getValue()) MouseSimulation.mouseClick(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
-        mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-        mc.player.swingHand(Hand.MAIN_HAND);
+        // ── Silent rotation + placement ───────────────────────────────────────
+        Vec3d   hitVec = hit.getPos();
+        Vec3d   eye    = mc.player.getEyePos();
+        float[] look   = calcLook(eye, hitVec);
+        float   blockYaw   = look[0];
+        float   blockPitch = look[1];
+        float   origYaw    = mc.player.getYaw();
+        float   origPitch  = mc.player.getPitch();
+        boolean onGround   = mc.player.isOnGround();
+        boolean hCol       = mc.player.horizontalCollision;
 
-        // Restore immediately if the block was placed (we'll be on ground next tick)
+        ClientConnection conn = getConnection();
+        if (conn == null) return;
+
+        placing = true;
+        try {
+            // 1. Tell the server we are looking at the block face
+            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(blockYaw, blockPitch, onGround, hCol));
+
+            // 2. Place the block
+            if (clickSimulation.getValue()) MouseSimulation.mouseClick(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
+            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+            mc.player.swingHand(Hand.MAIN_HAND);
+
+            // 3. Restore original rotation — server sees a normal correction
+            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(origYaw, origPitch, onGround, hCol));
+        } finally {
+            placing = false;
+        }
+
         tryRestoreSlot();
     }
 
@@ -139,22 +174,17 @@ public final class Clutch extends Module implements TickListener {
         }
     }
 
-    /** True if the player's main hand holds a block item. */
     private boolean holdingBlock() {
         return mc.player.getMainHandStack().getItem() instanceof BlockItem;
     }
 
-    /** Returns the first hotbar slot (0–8) that contains a placeable block, or -1. */
     private int findBlockInHotbar() {
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() instanceof BlockItem) {
-                return i;
-            }
+            if (mc.player.getInventory().getStack(i).getItem() instanceof BlockItem) return i;
         }
         return -1;
     }
 
-    /** True if there is any solid (non-air, non-fluid) block within {@code depth} blocks below feet. */
     private boolean hasGroundBelow(int depth) {
         BlockPos foot = mc.player.getBlockPos();
         for (int i = 1; i <= depth; i++) {
@@ -165,35 +195,65 @@ public final class Clutch extends Module implements TickListener {
 
     private boolean isSolid(BlockPos pos) {
         var state = mc.world.getBlockState(pos);
-        return !(state.getBlock() instanceof AirBlock) && !(state.getBlock() instanceof FluidBlock)
+        return !(state.getBlock() instanceof AirBlock)
+                && !(state.getBlock() instanceof FluidBlock)
                 && !state.isReplaceable();
     }
 
     /**
-     * Builds a BlockHitResult that places a block at {@code pos} by aiming
-     * at the nearest solid neighbour's face.
-     *
-     * Priority: below (place on top of the block one further down),
-     * then the four cardinal sides, then above.
+     * Builds a BlockHitResult that places a block at {@code pos} by hitting
+     * the nearest solid neighbour face. Priority: down, N/S/W/E, up.
      */
     private BlockHitResult buildPlaceHit(BlockPos pos) {
-        // Preferred: stand on top of the block directly below pos
         Direction[] priority = {
-            Direction.DOWN, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST, Direction.UP
+            Direction.DOWN, Direction.NORTH, Direction.SOUTH,
+            Direction.WEST, Direction.EAST, Direction.UP
         };
-
         for (Direction dir : priority) {
             BlockPos nb = pos.offset(dir);
             if (!isSolid(nb)) continue;
-
-            Direction face = dir.getOpposite(); // face of the neighbour we are placing against
+            Direction face = dir.getOpposite();
             Vec3d hitVec = new Vec3d(
                     nb.getX() + 0.5 + face.getOffsetX() * 0.3,
                     nb.getY() + 0.5 + face.getOffsetY() * 0.3,
-                    nb.getZ() + 0.5 + face.getOffsetZ() * 0.3
-            );
+                    nb.getZ() + 0.5 + face.getOffsetZ() * 0.3);
             return new BlockHitResult(hitVec, face, nb, false);
         }
+        return null;
+    }
+
+    /**
+     * Calculates yaw and pitch from {@code from} to {@code to}.
+     * Returns float[]{yaw, pitch} in degrees.
+     */
+    private static float[] calcLook(Vec3d from, Vec3d to) {
+        double dx = to.x - from.x;
+        double dy = to.y - from.y;
+        double dz = to.z - from.z;
+        double hDist = Math.sqrt(dx * dx + dz * dz);
+        float yaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float pitch = (float) Math.toDegrees(-Math.atan2(dy, hDist));
+        return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
+    }
+
+    /**
+     * Gets the underlying {@link ClientConnection} via reflection so we can
+     * send packets directly (fires PacketSendListener, which SilentAim respects
+     * via the {@link #placing} flag).
+     */
+    private ClientConnection getConnection() {
+        try {
+            Class<?> cls = ClientCommonNetworkHandler.class;
+            while (cls != null) {
+                for (Field f : cls.getDeclaredFields()) {
+                    if (ClientConnection.class.isAssignableFrom(f.getType())) {
+                        f.setAccessible(true);
+                        return (ClientConnection) f.get(mc.getNetworkHandler());
+                    }
+                }
+                cls = cls.getSuperclass();
+            }
+        } catch (Exception ignored) {}
         return null;
     }
 }

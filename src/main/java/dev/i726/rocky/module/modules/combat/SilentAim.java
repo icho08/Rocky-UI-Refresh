@@ -101,6 +101,8 @@ public final class SilentAim extends Module implements TickListener, PacketSendL
     @Override
     public void onPacketSend(PacketSendEvent event) {
         if (bypassing) return;
+        // Don't clobber Clutch's block-look rotation during a placement window
+        if (dev.i726.rocky.module.modules.movement.Clutch.placing) return;
         if (!rotating) return;
         if (!(event.packet instanceof PlayerMoveC2SPacket pkt)) return;
 

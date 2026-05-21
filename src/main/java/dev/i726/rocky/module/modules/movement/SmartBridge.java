@@ -145,8 +145,12 @@ public final class SmartBridge extends Module implements TickListener {
     // ── God Phase ─────────────────────────────────────────────────────────────
 
     private void runGodPhase(ClientPlayerEntity p) {
-        if (!isHoldingBlocks(p)) { mc.options.sneakKey.setPressed(false); return; }
-        if (!p.isOnGround())     { mc.options.sneakKey.setPressed(false); return; }
+        if (!isHoldingBlocks(p)) {
+            if (GodBridge.INSTANCE.isEnabled()) GodBridge.INSTANCE.setEnabled(false);
+            mc.options.sneakKey.setPressed(false);
+            return;
+        }
+        if (!p.isOnGround()) { mc.options.sneakKey.setPressed(false); return; }
 
         // ── Fall protection ──────────────────────────────────────────────────
         switch (godFallMode.getMode()) {

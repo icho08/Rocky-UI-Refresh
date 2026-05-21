@@ -2,6 +2,7 @@ package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.module.modules.movement.GodBridge;
+import dev.i726.rocky.module.modules.movement.Scaffold;
 import dev.i726.rocky.module.modules.combat.Reach;
 import net.minecraft.entity.player.PlayerEntity;
 import org.spongepowered.asm.mixin.Mixin;
@@ -13,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PlayerEntityMixin {
     @Inject(method = "clipAtLedge", at = @At("HEAD"), cancellable = true)
     private void onClipAtLedge(CallbackInfoReturnable<Boolean> cir) {
-        if (GodBridge.shouldSafeWalk()) {
+        if (GodBridge.shouldSafeWalk() || Scaffold.shouldSafeWalk()) {
             cir.setReturnValue(true);
         }
     }

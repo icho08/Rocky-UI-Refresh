@@ -10,11 +10,11 @@ import net.minecraft.util.math.Vec3d;
 public final class Jesus extends Module implements TickListener {
 
     private final BooleanSetting lava = new BooleanSetting(EncryptedString.of("Walk On Lava"), false)
-            .setDescription(EncryptedString.of("Also walk on lava (very dangerous)"));
+            .setDescription(EncryptedString.of("Also walk on lava surfaces (very dangerous)"));
 
     public Jesus() {
         super(EncryptedString.of("Jesus"),
-                EncryptedString.of("Walk on water (and optionally lava) — works on servers without anti-cheat"),
+                EncryptedString.of("Walk on top of water/lava — works on servers without anti-cheat"),
                 -1, CategoryManager.BLATANT);
         addSettings(lava);
     }
@@ -38,12 +38,23 @@ public final class Jesus extends Module implements TickListener {
         boolean inWater = mc.player.isTouchingWater();
         boolean inLava  = mc.player.isInLava();
 
-        if (inWater || (lava.getValue() && inLava)) {
-            Vec3d vel = mc.player.getVelocity();
-            if (vel.y < 0) {
-                mc.player.setVelocity(vel.x, 0.05, vel.z);
-            }
-            mc.player.fallDistance = 0f;
+        if (!inWater && !(lava.getValue() && inLava)) return;
+
+        Vec3d vel = mc.player.getVelocity();
+        boolean jumping = mc.player.input.playerInput.jump();
+
+        if (jumping) {
+            // Let the player swim up intentionally — don't fight it
+            return;
         }
+
+        // Push the player up aggressively enough to clear the fluid surface.
+        // 0.12 is just above the 0.10 fluid resistance threshold so the player
+        // rises one step per tick until their feet are above the fluid block.
+        if (vel.y <= 0.0) {
+            mc.player.setVelocity(vel.x, 0.12, vel.z);
+        }
+
+        mc.player.fallDistance = 0f;
     }
 }

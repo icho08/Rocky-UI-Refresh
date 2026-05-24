@@ -13,7 +13,7 @@ public final class AutoRespawn extends Module implements TickListener {
                 super(EncryptedString.of("Auto Respawn"),
                 EncryptedString.of("Respawns instantly on death"),
                                 -1,
-                                CategoryManager.PLAYER);
+                                CategoryManager.AUTOMATION);
         }
 
         @Override

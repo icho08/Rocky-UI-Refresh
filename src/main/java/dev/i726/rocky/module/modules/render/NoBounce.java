@@ -10,6 +10,6 @@ public final class NoBounce extends Module {
 		super(EncryptedString.of("No View Bobbing"),
                 EncryptedString.of("Removes view bobbing"),
 				-1,
-				CategoryManager.ESP);
+				CategoryManager.MOVEMENT);
 	}
 }

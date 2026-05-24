@@ -10,6 +10,6 @@ public final class NoBreakDelay extends Module {
 		super(EncryptedString.of("Fast Break"),
                 EncryptedString.of("Removes block break delay"),
 				-1,
-				CategoryManager.PLAYER);
+				CategoryManager.AUTOMATION);
 	}
 }

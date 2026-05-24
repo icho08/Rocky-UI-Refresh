@@ -37,7 +37,7 @@ public final class AutoXP extends Module implements TickListener {
                 super(EncryptedString.of("Auto XP"),
                 EncryptedString.of("Automatically repairs with XP"),
                                 -1,
-                                CategoryManager.PLAYER);
+                                CategoryManager.AUTOMATION);
                 addSettings(delay, onlyLowXP, xpThreshold, smartThrow, pitchJitter, yawJitter, restoreRotation);
         }
 

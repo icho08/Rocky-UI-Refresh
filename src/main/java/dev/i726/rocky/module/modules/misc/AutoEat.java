@@ -31,7 +31,7 @@ public final class AutoEat extends Module implements TickListener {
     public AutoEat() {
         super(EncryptedString.of("Auto Eat"),
                 EncryptedString.of("Automatically eats food when hungry"),
-                -1, CategoryManager.PLAYER);
+                -1, CategoryManager.AUTOMATION);
         addSettings(hungerThreshold, preferBestFood, stopInCombat);
     }
 

@@ -80,7 +80,7 @@ public final class Clutch extends Module implements TickListener {
     public Clutch() {
         super(EncryptedString.of("Clutch"),
                 EncryptedString.of("Places a block under you when falling to save your life"),
-                -1, CategoryManager.MOVEMENT);
+                -1, CategoryManager.BRIDGING);
         addSettings(fallSpeed, onlyVoid, voidCheck, onSneak, switchToBlock, switchBack, clickSimulation);
     }
 

@@ -27,7 +27,7 @@ public final class KeyPearl extends Module implements TickListener {
 
     public KeyPearl() {
         super(EncryptedString.of("Quick Pearl"),
-                EncryptedString.of("Throws pearl on keybind"), -1, CategoryManager.PLAYER);
+                EncryptedString.of("Throws pearl on keybind"), -1, CategoryManager.AUTOMATION);
         addSettings(activateKey, delay, switchBack, switchDelay);
     }
 

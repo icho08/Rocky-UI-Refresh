@@ -14,17 +14,17 @@ public final class Fly extends Module implements TickListener {
     public enum Mode { Vanilla, Velocity }
 
     private final ModeSetting<Mode> mode = new ModeSetting<>(EncryptedString.of("Mode"), Mode.Vanilla, Mode.class)
-            .setDescription(EncryptedString.of("Vanilla = uses abilities (less obvious), Velocity = raw speed manipulation"));
+            .setDescription(EncryptedString.of("Vanilla = uses ability flags (less obvious), Velocity = raw speed override"));
 
     private final NumberSetting speed = new NumberSetting(EncryptedString.of("Speed"), 0.1, 5.0, 1.0, 0.1)
-            .setDescription(EncryptedString.of("Horizontal fly speed"));
+            .setDescription(EncryptedString.of("Horizontal fly speed (Velocity mode)"));
 
     private final NumberSetting vertSpeed = new NumberSetting(EncryptedString.of("Vert Speed"), 0.1, 3.0, 0.5, 0.1)
-            .setDescription(EncryptedString.of("Vertical speed for going up/down"));
+            .setDescription(EncryptedString.of("Vertical speed for jump/sneak (Velocity mode)"));
 
     public Fly() {
         super(EncryptedString.of("Fly"),
-                EncryptedString.of("Allows flying in survival — only works on servers without anti-cheat"),
+                EncryptedString.of("Fly in survival — only works on servers without anti-cheat"),
                 -1, CategoryManager.BLATANT);
         addSettings(mode, speed, vertSpeed);
     }
@@ -53,11 +53,12 @@ public final class Fly extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null) return;
 
+        // Always clear fall damage while flying
+        mc.player.fallDistance = 0f;
         mc.player.getAbilities().allowFlying = true;
         mc.player.getAbilities().flying = true;
 
         if (mode.isMode(Mode.Velocity)) {
-            // Full velocity override — bypasses Vanilla's built-in fly speed cap
             float yaw = mc.player.getYaw() * ((float) Math.PI / 180f);
             double velX = 0, velY = 0, velZ = 0;
             var input = mc.player.input.playerInput;
@@ -71,7 +72,6 @@ public final class Fly extends Module implements TickListener {
 
             mc.player.setVelocity(new Vec3d(velX, velY, velZ));
         }
-        // Vanilla mode: the game's built-in creative-flight handles movement using
-        // the existing ability flags above — no flySpeed field access needed.
+        // Vanilla mode: built-in creative flight handles movement via the ability flags above.
     }
 }

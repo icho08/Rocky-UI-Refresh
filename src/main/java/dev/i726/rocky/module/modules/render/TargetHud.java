@@ -37,7 +37,7 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
         super(EncryptedString.of("Target HUD"),
                 EncryptedString.of("Shows target information"),
                 -1,
-                CategoryManager.GUI);
+                CategoryManager.ESP);
         addSettings(xCoord, yCoord, hudTimeout);
     }
 

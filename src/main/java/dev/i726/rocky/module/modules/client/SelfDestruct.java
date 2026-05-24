@@ -20,6 +20,9 @@ public final class SelfDestruct extends Module {
         private final BooleanSetting saveLastModified = new BooleanSetting(EncryptedString.of("Save Last Modified"), true)
                         .setDescription(EncryptedString.of("Saves the last modified date after self destruct"));
 
+        private final BooleanSetting keepSettings = new BooleanSetting(EncryptedString.of("Keep Settings"), false)
+                        .setDescription(EncryptedString.of("Saves your module config to disk before removing the mod"));
+
         private final StringSetting downloadURL = new StringSetting(EncryptedString.of("Replace URL"), "");
 
         public SelfDestruct() {
@@ -27,7 +30,7 @@ public final class SelfDestruct extends Module {
                 EncryptedString.of("Removes all traces"),
                                 -1,
                                 CategoryManager.GUI);
-                addSettings(replaceMod, saveLastModified, downloadURL);
+                addSettings(replaceMod, saveLastModified, keepSettings, downloadURL);
         }
 
         @Override
@@ -38,6 +41,7 @@ public final class SelfDestruct extends Module {
                 Rocky.INSTANCE.getModuleManager().getModule(ClickGUI.class).setEnabled(false);
                 setEnabled(false);
 
+                // Always save settings to disk first so they can be restored later
                 Rocky.INSTANCE.getProfileManager().saveProfile("default");
 
                 if (mc.currentScreen instanceof ClickGuiScreen) {
@@ -58,12 +62,18 @@ public final class SelfDestruct extends Module {
                         }).start();
                 }
 
-                // Null out and disable everything
-                for (Module module : Rocky.INSTANCE.getModuleManager().getModules()) {
-                        module.setEnabled(false);
-                        module.setName("");
-                        module.setDescription("");
-                        module.getSettings().clear();
+                // If not keeping settings, wipe all module data from memory
+                if (!keepSettings.getValue()) {
+                        for (Module module : Rocky.INSTANCE.getModuleManager().getModules()) {
+                                module.setEnabled(false);
+                                module.setName("");
+                                module.setDescription("");
+                                module.getSettings().clear();
+                        }
+                } else {
+                        for (Module module : Rocky.INSTANCE.getModuleManager().getModules()) {
+                                module.setEnabled(false);
+                        }
                 }
 
                 if (saveLastModified.getValue()) {
@@ -72,6 +82,5 @@ public final class SelfDestruct extends Module {
 
                 // Run GC to clean up references
                 System.gc();
-                System.out.println("[Rocky] Self-destruct completed safely.");
         }
 }

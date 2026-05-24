@@ -47,7 +47,6 @@ public abstract class Module implements Serializable {
                 if (mc == null) mc = MinecraftClient.getInstance();
                 if (Rocky.mc == null) Rocky.mc = MinecraftClient.getInstance();
                 enabled = !enabled;
-                System.out.println("[Rocky] Module " + getName() + " toggled: " + (enabled ? "ON" : "OFF"));
                 if (enabled)
                         onEnable();
                 else onDisable();
@@ -112,9 +111,6 @@ public abstract class Module implements Serializable {
         public void setEnabled(boolean enabled) {
                 if (mc == null) mc = MinecraftClient.getInstance();
                 if (Rocky.mc == null) Rocky.mc = MinecraftClient.getInstance();
-                if (this.enabled != enabled) {
-                        System.out.println("[Rocky] Module " + getName() + " set to: " + (enabled ? "ON" : "OFF"));
-                }
                 this.enabled = enabled;
                 if (enabled)
                         onEnable();

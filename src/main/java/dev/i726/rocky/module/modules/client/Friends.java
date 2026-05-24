@@ -82,10 +82,8 @@ public final class Friends extends Module implements ButtonListener, AttackListe
                 && hitResult.getEntity() instanceof PlayerEntity player) {
             if (manager.isFriend(player)) {
                 manager.removeFriend(player);
-                System.out.println("[Rocky] Removed friend: " + player.getName().getString());
             } else {
                 manager.addFriend(player);
-                System.out.println("[Rocky] Added friend: " + player.getName().getString());
             }
         }
     }

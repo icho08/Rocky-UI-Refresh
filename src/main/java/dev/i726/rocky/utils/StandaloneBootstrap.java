@@ -52,7 +52,7 @@ public final class StandaloneBootstrap {
             // Score and rank all candidate processes; prefer the deepest child
             List<ProcessHandle> matches = findMinecraftProcesses();
             if (matches.isEmpty()) {
-                System.err.println("[!] No running Minecraft / Lunar process found.");
+                System.err.println("[!] No running Minecraft process found.");
                 printAgentFallback(stableJar.getAbsolutePath());
                 return;
             }
@@ -98,7 +98,7 @@ public final class StandaloneBootstrap {
                     System.out.println("[✔] Injected and confirmed running!");
                 } else {
                     System.out.println("[✔] Injection dispatched.");
-                    System.out.println("[!] Could not confirm Rocky started — check Lunar Client console for errors.");
+                    System.out.println("[!] Could not confirm Rocky started — check the Minecraft console for errors.");
                 }
                 System.out.println("------------------------------------------");
             } else {
@@ -463,9 +463,9 @@ public final class StandaloneBootstrap {
                     jclass loaderCls = (*env)->GetObjectClass(env, loader);
                     jstring nameJ    = (jstring)(*env)->CallObjectMethod(env, loaderCls, nameM);
                     const char *name = (*env)->GetStringUTFChars(env, nameJ, NULL);
-                    /* Check for Knot, Genesis, or other known game loaders */
+                    /* Check for Knot or other known game loaders */
                     int isKnot = (strstr(name, "Knot") != NULL || strstr(name, "knot") != NULL ||
-                                  strstr(name, "Genesis") != NULL || strstr(name, "lunar") != NULL);
+                                  strstr(name, "Genesis") != NULL);
 
                     if (isKnot) {
                         rlogf("[Rocky/native] Found candidate ClassLoader: %s", name);
@@ -583,9 +583,9 @@ public final class StandaloneBootstrap {
      *
      * Strategy (tried in order):
      * 1. Direct Unix-socket protocol — bypasses the MonitoredHost/hsperfdata
-     * pre-flight check that Lunar suppresses with -XX:-UsePerfData.
+     * pre-flight check when -XX:-UsePerfData is set.
      * The JVM attach listener can still be running even when perfdata is off.
-     * 2. com.sun.tools.attach.VirtualMachine — standard path for plain Fabric.
+     * 2. com.sun.tools.attach.VirtualMachine — standard path for Fabric.
      */
     private static void injectNow(String pid, String jarPath) throws Exception {
         // ── Path 1: direct socket attach (works when -XX:-UsePerfData is set) ──
@@ -707,18 +707,16 @@ public final class StandaloneBootstrap {
     }
 
     /**
-     * Prints a clear guide for using -javaagent: when dynamic attach fails
-     * (typical on Lunar / hardened JVMs).
+     * Prints a clear guide for using -javaagent: when dynamic attach fails.
      */
     private static void printAgentFallback(String jarPath) {
         String jar = jarPath != null ? jarPath : "/path/to/rocky.jar";
         System.err.println();
         System.err.println("------------------------------------------");
         System.err.println("[!] Dynamic attach not supported by this JVM.");
-        System.err.println("    This is common with Lunar Client (Java 21+).");
         System.err.println();
         System.err.println("    Use the -javaagent flag instead:");
-        System.err.println("    1. Open Lunar Client launcher");
+        System.err.println("    1. Open your Minecraft launcher");
         System.err.println("    2. Go to Settings → JVM Arguments");
         System.err.println("    3. Add: -javaagent:" + jar);
         System.err.println("    4. Launch Minecraft normally — Rocky activates at startup.");
@@ -818,9 +816,7 @@ public final class StandaloneBootstrap {
      * Common init path for both premain (deferred) and agentmain.
      */
     private static void doAgentInit(String args, Instrumentation inst, ClassLoader gameLoader) throws Exception {
-        // ── Detect Lunar vs Fabric ──
-        boolean isLunar = detectLunar(gameLoader);
-        System.out.println("[Rocky] Mode: " + (isLunar ? "Lunar Client" : "Fabric"));
+        System.out.println("[Rocky] Mode: Fabric");
         System.out.println("[Rocky] Game ClassLoader: " + gameLoader.getClass().getName());
 
         // ── Find the Rocky JAR ──
@@ -850,45 +846,6 @@ public final class StandaloneBootstrap {
                 "dev.i726.rocky.utils.AgentTarget", true, bridgeLoader);
         Method initMethod = targetClass.getMethod("init", String.class, Instrumentation.class);
         initMethod.invoke(null, args, inst);
-
-        if (isLunar) {
-            Class<?> bridge = Class.forName(
-                    "dev.i726.rocky.utils.lunar.LunarEventBridge", true, bridgeLoader);
-            Method setup = bridge.getMethod("setup");
-            setup.invoke(null);
-            System.out.println("[Rocky] Lunar event bridge started.");
-        }
-    }
-
-    // ── Lunar detection ───────────────────────────────────────────────────────
-
-    /**
-     * Returns true if the JVM is Lunar Client.
-     *
-     * Contrary to what you might expect, Lunar runs on top of Fabric and uses
-     * Fabric intermediary class names (net.minecraft.class_XXX), NOT Mojang
-     * names. The reliable distinguisher is the com.moonsworth.* launcher
-     * classes that are always present in Lunar's JVM.
-     */
-    private static boolean detectLunar(ClassLoader loader) {
-        // Primary: Lunar's Genesis launcher is always present
-        try {
-            Class.forName("com.moonsworth.lunar.genesis.Genesis", false, loader);
-            return true;
-        } catch (ClassNotFoundException ignored) {
-        }
-        // Fallback: older / variant Lunar builds
-        try {
-            Class.forName("com.moonsworth.lunar.client.LunarClient", false, loader);
-            return true;
-        } catch (ClassNotFoundException ignored) {
-        }
-        try {
-            Class.forName("com.moonsworth.lunar.patcher.LunarPatcher", false, loader);
-            return true;
-        } catch (ClassNotFoundException ignored) {
-        }
-        return false;
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -921,8 +878,6 @@ public final class StandaloneBootstrap {
     private static String getProcessLabel(ProcessHandle ph) {
         String d = (ph.info().command().orElse("") + " "
                 + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
-        if (d.contains("lunar"))
-            return "Lunar Client";
         if (d.contains("modrinth"))
             return "Modrinth App";
         if (d.contains("forge"))
@@ -939,11 +894,10 @@ public final class StandaloneBootstrap {
      * Scoring:
      * +3 command-line contains "net.minecraft" (main class)
      * +3 command-line contains "knotclient" / "minecraftclient" (Fabric main)
-     * +3 command-line contains "com.moonsworth" (Lunar main)
+     * +3 command-line contains "com.moonsworth" (Moonsworth launcher)
      * +2 command-line contains "-cp" or "-classpath" (real JVM, not wrapper)
      * +2 process has a parent that is also a candidate (child > parent)
      * +1 command-line contains "minecraft"
-     * +1 command-line contains "lunar"
      * -2 command is just "java" with nothing minecraft-specific (likely launcher)
      */
     private static List<ProcessHandle> findMinecraftProcesses() {
@@ -952,7 +906,7 @@ public final class StandaloneBootstrap {
             String full = (ph.info().command().orElse("") + " "
                     + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
             boolean isJava = full.contains("java");
-            boolean hasMC = full.contains("minecraft") || full.contains("lunar")
+            boolean hasMC = full.contains("minecraft")
                     || full.contains("knotclient") || full.contains("modrinth")
                     || full.contains("theseus") || full.contains("moonsworth");
             if (isJava && hasMC)
@@ -975,13 +929,11 @@ public final class StandaloneBootstrap {
             s += 3;
         if (full.contains("knotclient") || full.contains("minecraftclient"))
             s += 3;
-        if (full.contains("moonsworth") || full.contains("com.lunar"))
+        if (full.contains("moonsworth"))
             s += 3;
         if (full.contains("-cp") || full.contains("-classpath"))
             s += 2;
         if (full.contains("minecraft"))
-            s += 1;
-        if (full.contains("lunar"))
             s += 1;
         // Bonus if this process's parent is also a candidate (this is the child JVM)
         ph.parent().ifPresent(parent -> {

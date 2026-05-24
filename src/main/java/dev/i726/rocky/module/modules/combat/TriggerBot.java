@@ -32,7 +32,6 @@ public final class TriggerBot extends Module implements TickListener {
 
     private final BooleanSetting inScreen    = new BooleanSetting(EncryptedString.of("Work In Screen"), false);
     private final BooleanSetting whileUse    = new BooleanSetting(EncryptedString.of("While Use"), false);
-    private final BooleanSetting onLeftClick = new BooleanSetting(EncryptedString.of("On Left Click"), false);
 
     private final MinMaxSetting swordDelay = new MinMaxSetting(EncryptedString.of("Sword Delay"), 0, 1000, 1, 540, 550);
     private final MinMaxSetting axeDelay   = new MinMaxSetting(EncryptedString.of("Axe Delay"), 0, 1000, 1, 780, 800);
@@ -70,7 +69,7 @@ public final class TriggerBot extends Module implements TickListener {
         super(EncryptedString.of("Trigger Bot"),
                 EncryptedString.of("Automatically attacks when an enemy is on your crosshair"),
                 -1, CategoryManager.PVP);
-        addSettings(delayMode, inScreen, whileUse, onLeftClick, weaponOnly,
+        addSettings(delayMode, inScreen, whileUse, weaponOnly,
                 swordDelay, axeDelay, checkShield, swing, allEntities,
                 aimJitter, jitterYaw, jitterPitch,
                 maxReach, respectHurtTime, targetSwitchDelay, missChance, sticky, ignoreNpcs);
@@ -149,7 +148,6 @@ public final class TriggerBot extends Module implements TickListener {
         if (Rocky.INSTANCE.getModuleManager().getModule(Friends.class).antiAttack.getValue()
                 && Rocky.INSTANCE.getFriendManager().isAimingOverFriend()) return;
 
-        if (onLeftClick.getValue() && !mc.options.attackKey.isPressed()) return;
         if (!whileUse.getValue() && (mc.player.isUsingItem() || mc.player.isBlocking())) return;
 
         if (weaponOnly.getValue()) {

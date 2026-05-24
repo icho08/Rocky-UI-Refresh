@@ -10,6 +10,8 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.*;
 import dev.i726.rocky.utils.rotation.Rotation;
+import net.minecraft.entity.LivingEntity;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.AxeItem;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
@@ -19,6 +21,12 @@ import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 public final class AimAssist extends Module implements HudListener, MouseMoveListener {
+
+    public enum TargetMode { Players, Mobs, All }
+    public enum AimMode    { Head, Chest, Legs }
+
+    private final ModeSetting<TargetMode> targets = new ModeSetting<>(EncryptedString.of("Targets"), TargetMode.Players, TargetMode.class)
+            .setDescription(EncryptedString.of("Which entity types to aim at: Players only, Mobs only, or All living entities"));
 
     private final BooleanSetting onlyWeapon   = new BooleanSetting(EncryptedString.of("Only Weapon"), true)
             .setDescription(EncryptedString.of("Only aims when holding a sword or axe"));
@@ -39,10 +47,9 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
             .setDescription(EncryptedString.of("Distance at which the sticky lock is released"));
 
     private final NumberSetting range         = new NumberSetting(EncryptedString.of("Range"), 1, 10, 4.5, 0.1)
-            .setDescription(EncryptedString.of("Max distance to target a player"));
+            .setDescription(EncryptedString.of("Max distance to target an entity"));
     private final NumberSetting fov           = new NumberSetting(EncryptedString.of("FOV"), 5, 180, 60, 1)
             .setDescription(EncryptedString.of("Half-angle cone in which targets are considered"));
-    // Speed is now in degrees-per-second for predictable behaviour
     private final MinMaxSetting speed         = new MinMaxSetting(EncryptedString.of("Speed"), 5, 180, 1, 40, 80)
             .setDescription(EncryptedString.of("Rotation speed in degrees per second (randomised per target)"));
     private final NumberSetting acceleration  = new NumberSetting(EncryptedString.of("Acceleration"), 0.1, 3.0, 1.5, 0.1)
@@ -60,15 +67,13 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
     private float aimOffsetYaw   = 0f;
     private float aimOffsetPitch = 0f;
 
-    private PlayerEntity lockedTarget = null;
-
-    public enum AimMode { Head, Chest, Legs }
+    private LivingEntity lockedTarget = null;
 
     public AimAssist() {
         super(EncryptedString.of("Aim Assist"),
-                EncryptedString.of("Smoothly rotates toward the nearest player within range"),
+                EncryptedString.of("Smoothly rotates toward the nearest entity within range"),
                 -1, CategoryManager.PVP);
-        addSettings(onlyWeapon, onLeftClick, aimAt, stopAtTarget, stickyAim, stickyRange,
+        addSettings(targets, onlyWeapon, onLeftClick, aimAt, stopAtTarget, stickyAim, stickyRange,
                 gcdCorrection, randomOffset, range, fov, speed, acceleration,
                 jitterEnabled, jitterAmount, sendPackets);
     }
@@ -106,13 +111,12 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 
         if (onLeftClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(),
                 GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS) {
-            // Decay lerpFactor smoothly instead of snapping to 0
             lerpFactor = Math.max(0, lerpFactor - 0.15f);
             if (!stickyAim.getValue()) lockedTarget = null;
             return;
         }
 
-        PlayerEntity target = resolveTarget();
+        LivingEntity target = resolveTarget();
         if (target == null || target.isDead() || target.isRemoved()) {
             lerpFactor   = Math.max(0, lerpFactor - 0.1f);
             lockedTarget = null;
@@ -158,7 +162,6 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 
         // Stop rotating once crosshair is on the target
         if (stopAtTarget.getValue()) {
-            HudListener.HudEvent ignored = null; // just using the variable name for clarity
             EntityHitResult hitResult = WorldUtils.getHitResult(mc.player, false,
                     mc.player.getYaw(), mc.player.getPitch(), range.getValue()) instanceof EntityHitResult r ? r : null;
             if (hitResult != null && hitResult.getEntity() == target) {
@@ -168,9 +171,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         }
 
         // ── Acceleration ────────────────────────────────────────────────────
-        // Use delta time so speed is frame-rate independent.
         float delta = (float) RenderUtils.deltaTime();
-        // Acceleration multiplier 8.0 → reaches ~1.0 in ~(1 / (accel * 8 * fps)) seconds
         lerpFactor = Math.min(1.0f, lerpFactor + delta * acceleration.getValueFloat() * 8.0f);
 
         // ── Rotation step (degrees per second → per frame) ──────────────────
@@ -182,19 +183,15 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         float rawYawDelta   = MathHelper.wrapDegrees(targetYaw   - mc.player.getYaw());
         float rawPitchDelta = MathHelper.wrapDegrees(targetPitch - mc.player.getPitch());
 
-        // Clamp to max movement this frame
         float yawDelta   = MathHelper.clamp(rawYawDelta,   -maxDegreesThisFrame, maxDegreesThisFrame);
         float pitchDelta = MathHelper.clamp(rawPitchDelta, -maxDegreesThisFrame, maxDegreesThisFrame);
 
         // ── GCD correction ──────────────────────────────────────────────────
-        // Only quantise if the delta is at least one GCD step — prevents snapping to 0
         if (gcdCorrection.getValue()) {
             float gcd = calcGcd();
             if (gcd > 0) {
-                if (Math.abs(yawDelta) >= gcd)
-                    yawDelta   -= yawDelta   % gcd;
-                if (Math.abs(pitchDelta) >= gcd)
-                    pitchDelta -= pitchDelta % gcd;
+                if (Math.abs(yawDelta) >= gcd) yawDelta   -= yawDelta   % gcd;
+                if (Math.abs(pitchDelta) >= gcd) pitchDelta -= pitchDelta % gcd;
             }
         }
 
@@ -210,7 +207,6 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         mc.player.setYaw(newYaw);
         mc.player.setPitch(newPitch);
 
-        // Send rotation to server so hit registration is accurate
         if (sendPackets.getValue() && mc.getNetworkHandler() != null
                 && (Math.abs(yawDelta) > 0.001f || Math.abs(pitchDelta) > 0.001f)) {
             mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
@@ -218,7 +214,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         }
     }
 
-    private PlayerEntity resolveTarget() {
+    private LivingEntity resolveTarget() {
         if (stickyAim.getValue() && lockedTarget != null) {
             if (!lockedTarget.isAlive() || lockedTarget.isRemoved()
                     || mc.player.distanceTo(lockedTarget) > stickyRange.getValue()) {
@@ -227,7 +223,39 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
                 return lockedTarget;
             }
         }
-        return WorldUtils.findNearestPlayer(mc.player, range.getValueFloat(), true, true);
+
+        if (targets.isMode(TargetMode.Players)) {
+            return WorldUtils.findNearestPlayer(mc.player, range.getValueFloat(), true, true);
+        }
+
+        // Mobs or All — iterate entities ourselves
+        float maxDist = range.getValueFloat();
+        float halfFov = (float) fov.getValueInt() / 2f;
+        LivingEntity best = null;
+        float bestDist = Float.MAX_VALUE;
+
+        for (net.minecraft.entity.Entity e : mc.world.getEntities()) {
+            if (!(e instanceof LivingEntity le)) continue;
+            if (le == mc.player) continue;
+            if (!le.isAlive() || le.isRemoved()) continue;
+
+            // Filter by target mode
+            if (targets.isMode(TargetMode.Mobs) && !(le instanceof MobEntity)) continue;
+            // TargetMode.All passes through without extra filtering
+
+            float dist = mc.player.distanceTo(le);
+            if (dist > maxDist) continue;
+
+            // FOV check
+            Rotation rot = RotationUtils.getDirection(mc.player.getEyePos(), le.getEyePos());
+            if (rot != null && RotationUtils.getAngleToRotation(rot) > halfFov) continue;
+
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = le;
+            }
+        }
+        return best;
     }
 
     private float calcGcd() {

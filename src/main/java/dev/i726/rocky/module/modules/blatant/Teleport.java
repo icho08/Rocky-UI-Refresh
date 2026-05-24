@@ -54,7 +54,7 @@ public final class Teleport extends Module implements TickListener {
             }
         } else {
             Vec3d look = mc.player.getRotationVector().normalize().multiply(distance.getValue());
-            Vec3d pos  = mc.player.getPos().add(look);
+            Vec3d pos  = mc.player.getEntityPos().add(look);
             mc.player.setPosition(pos.x, pos.y, pos.z);
         }
 

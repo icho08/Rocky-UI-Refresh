@@ -14,10 +14,10 @@ public final class Fly extends Module implements TickListener {
     public enum Mode { Vanilla, Velocity }
 
     private final ModeSetting<Mode> mode = new ModeSetting<>(EncryptedString.of("Mode"), Mode.Vanilla, Mode.class)
-            .setDescription(EncryptedString.of("Vanilla = uses abilities, Velocity = raw speed manipulation"));
+            .setDescription(EncryptedString.of("Vanilla = uses abilities (less obvious), Velocity = raw speed manipulation"));
 
     private final NumberSetting speed = new NumberSetting(EncryptedString.of("Speed"), 0.1, 5.0, 1.0, 0.1)
-            .setDescription(EncryptedString.of("Horizontal fly speed multiplier"));
+            .setDescription(EncryptedString.of("Horizontal fly speed"));
 
     private final NumberSetting vertSpeed = new NumberSetting(EncryptedString.of("Vert Speed"), 0.1, 3.0, 0.5, 0.1)
             .setDescription(EncryptedString.of("Vertical speed for going up/down"));
@@ -45,7 +45,6 @@ public final class Fly extends Module implements TickListener {
         if (mc.player != null) {
             mc.player.getAbilities().allowFlying = false;
             mc.player.getAbilities().flying = false;
-            mc.player.getAbilities().flySpeed = 0.05f;
         }
         super.onDisable();
     }
@@ -58,6 +57,7 @@ public final class Fly extends Module implements TickListener {
         mc.player.getAbilities().flying = true;
 
         if (mode.isMode(Mode.Velocity)) {
+            // Full velocity override — bypasses Vanilla's built-in fly speed cap
             float yaw = mc.player.getYaw() * ((float) Math.PI / 180f);
             double velX = 0, velY = 0, velZ = 0;
             var input = mc.player.input.playerInput;
@@ -70,8 +70,8 @@ public final class Fly extends Module implements TickListener {
             if (input.sneak())    velY = -vertSpeed.getValue();
 
             mc.player.setVelocity(new Vec3d(velX, velY, velZ));
-        } else {
-            mc.player.getAbilities().flySpeed = (float) (speed.getValue() * 0.05f);
         }
+        // Vanilla mode: the game's built-in creative-flight handles movement using
+        // the existing ability flags above — no flySpeed field access needed.
     }
 }

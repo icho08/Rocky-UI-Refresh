@@ -47,9 +47,15 @@ public abstract class Module implements Serializable {
                 if (mc == null) mc = MinecraftClient.getInstance();
                 if (Rocky.mc == null) Rocky.mc = MinecraftClient.getInstance();
                 enabled = !enabled;
-                if (enabled)
+                if (enabled) {
+                        dev.i726.rocky.utils.NotificationManager.success(
+                                name.toString(), "Enabled");
                         onEnable();
-                else onDisable();
+                } else {
+                        dev.i726.rocky.utils.NotificationManager.info(
+                                name.toString(), "Disabled");
+                        onDisable();
+                }
         }
 
         public CharSequence getName() {

@@ -4,35 +4,79 @@ import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.events.HudListener;
 import dev.i726.rocky.gui.ClickGuiScreen;
 import dev.i726.rocky.gui.GuiTheme;
-import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.utils.EncryptedString;
+import dev.i726.rocky.utils.NotificationManager;
 import dev.i726.rocky.utils.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.item.ItemStack;
+import net.minecraft.registry.Registries;
+import net.minecraft.util.math.Vec3d;
 
 import java.awt.Color;
+import java.time.LocalTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 
 public final class HUD extends Module implements HudListener {
 
-    private final BooleanSetting info    = new BooleanSetting(EncryptedString.of("Info"), true);
-    private final BooleanSetting modules = new BooleanSetting(EncryptedString.of("Modules"), true)
-            .setDescription(EncryptedString.of("Renders module array list"));
+    private final BooleanSetting info = new BooleanSetting(
+            EncryptedString.of("Info Bar"), true)
+            .setDescription(EncryptedString.of("Shows ROCKY / FPS / Ping / Server top-left"));
+
+    private final BooleanSetting modules = new BooleanSetting(
+            EncryptedString.of("Modules"), true)
+            .setDescription(EncryptedString.of("Renders the enabled module list top-right"));
+
+    private final BooleanSetting coords = new BooleanSetting(
+            EncryptedString.of("Coordinates"), true)
+            .setDescription(EncryptedString.of("Shows XYZ position and facing direction below the info bar"));
+
+    private final BooleanSetting armorHud = new BooleanSetting(
+            EncryptedString.of("Armor"), true)
+            .setDescription(EncryptedString.of("Shows armor piece durability bars bottom-left"));
+
+    private final BooleanSetting effectsHud = new BooleanSetting(
+            EncryptedString.of("Potions"), true)
+            .setDescription(EncryptedString.of("Lists active potion effects and remaining durations"));
+
+    private final BooleanSetting bpsHud = new BooleanSetting(
+            EncryptedString.of("BPS"), true)
+            .setDescription(EncryptedString.of("Blocks-per-second speed meter"));
+
+    private final BooleanSetting clock = new BooleanSetting(
+            EncryptedString.of("Clock"), true)
+            .setDescription(EncryptedString.of("Appends real-world time to the info bar"));
+
+    private final BooleanSetting toasts = new BooleanSetting(
+            EncryptedString.of("Notifications"), true)
+            .setDescription(EncryptedString.of("Shows toast pop-ups when modules toggle"));
+
+    // BPS tracking
+    private Vec3d lastPos;
+    private long  lastPosTime;
+    private double currentBps;
+
+    private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
     public HUD() {
         super(EncryptedString.of("HUD"),
                 EncryptedString.of("Heads-up display"),
                 -1,
                 CategoryManager.GUI);
-        addSettings(info, modules);
+        addSettings(info, modules, coords, armorHud, effectsHud, bpsHud, clock, toasts);
     }
 
     @Override
     public void onEnable() {
         eventManager.add(HudListener.class, this);
+        lastPos     = null;
+        lastPosTime = System.currentTimeMillis();
         super.onEnable();
     }
 
@@ -46,9 +90,13 @@ public final class HUD extends Module implements HudListener {
     public void onRenderHud(HudEvent event) {
         if (mc.currentScreen instanceof ClickGuiScreen) return;
 
-        DrawContext ctx = event.context;
-        Color ac = GuiTheme.accent();
-        int accentArgb = GuiTheme.accentInt();
+        DrawContext ctx       = event.context;
+        Color       ac        = GuiTheme.accent();
+        int         accentInt = GuiTheme.accentInt();
+        int screenW = mc.getWindow().getScaledWidth();
+        int screenH = mc.getWindow().getScaledHeight();
+
+        updateBps();
 
         // ── 1. Info Bar (top-left) ────────────────────────────────────────────
         if (info.getValue() && mc.player != null) {
@@ -61,82 +109,195 @@ public final class HUD extends Module implements HudListener {
             String server = mc.getCurrentServerEntry() == null
                     ? "Singleplayer" : mc.getCurrentServerEntry().address;
 
-            String suffix   = "  |  " + fps + "  |  " + ping + "  |  " + server;
-            int rockyW      = TextRenderer.getWidth("ROCKY");
-            int suffixW     = TextRenderer.getWidth(suffix);
-            int totalW      = rockyW + suffixW;
+            StringBuilder sfx = new StringBuilder("  |  ")
+                    .append(fps).append("  |  ").append(ping).append("  |  ").append(server);
+            if (clock.getValue())
+                sfx.append("  |  ").append(LocalTime.now().format(TIME_FMT));
 
+            String suffix = sfx.toString();
+            int rockyW = TextRenderer.getWidth("ROCKY");
             int bx = 8, by = 8;
-            int bw = totalW + 20;
+            int bw = rockyW + TextRenderer.getWidth(suffix) + 20;
             int bh = 20;
 
-            // Shadow
             ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 50));
-            // Border
             ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
-            // Background
             ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
-            // Left accent bar (3px) — same as panels
-            ctx.fill(bx, by, bx + 3, by + bh, accentArgb);
-            // Top accent fade
+            ctx.fill(bx, by, bx + 3, by + bh, accentInt);
             ctx.fillGradient(bx + 3, by, bx + bw, by + 1,
                     GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 70),
                     GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
-
-            // Text
-            int tx = bx + 9;
-            int ty = by + 6;
-            TextRenderer.drawString("ROCKY", ctx, tx, ty, accentArgb);
-            TextRenderer.drawString(suffix, ctx, tx + rockyW, ty, GuiTheme.textPrimary());
+            TextRenderer.drawString("ROCKY",  ctx, bx + 9,           by + 6, accentInt);
+            TextRenderer.drawString(suffix,   ctx, bx + 9 + rockyW,  by + 6, GuiTheme.textPrimary());
         }
 
-        // ── 2. Module Arraylist (top-right) ──────────────────────────────────
+        // ── 2. Coordinates / Facing / BPS (below info bar) ───────────────────
+        if ((coords.getValue() || bpsHud.getValue()) && mc.player != null) {
+            List<String> lines = new ArrayList<>();
+            if (coords.getValue()) {
+                int x = (int) mc.player.getX();
+                int y = (int) mc.player.getY();
+                int z = (int) mc.player.getZ();
+                lines.add("XYZ  " + x + " / " + y + " / " + z + "  [" + getFacing(mc.player.getYaw()) + "]");
+            }
+            if (bpsHud.getValue()) {
+                lines.add("BPS  " + String.format("%.1f", currentBps));
+            }
+            if (!lines.isEmpty()) {
+                int bx = 8, by = 34;
+                int bw = lines.stream().mapToInt(TextRenderer::getWidth).max().orElse(0) + 20;
+                int bh = lines.size() * 13 + 8;
+                ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 40));
+                ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
+                ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
+                ctx.fill(bx, by, bx + 3, by + bh, accentInt);
+                for (int i = 0; i < lines.size(); i++)
+                    TextRenderer.drawString(lines.get(i), ctx, bx + 9, by + 5 + i * 13, GuiTheme.textPrimary());
+            }
+        }
+
+        // ── 3. Armor Durability (bottom-left) ────────────────────────────────
+        if (armorHud.getValue() && mc.player != null) {
+            String[] labels = {"Helm", "Chest", "Legs", "Boots"};
+            // getArmorItems iterates boots → helmet; collect then reverse
+            List<ItemStack> armorList = new ArrayList<>();
+            for (ItemStack s : mc.player.getArmorItems()) armorList.add(s);
+            // armorList[0]=boots, [1]=legs, [2]=chest, [3]=helmet  → display helmet first
+            ItemStack[] display = {
+                    armorList.size() > 3 ? armorList.get(3) : ItemStack.EMPTY,
+                    armorList.size() > 2 ? armorList.get(2) : ItemStack.EMPTY,
+                    armorList.size() > 1 ? armorList.get(1) : ItemStack.EMPTY,
+                    armorList.size() > 0 ? armorList.get(0) : ItemStack.EMPTY
+            };
+
+            int bw = 120, bh = 4 * 14 + 8;
+            int bx = 8, by = screenH - bh - 8;
+
+            ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 40));
+            ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
+            ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
+            ctx.fill(bx, by, bx + 3, by + bh, accentInt);
+
+            for (int i = 0; i < 4; i++) {
+                ItemStack stack = display[i];
+                int rowY = by + 5 + i * 14;
+                if (stack.isEmpty()) {
+                    TextRenderer.drawString(labels[i] + "  --", ctx, bx + 9, rowY, GuiTheme.textSecondary());
+                    continue;
+                }
+                int maxDmg = stack.getMaxDamage();
+                int curDmg = stack.getDamage();
+                float pct  = maxDmg > 0 ? (float)(maxDmg - curDmg) / maxDmg : 1f;
+                Color barC = pct > 0.5f ? new Color(34, 197, 94)
+                           : pct > 0.25f ? new Color(249, 115, 22)
+                           : new Color(239, 68, 68);
+
+                TextRenderer.drawString(labels[i], ctx, bx + 9, rowY, GuiTheme.textSecondary());
+                int barX    = bx + 9 + TextRenderer.getWidth(labels[i]) + 4;
+                int barMaxW = bx + bw - barX - 4;
+                int barW    = (int)(barMaxW * pct);
+                int barY    = rowY + 3;
+                ctx.fill(barX, barY, barX + barMaxW, barY + 4, GuiTheme.rgba(30, 28, 44, 255));
+                if (barW > 0)
+                    ctx.fill(barX, barY, barX + barW, barY + 4,
+                            GuiTheme.rgba(barC.getRed(), barC.getGreen(), barC.getBlue(), 220));
+            }
+        }
+
+        // ── 4. Active Potion Effects (above armor panel) ──────────────────────
+        if (effectsHud.getValue() && mc.player != null && !mc.player.getStatusEffects().isEmpty()) {
+            List<String> lines = new ArrayList<>();
+            for (StatusEffectInstance fx : mc.player.getStatusEffects()) {
+                var id = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
+                String name = id != null ? capitalize(id.getPath().replace("_", " ")) : "?";
+                int lvl = fx.getAmplifier() + 1;
+                int dur = fx.getDuration() / 20;
+                String time = dur > 60 ? (dur / 60) + "m" + (dur % 60) + "s" : dur + "s";
+                lines.add((lvl > 1 ? name + " " + lvl : name) + "  " + time);
+            }
+            int bw = lines.stream().mapToInt(TextRenderer::getWidth).max().orElse(0) + 20;
+            int bh = lines.size() * 13 + 8;
+            int armorOffset = armorHud.getValue() ? 4 * 14 + 8 + 4 : 0;
+            int bx = 8, by = screenH - bh - 8 - armorOffset;
+
+            ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 40));
+            ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
+            ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
+            ctx.fill(bx, by, bx + 3, by + bh, accentInt);
+            for (int i = 0; i < lines.size(); i++)
+                TextRenderer.drawString(lines.get(i), ctx, bx + 9, by + 5 + i * 13, GuiTheme.textPrimary());
+        }
+
+        // ── 5. Module Arraylist (top-right) ──────────────────────────────────
         if (modules.getValue()) {
-            List<Module> enabledModules = Rocky.INSTANCE.getModuleManager().getModules().stream()
+            List<Module> enabled = Rocky.INSTANCE.getModuleManager().getModules().stream()
                     .filter(Module::isEnabled)
                     .sorted((a, b) -> Integer.compare(
                             TextRenderer.getWidth(b.getName()),
                             TextRenderer.getWidth(a.getName())))
                     .toList();
 
-            int screenW  = mc.getWindow().getScaledWidth();
-            int accentBarW = 3;
-            int paddingX   = 8;
-            int entryH     = 18;
-            int gap        = 2;
-            int startY     = 8;
-
-            for (Module mod : enabledModules) {
+            int accentBarW = 3, paddingX = 8, entryH = 18, gap = 2, startY = 8;
+            for (Module mod : enabled) {
                 String name  = mod.getName().toString();
                 int textW    = TextRenderer.getWidth(name);
                 int entryW   = textW + paddingX * 2 + accentBarW;
-
                 int ex = screenW - entryW - 1;
+                int er = screenW - 1;
                 int ey = startY;
-                int er = screenW - 1;       // leave 1px screen edge gap
 
-                // Shadow
                 ctx.fill(ex + 2, ey + 2, er + 2, ey + entryH + 2, GuiTheme.rgba(0, 0, 0, 45));
-                // Border
                 ctx.fill(ex - 1, ey - 1, er + 1, ey + entryH + 1, GuiTheme.border());
-                // Background
                 ctx.fill(ex, ey, er, ey + entryH, GuiTheme.panelBg());
-
-                // Right accent bar (3px) — mirror of panel's left bar
-                ctx.fill(er - accentBarW, ey, er, ey + entryH, accentArgb);
-
-                // Top accent fade (left-to-right, fades toward right like the panel header)
+                ctx.fill(er - accentBarW, ey, er, ey + entryH, accentInt);
                 ctx.fillGradient(ex, ey, er - accentBarW, ey + 1,
                         GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0),
                         GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 70));
-
-                // Module name text
-                TextRenderer.drawString(name, ctx,
-                        ex + paddingX, ey + 5,
-                        GuiTheme.textPrimary());
-
+                TextRenderer.drawString(name, ctx, ex + paddingX, ey + 5, GuiTheme.textPrimary());
                 startY += entryH + gap;
             }
         }
+
+        // ── 6. Toast Notifications (bottom-right) ────────────────────────────
+        if (toasts.getValue()) {
+            NotificationManager.render(ctx, screenH);
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    private void updateBps() {
+        if (mc.player == null) { lastPos = null; return; }
+        long  now = System.currentTimeMillis();
+        Vec3d pos = mc.player.getPos();
+        if (lastPos != null && now > lastPosTime) {
+            double dist = Math.sqrt(
+                    Math.pow(pos.x - lastPos.x, 2) + Math.pow(pos.z - lastPos.z, 2));
+            double raw = dist / ((now - lastPosTime) / 1000.0);
+            currentBps = currentBps * 0.85 + raw * 0.15;
+        }
+        lastPos     = pos;
+        lastPosTime = now;
+    }
+
+    private static String getFacing(float yaw) {
+        float y = ((yaw % 360) + 360) % 360;
+        if      (y < 22.5  || y >= 337.5) return "S";
+        else if (y < 67.5)                return "SW";
+        else if (y < 112.5)               return "W";
+        else if (y < 157.5)               return "NW";
+        else if (y < 202.5)               return "N";
+        else if (y < 247.5)               return "NE";
+        else if (y < 292.5)               return "E";
+        else                              return "SE";
+    }
+
+    private static String capitalize(String s) {
+        if (s == null || s.isEmpty()) return s;
+        String[] words = s.split(" ");
+        StringBuilder sb = new StringBuilder();
+        for (String w : words)
+            if (!w.isEmpty()) sb.append(Character.toUpperCase(w.charAt(0))).append(w.substring(1)).append(" ");
+        return sb.toString().trim();
     }
 }

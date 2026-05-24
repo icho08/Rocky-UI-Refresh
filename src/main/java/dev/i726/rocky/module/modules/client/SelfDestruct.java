@@ -1,18 +1,23 @@
 package dev.i726.rocky.module.modules.client;
 
 import dev.i726.rocky.Rocky;
+import dev.i726.rocky.event.events.ButtonListener;
 import dev.i726.rocky.gui.ClickGuiScreen;
-import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.Utils;
+import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
 
-public final class SelfDestruct extends Module {
+public final class SelfDestruct extends Module implements ButtonListener {
         public static boolean destruct = false;
+
+        private final KeybindSetting panicKey = new KeybindSetting(
+                        EncryptedString.of("Panic Key"), GLFW.GLFW_KEY_END, false)
+                        .setDescription(EncryptedString.of("Press this key anywhere to instantly trigger Self Destruct"));
 
         private final BooleanSetting replaceMod = new BooleanSetting(EncryptedString.of("Replace Mod"), true)
                         .setDescription(EncryptedString.of("Replaces the mod with a decoy JAR to hide it from screenshares"));
@@ -27,21 +32,35 @@ public final class SelfDestruct extends Module {
 
         public SelfDestruct() {
                 super(EncryptedString.of("Self Destruct"),
-                EncryptedString.of("Removes all traces"),
+                                EncryptedString.of("Removes all traces"),
                                 -1,
                                 CategoryManager.GUI);
-                addSettings(replaceMod, saveLastModified, keepSettings, downloadURL);
+                addSettings(panicKey, replaceMod, saveLastModified, keepSettings, downloadURL);
+                // Register panic key listener permanently so it works without enabling the module
+                Rocky.INSTANCE.getEventManager().add(ButtonListener.class, this);
+        }
+
+        @Override
+        public void onButtonPress(ButtonEvent event) {
+                if (event.action != GLFW.GLFW_PRESS) return;
+                if (destruct) return;
+                int pk = panicKey.getKey();
+                if (pk != -1 && pk == event.button) {
+                        triggerDestruct();
+                }
         }
 
         @Override
         public void onEnable() {
+                triggerDestruct();
+        }
+
+        private void triggerDestruct() {
                 destruct = true;
 
-                // Disable all GUI components first
                 Rocky.INSTANCE.getModuleManager().getModule(ClickGUI.class).setEnabled(false);
-                setEnabled(false);
+                setEnabledStatus(false);
 
-                // Always save settings to disk first so they can be restored later
                 Rocky.INSTANCE.getProfileManager().saveProfile("default");
 
                 if (mc.currentScreen instanceof ClickGuiScreen) {
@@ -49,7 +68,6 @@ public final class SelfDestruct extends Module {
                         mc.execute(() -> mc.setScreen(null));
                 }
 
-                // Replace JAR in background
                 if (replaceMod.getValue()) {
                         new Thread(() -> {
                                 try {
@@ -62,7 +80,6 @@ public final class SelfDestruct extends Module {
                         }).start();
                 }
 
-                // If not keeping settings, wipe all module data from memory
                 if (!keepSettings.getValue()) {
                         for (Module module : Rocky.INSTANCE.getModuleManager().getModules()) {
                                 module.setEnabled(false);
@@ -80,7 +97,6 @@ public final class SelfDestruct extends Module {
                         Rocky.INSTANCE.resetModifiedDate();
                 }
 
-                // Run GC to clean up references
                 System.gc();
         }
 }

@@ -3,10 +3,7 @@ package dev.i726.rocky.module;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.events.ButtonListener;
 import dev.i726.rocky.module.modules.blatant.*;
-import dev.i726.rocky.module.modules.client.BlatantModules;
-import dev.i726.rocky.module.modules.client.ClickGUI;
-import dev.i726.rocky.module.modules.client.Friends;
-import dev.i726.rocky.module.modules.client.SelfDestruct;
+import dev.i726.rocky.module.modules.client.*;
 import dev.i726.rocky.module.modules.combat.*;
 import dev.i726.rocky.module.modules.misc.*;
 import dev.i726.rocky.module.modules.movement.*;
@@ -60,6 +57,9 @@ public final class ModuleManager implements ButtonListener {
                 add(new Hitboxes());
                 add(new Velocity());
                 add(new Criticals());
+                add(new KillAura());
+                add(new Strafe());
+                add(new Surround());
 
                 //Misc
                 add(new ChestStealer());
@@ -90,6 +90,11 @@ public final class ModuleManager implements ButtonListener {
                 add(new DragClick());
                 add(new VersionSpoof());
                 add(new BypassAssist());
+                add(new Timer());
+                add(new InvMove());
+
+                //Movement
+                add(new LongJump());
 
                 //Render
                 add(new HUD());
@@ -105,6 +110,8 @@ public final class ModuleManager implements ButtonListener {
                 add(new ShowHealth());
                 add(new ShowArmor());
                 add(new HidePlayers());
+                add(new Fullbright());
+                add(new NameTags());
 
                 //Blatant
                 add(new Fly());
@@ -121,6 +128,8 @@ public final class ModuleManager implements ButtonListener {
                 add(new Friends());
                 add(new SelfDestruct());
                 add(new BlatantModules());
+                add(new ThemePicker());
+                add(new Search());
         }
 
         public List<Module> getEnabledModules() {

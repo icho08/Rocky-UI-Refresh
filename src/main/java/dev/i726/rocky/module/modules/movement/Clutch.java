@@ -161,8 +161,8 @@ public final class Clutch extends Module implements TickListener {
         } finally {
             placing = false;
         }
-
-        tryRestoreSlot();
+        // Do NOT restore slot here — we might still be in the air.
+        // tryRestoreSlot() is called by the on-ground check at the top of onTick().
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

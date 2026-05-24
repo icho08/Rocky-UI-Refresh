@@ -24,6 +24,7 @@ public class ModuleRow {
     private boolean expanded = false;
 
     public String getModuleName() { return module.getName().toString(); }
+    public Module getModule()     { return module; }
 
     public ModuleRow(Module module) {
         this.module = module;

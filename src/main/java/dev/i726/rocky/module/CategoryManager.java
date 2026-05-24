@@ -20,7 +20,7 @@ public class CategoryManager {
     // Combat subcategories
     public static final Category PVP = new Category("PvP", COMBAT);
     public static final Category CRYSTAL = new Category("Crystal", COMBAT);
-    public static final Category INVENTORY = new Category("Inventory", COMBAT);
+    public static final Category INVENTORY = new Category("Inventory", PLAYER);
     
     // Player subcategories
     public static final Category MOVEMENT = new Category("Movement", PLAYER);

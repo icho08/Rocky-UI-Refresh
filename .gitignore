@@ -1,50 +1,84 @@
-# See https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files for more about ignoring files.
+# ── Gradle ──────────────────────────────────────────────────────────────────
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
 
-# compiled output
-dist
-tmp
-out-tsc
-*.tsbuildinfo
-.expo
-.expo-shared
+# ── Compiled / packaged output ───────────────────────────────────────────────
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+out/
+target/
 
-# dependencies
-node_modules
+# ── Checksums & metadata Gradle downloads ───────────────────────────────────
+*.sha1
+*.sha256
+*.sha512
+*.md5
+*.md5.txt
+*.sha1.txt
 
-# IDEs and editors
-/.idea
-.project
+# ── Fabric / Minecraft Loom ──────────────────────────────────────────────────
+run/
+runs/
+.fabric/
+remappedSrc/
+minecraft-sources/
+
+# ── IntelliJ IDEA ────────────────────────────────────────────────────────────
+.idea/
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+# ── Eclipse ───────────────────────────────────────────────────────────────────
+.apt_generated
 .classpath
-.c9/
-*.launch
+.factorypath
+.project
 .settings/
-*.sublime-workspace
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
 
-# IDE - VSCode
+# ── VSCode ────────────────────────────────────────────────────────────────────
 .vscode/*
 !.vscode/settings.json
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# misc
-/.sass-cache
-/connect.lock
-/coverage
-/libpeerconnection.log
-npm-debug.log
-yarn-error.log
-testem.log
-/typings
-
-# System Files
+# ── macOS / Windows / Linux ───────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+Desktop.ini
+ehthumbs.db
 
-.cursor/rules/nx-rules.mdc
-.github/instructions/nx.instructions.md
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-error.log*
 
-# Replit
+# ── Node (if any tooling) ─────────────────────────────────────────────────────
+node_modules/
+dist/
+tmp/
+
+# ── Replit internals ──────────────────────────────────────────────────────────
 .cache/
 .local/
-build/
+.upm/
+
+# ── Misc project files ────────────────────────────────────────────────────────
+latest
+com/
+attached_assets/

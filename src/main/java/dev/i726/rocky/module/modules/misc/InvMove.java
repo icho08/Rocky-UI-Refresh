@@ -51,27 +51,27 @@ public final class InvMove extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null || !(mc.currentScreen instanceof HandledScreen<?>)) return;
 
-        long handle = mc.getWindow().getHandle();
+        var win = mc.getWindow();
 
-        mc.options.forwardKey.setPressed(isDown(mc.options.forwardKey, handle));
-        mc.options.backKey.setPressed(isDown(mc.options.backKey, handle));
-        mc.options.leftKey.setPressed(isDown(mc.options.leftKey, handle));
-        mc.options.rightKey.setPressed(isDown(mc.options.rightKey, handle));
-        mc.options.sneakKey.setPressed(isDown(mc.options.sneakKey, handle));
+        mc.options.forwardKey.setPressed(isDown(mc.options.forwardKey, win));
+        mc.options.backKey.setPressed(isDown(mc.options.backKey, win));
+        mc.options.leftKey.setPressed(isDown(mc.options.leftKey, win));
+        mc.options.rightKey.setPressed(isDown(mc.options.rightKey, win));
+        mc.options.sneakKey.setPressed(isDown(mc.options.sneakKey, win));
 
         if (jump.getValue()) {
-            mc.options.jumpKey.setPressed(isDown(mc.options.jumpKey, handle));
+            mc.options.jumpKey.setPressed(isDown(mc.options.jumpKey, win));
         }
 
-        if (sprint.getValue() && isDown(mc.options.forwardKey, handle)) {
+        if (sprint.getValue() && isDown(mc.options.forwardKey, win)) {
             mc.player.setSprinting(true);
         }
     }
 
-    private static boolean isDown(KeyBinding kb, long handle) {
+    private static boolean isDown(KeyBinding kb, net.minecraft.client.util.Window win) {
         try {
             InputUtil.Key k = InputUtil.fromTranslationKey(kb.getBoundKeyTranslationKey());
-            return InputUtil.isKeyPressed(handle, k.getCode());
+            return InputUtil.isKeyPressed(win, k.getCode());
         } catch (Exception e) {
             return false;
         }

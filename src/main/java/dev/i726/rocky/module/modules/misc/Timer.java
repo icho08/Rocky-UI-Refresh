@@ -60,7 +60,7 @@ public final class Timer extends Module implements TickListener {
     };
 
     private void findTimerField() {
-        Object counter = mc.renderTickCounter;
+        Object counter = mc.getRenderTickCounter();
         if (counter == null) return;
         for (String name : CANDIDATE_FIELDS) {
             for (Class<?> c = counter.getClass(); c != null; c = c.getSuperclass()) {
@@ -78,18 +78,20 @@ public final class Timer extends Module implements TickListener {
     }
 
     private float getMs() {
-        if (!fieldFound || mc.renderTickCounter == null) return 50f;
+        Object counter = mc.getRenderTickCounter();
+        if (!fieldFound || counter == null) return 50f;
         try {
-            return timerField.getFloat(mc.renderTickCounter);
+            return timerField.getFloat(counter);
         } catch (Exception e) {
             return 50f;
         }
     }
 
     private void setMs(float ms) {
-        if (!fieldFound || mc.renderTickCounter == null) return;
+        Object counter = mc.getRenderTickCounter();
+        if (!fieldFound || counter == null) return;
         try {
-            timerField.setFloat(mc.renderTickCounter, ms);
+            timerField.setFloat(counter, ms);
         } catch (Exception ignored) {}
     }
 }

@@ -86,8 +86,8 @@ public final class Surround extends Module implements TickListener {
         int slot = findBlockSlot();
         if (slot == -1) return;
 
-        int prevSlot = mc.player.getInventory().selectedSlot;
-        mc.player.getInventory().selectedSlot = slot;
+        int prevSlot = mc.player.getInventory().getSelectedSlot();
+        mc.player.getInventory().setSelectedSlot(slot);
 
         BlockPos feet = BlockPos.ofFloored(mc.player.getX(), mc.player.getY(), mc.player.getZ());
 
@@ -112,7 +112,7 @@ public final class Surround extends Module implements TickListener {
             break;
         }
 
-        mc.player.getInventory().selectedSlot = prevSlot;
+        mc.player.getInventory().setSelectedSlot(prevSlot);
         if (placed) placeTimer.reset();
     }
 

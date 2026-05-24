@@ -76,7 +76,7 @@ public final class NameTags extends Module implements HudListener {
             if (dist > maxDist.getValue()) continue;
 
             // World-to-screen projection
-            Vec3d worldPos = target.getPos().add(0, target.getHeight() + 0.35, 0);
+            Vec3d worldPos = new Vec3d(target.getX(), target.getY() + target.getHeight() + 0.35, target.getZ());
             int[] screen = worldToScreen(worldPos, cam, win);
             if (screen == null) continue;
 

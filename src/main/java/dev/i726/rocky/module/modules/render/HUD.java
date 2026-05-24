@@ -159,15 +159,12 @@ public final class HUD extends Module implements HudListener {
         // ── 3. Armor Durability (bottom-left) ────────────────────────────────
         if (armorHud.getValue() && mc.player != null) {
             String[] labels = {"Helm", "Chest", "Legs", "Boots"};
-            // getArmorItems iterates boots → helmet; collect then reverse
-            List<ItemStack> armorList = new ArrayList<>();
-            for (ItemStack s : mc.player.getArmorItems()) armorList.add(s);
-            // armorList[0]=boots, [1]=legs, [2]=chest, [3]=helmet  → display helmet first
+            // Armor slots: 39=helmet, 38=chest, 37=legs, 36=boots
             ItemStack[] display = {
-                    armorList.size() > 3 ? armorList.get(3) : ItemStack.EMPTY,
-                    armorList.size() > 2 ? armorList.get(2) : ItemStack.EMPTY,
-                    armorList.size() > 1 ? armorList.get(1) : ItemStack.EMPTY,
-                    armorList.size() > 0 ? armorList.get(0) : ItemStack.EMPTY
+                    mc.player.getInventory().getStack(39),
+                    mc.player.getInventory().getStack(38),
+                    mc.player.getInventory().getStack(37),
+                    mc.player.getInventory().getStack(36)
             };
 
             int bw = 120, bh = 4 * 14 + 8;
@@ -269,7 +266,7 @@ public final class HUD extends Module implements HudListener {
     private void updateBps() {
         if (mc.player == null) { lastPos = null; return; }
         long  now = System.currentTimeMillis();
-        Vec3d pos = mc.player.getPos();
+        Vec3d pos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         if (lastPos != null && now > lastPosTime) {
             double dist = Math.sqrt(
                     Math.pow(pos.x - lastPos.x, 2) + Math.pow(pos.z - lastPos.z, 2));

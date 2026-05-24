@@ -33,6 +33,9 @@ public class CategoryManager {
     // Misc subcategories
     public static final Category NETWORK = new Category("Network", MISC);
     public static final Category GUI = new Category("GUI", MISC);
+
+    // Blatant category — only works on servers without anti-cheat
+    public static final Category BLATANT = new Category("Blatant", false);
     
     static {
         registerCategory(COMBAT);
@@ -48,6 +51,7 @@ public class CategoryManager {
         registerCategory(ESP);
         registerCategory(NETWORK);
         registerCategory(GUI);
+        registerCategory(BLATANT);
         loadCategories();
     }
     
@@ -110,7 +114,7 @@ public class CategoryManager {
                name.equals("Misc") || name.equals("PvP") || name.equals("Crystal") || 
                name.equals("Inventory") || name.equals("Movement") || name.equals("Bridging") ||
                name.equals("Automation") || name.equals("ESP") || name.equals("Network") || 
-               name.equals("GUI");
+               name.equals("GUI") || name.equals("Blatant");
     }
     
     private static void saveCategories() {

@@ -94,6 +94,14 @@ public class ModuleRow {
             }
             ctx.disableScissor();
         }
+
+        // Queue tooltip if hovered and module has a description
+        if (hovering) {
+            CharSequence desc = module.getDescription();
+            if (desc != null && !desc.toString().isBlank()) {
+                dev.i726.rocky.gui.ClickGuiScreen.queueTooltip(desc.toString(), mouseX, mouseY);
+            }
+        }
     }
 
     private void drawSwitch(DrawContext ctx, int x, int y, float anim) {

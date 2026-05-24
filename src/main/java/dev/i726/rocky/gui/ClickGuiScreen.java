@@ -6,6 +6,7 @@ import dev.i726.rocky.managers.ProfileManager;
 import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
+import dev.i726.rocky.module.modules.client.BlatantModules;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -24,6 +25,12 @@ public class ClickGuiScreen extends Screen {
 
     private static final List<CategoryPanel> panels = new ArrayList<>();
     private static boolean initialized = false;
+    private static ClickGuiScreen currentInstance = null;
+
+    // Tooltip queued by ModuleRow during render — drawn on top of everything
+    private static String pendingTooltip    = null;
+    private static int    pendingTooltipX   = 0;
+    private static int    pendingTooltipY   = 0;
 
     private static final int BAR_Y  = 5;
     private static final int BAR_H  = 28;
@@ -37,8 +44,26 @@ public class ClickGuiScreen extends Screen {
         super(Text.literal("Rocky"));
     }
 
+    /** Called by ModuleRow during render to schedule a tooltip for the end of the frame. */
+    public static void queueTooltip(String text, int mouseX, int mouseY) {
+        pendingTooltip  = text;
+        pendingTooltipX = mouseX;
+        pendingTooltipY = mouseY;
+    }
+
+    /** Re-build the panel list (e.g. after BlatantModules is toggled). */
+    public static void refreshPanels() {
+        initialized = false;
+        panels.clear();
+        if (currentInstance != null) {
+            currentInstance.setupPanels();
+            initialized = true;
+        }
+    }
+
     @Override
     protected void init() {
+        currentInstance = this;
         if (!initialized) {
             setupPanels();
             initialized = true;
@@ -50,12 +75,18 @@ public class ClickGuiScreen extends Screen {
 
     private void setupPanels() {
         panels.clear();
-        List<Category> topLevel = Arrays.asList(
+
+        boolean showBlatant = Rocky.INSTANCE.moduleManager.getModule(BlatantModules.class) != null
+                && Rocky.INSTANCE.moduleManager.getModule(BlatantModules.class).isEnabled();
+
+        List<Category> topLevel = new ArrayList<>(Arrays.asList(
                 CategoryManager.COMBAT,
                 CategoryManager.PLAYER,
                 CategoryManager.VISUAL,
                 CategoryManager.MISC
-        );
+        ));
+        if (showBlatant) topLevel.add(CategoryManager.BLATANT);
+
         ProfileManager pm = Rocky.INSTANCE.getProfileManager();
         int startX = Math.max(8, this.width / 2 - 295);
         int startY = 42;
@@ -88,12 +119,80 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+        pendingTooltip = null;
+
         ctx.fill(0, 0, this.width, this.height, GuiTheme.rgba(5, 4, 10, 175));
 
         renderTopBar(ctx, mouseX, mouseY);
 
         for (CategoryPanel panel : panels)
             panel.render(ctx, mouseX, mouseY, delta);
+
+        // Draw tooltip on top of all panels
+        if (pendingTooltip != null) {
+            renderTooltip(ctx, pendingTooltip, mouseX, mouseY);
+            pendingTooltip = null;
+        }
+    }
+
+    private void renderTooltip(DrawContext ctx, String text, int mouseX, int mouseY) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        int maxWidth = 160;
+
+        // Word-wrap
+        List<String> lines = wrapText(mc, text, maxWidth - 12);
+
+        int lineH   = mc.textRenderer.fontHeight + 2;
+        int boxW    = maxWidth;
+        int boxH    = 6 + lines.size() * lineH + 2;
+
+        // Position: right of cursor, clamped to screen
+        int tx = mouseX + 10;
+        int ty = mouseY - 4;
+        if (tx + boxW > this.width  - 4) tx = mouseX - boxW - 4;
+        if (ty + boxH > this.height - 4) ty = this.height - boxH - 4;
+        if (ty < 4) ty = 4;
+
+        Color ac = GuiTheme.accent();
+
+        // Shadow
+        ctx.fill(tx + 2, ty + 2, tx + boxW + 2, ty + boxH + 2, GuiTheme.rgba(0, 0, 0, 60));
+        // Border
+        ctx.fill(tx - 1, ty - 1, tx + boxW + 1, ty + boxH + 1,
+                GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 100));
+        // Background
+        ctx.fill(tx, ty, tx + boxW, ty + boxH, GuiTheme.rgba(10, 9, 18, 240));
+        // Left accent stripe
+        ctx.fill(tx, ty, tx + 2, ty + boxH, GuiTheme.accentInt());
+        // Subtle top gradient tint
+        ctx.fillGradient(tx, ty, tx + boxW, ty + Math.min(boxH, 12),
+                GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 25),
+                GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
+
+        // Text lines
+        int textX = tx + 8;
+        int textY = ty + 4;
+        for (String line : lines) {
+            ctx.drawText(mc.textRenderer, line, textX, textY, GuiTheme.rgba(190, 186, 220, 255), false);
+            textY += lineH;
+        }
+    }
+
+    private List<String> wrapText(MinecraftClient mc, String text, int maxWidth) {
+        List<String> lines = new ArrayList<>();
+        String[] words = text.split(" ");
+        StringBuilder current = new StringBuilder();
+        for (String word : words) {
+            String test = current.isEmpty() ? word : current + " " + word;
+            if (mc.textRenderer.getWidth(test) <= maxWidth) {
+                current = new StringBuilder(test);
+            } else {
+                if (!current.isEmpty()) lines.add(current.toString());
+                current = new StringBuilder(word);
+            }
+        }
+        if (!current.isEmpty()) lines.add(current.toString());
+        return lines.isEmpty() ? List.of(text) : lines;
     }
 
     private void renderTopBar(DrawContext ctx, int mouseX, int mouseY) {
@@ -259,6 +358,7 @@ public class ClickGuiScreen extends Screen {
 
     @Override
     public void removed() {
+        currentInstance = null;
         try {
             ProfileManager pm = Rocky.INSTANCE.getProfileManager();
             for (CategoryPanel panel : panels) {

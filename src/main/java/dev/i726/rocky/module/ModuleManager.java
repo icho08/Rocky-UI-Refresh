@@ -2,6 +2,8 @@ package dev.i726.rocky.module;
 
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.events.ButtonListener;
+import dev.i726.rocky.module.modules.blatant.*;
+import dev.i726.rocky.module.modules.client.BlatantModules;
 import dev.i726.rocky.module.modules.client.ClickGUI;
 import dev.i726.rocky.module.modules.client.Friends;
 import dev.i726.rocky.module.modules.client.SelfDestruct;
@@ -104,10 +106,21 @@ public final class ModuleManager implements ButtonListener {
                 add(new ShowArmor());
                 add(new HidePlayers());
 
+                //Blatant
+                add(new Fly());
+                add(new Speed());
+                add(new Spider());
+                add(new Teleport());
+                add(new Jesus());
+                add(new HighJump());
+                add(new NoSlowdown());
+                add(new Phase());
+
                 //Client
                 add(new ClickGUI());
                 add(new Friends());
                 add(new SelfDestruct());
+                add(new BlatantModules());
         }
 
         public List<Module> getEnabledModules() {

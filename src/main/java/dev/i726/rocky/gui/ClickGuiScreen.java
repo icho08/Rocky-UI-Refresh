@@ -63,6 +63,7 @@ public class ClickGuiScreen extends Screen {
 
     /** Adds the Blatant panel without destroying any other panels. */
     public static void addBlatantPanel() {
+        initialized = false;
         if (currentInstance == null) return;
         boolean exists = panels.stream()
                 .anyMatch(p -> p.getName().equals(CategoryManager.BLATANT.getName()));
@@ -79,6 +80,7 @@ public class ClickGuiScreen extends Screen {
 
     /** Removes the Blatant panel without touching the rest. */
     public static void removeBlatantPanel() {
+        initialized = false;
         panels.removeIf(p -> p.getName().equals(CategoryManager.BLATANT.getName()));
     }
 

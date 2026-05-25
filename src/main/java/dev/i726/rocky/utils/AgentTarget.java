@@ -28,40 +28,41 @@ public final class AgentTarget {
     private static int bridgeCooldown = 0;
 
     public static void init(String args, Instrumentation inst) {
-        // Reset destruct flag so re-injection always works, even after a previous self-destruct.
-        // This is safe: the flag only blocked running threads from the old session;
-        // those threads are already dead (the HyperEngine loop exits on destruct=true),
-        // so clearing it here just opens the door for a clean new session.
+        // Signal the injector IMMEDIATELY — synchronous, first line, no thread.
+        // This confirms AgentTarget.init() was reached regardless of what happens next.
+        try {
+            new java.io.File(System.getProperty("java.io.tmpdir"),
+                    ".rocky-init-ok").createNewFile();
+        } catch (Throwable ignored) {}
+
+        // Reset destruct flag so re-injection works after a previous self-destruct.
         try { SelfDestruct.destruct = false; } catch (Throwable ignored) {}
 
         System.out.println("[Rocky] Agent target reached. Initializing Hyper-Trigger v4.0...");
 
         new Thread(() -> {
             try {
+                // Wait for the game window to be ready (needed on cold injection)
                 int attempts = 0;
                 while (attempts < 100) {
                     try {
-                        if (MinecraftClient.getInstance() != null && MinecraftClient.getInstance().getWindow() != null) break;
+                        if (MinecraftClient.getInstance() != null
+                                && MinecraftClient.getInstance().getWindow() != null) break;
                     } catch (Throwable ignored) {}
                     Thread.sleep(500);
                     attempts++;
                 }
 
                 MinecraftClient mc = MinecraftClient.getInstance();
-                if (mc == null) return;
-
-                // Write the signal file NOW — before mc.execute — so the injector
-                // confirms the agent reached this point even if init() throws later.
-                try {
-                    new java.io.File(System.getProperty("java.io.tmpdir"),
-                            ".rocky-init-ok").createNewFile();
-                } catch (Exception ignored) {}
+                if (mc == null) {
+                    System.err.println("[Rocky] Bootstrap: MinecraftClient still null after timeout.");
+                    return;
+                }
 
                 mc.execute(() -> {
                     try {
                         if (Rocky.INSTANCE != null) {
-                            // Previous session still alive — tear it down cleanly
-                            // so the new injection replaces it.
+                            // Tear down previous session cleanly before re-init
                             try { Rocky.INSTANCE.getModuleManager()
                                     .getModules().forEach(m -> m.setEnabled(false)); }
                             catch (Throwable ignored) {}
@@ -70,10 +71,16 @@ public final class AgentTarget {
                         new Main().onInitializeClient();
                         System.out.println("[Rocky] Hyper-Trigger Engine v4.0 Active.");
                         startInputLoop();
-                    } catch (Exception e) { e.printStackTrace(); }
+                    } catch (Throwable e) {
+                        System.err.println("[Rocky] Init error: " + e);
+                        e.printStackTrace();
+                    }
                 });
 
-            } catch (Throwable e) { e.printStackTrace(); }
+            } catch (Throwable e) {
+                System.err.println("[Rocky] Bootstrap thread error: " + e);
+                e.printStackTrace();
+            }
         }, "Rocky-Bootstrap").start();
     }
 

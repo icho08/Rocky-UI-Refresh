@@ -57,21 +57,38 @@ public final class StandaloneBootstrap {
                 return;
             }
 
+            // Build the cmdline map once so labels and scores share the same data
+            java.util.Map<Long, String> cmdlineMap = buildCmdlineMap();
+
             ProcessHandle target;
             if (matches.size() == 1) {
                 target = matches.get(0);
-                System.out.println("[i] Auto-selecting PID: " + target.pid()
-                        + "  (" + getProcessLabel(target) + ")");
+                System.out.println("[i] Auto-selecting: " + getProcessLabel(target, cmdlineMap));
             } else {
-                System.out.println("[?] Multiple instances found:");
-                for (int i = 0; i < matches.size(); i++) {
-                    ProcessHandle ph = matches.get(i);
-                    System.out.printf("  [%d] PID %-7d %s\n",
-                            i + 1, ph.pid(), getProcessLabel(ph));
+                // Build a set of candidate PIDs for scoring
+                java.util.Set<Long> pids = new java.util.HashSet<>();
+                matches.forEach(p -> pids.add(p.pid()));
+
+                // If the top-ranked process outscores second place by 3+, auto-pick it
+                // (it's clearly the game JVM, not a launcher wrapper)
+                int topScore    = score(matches.get(0), pids, cmdlineMap);
+                int secondScore = matches.size() > 1 ? score(matches.get(1), pids, cmdlineMap) : 0;
+                if (topScore - secondScore >= 3) {
+                    target = matches.get(0);
+                    System.out.println("[i] Auto-selecting highest-score process:");
+                    System.out.println("    " + getProcessLabel(target, cmdlineMap));
+                } else {
+                    System.out.println("[?] Multiple instances found:");
+                    for (int i = 0; i < matches.size(); i++) {
+                        ProcessHandle ph = matches.get(i);
+                        System.out.printf("  [%d] %s\n",
+                                i + 1, getProcessLabel(ph, cmdlineMap));
+                    }
+                    System.out.println("[i] Tip: pick the one labelled 'Minecraft JVM' or 'Fabric/Quilt JVM'");
+                    System.out.print("Selection: ");
+                    Scanner scanner = new Scanner(System.in);
+                    target = matches.get(scanner.nextInt() - 1);
                 }
-                System.out.print("Selection: ");
-                Scanner scanner = new Scanner(System.in);
-                target = matches.get(scanner.nextInt() - 1);
             }
 
             System.out.println("[+] Temp JAR staged for attach: " + tempJar.getAbsolutePath());
@@ -347,13 +364,15 @@ public final class StandaloneBootstrap {
                 // If gdb itself is not on PATH, bail out entirely
                 if (exitCode == 127 || (out.isEmpty() && exitCode != 0)) return null;
 
-                // Any non-null pointer in $rh means dlopen loaded the library
-                // GDB prints the result as: $N = (type) 0xADDRESS
-                // Null (failure) would be 0x0; any other value is success.
-                boolean hasResult = out.contains("$rh =") || out.contains("= 0x");
-                boolean isNull    = out.contains("= 0x0\n") || out.contains("= 0x0 ")
-                                  || out.contains("(void *) 0");
-                if (hasResult && !isNull) {
+                // Any non-null pointer means dlopen loaded the library.
+                // GDB prints: $N = (void *) 0xADDRESS
+                // Null (failure) is exactly 0x0 — we must NOT match 0x0abc... etc.
+                // Use word-boundary regex: 0x0 followed by a non-hex character.
+                boolean hasHandle = out.contains("(void *) 0x") || out.contains("= 0x");
+                boolean isNull = java.util.regex.Pattern
+                        .compile("0x0[^0-9a-fA-F]|0x0$", java.util.regex.Pattern.MULTILINE)
+                        .matcher(out).find();
+                if (hasHandle && !isNull) {
                     System.out.println("[+] GDB dlopen via " + sym + " succeeded.");
                     return combined.toString();
                 }
@@ -897,15 +916,43 @@ public final class StandaloneBootstrap {
     }
 
     private static String getProcessLabel(ProcessHandle ph) {
-        String d = (ph.info().command().orElse("") + " "
-                + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
-        if (d.contains("modrinth"))
-            return "Modrinth App";
-        if (d.contains("forge"))
-            return "Forge";
-        if (d.contains("fabric") || d.contains("knotclient"))
-            return "Fabric";
-        return "Minecraft";
+        return getProcessLabel(ph, null);
+    }
+
+    private static String getProcessLabel(ProcessHandle ph,
+                                           java.util.Map<Long, String> cmdlines) {
+        String d = cmdlines != null
+                ? cmdlines.getOrDefault(ph.pid(), "").toLowerCase()
+                : "";
+        if (d.isEmpty()) {
+            d = (ph.info().command().orElse("") + " "
+                    + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
+        }
+
+        // Extract the executable name from the command path for display
+        String cmd = ph.info().command().orElse("?");
+        String exe = cmd.contains("/") ? cmd.substring(cmd.lastIndexOf('/') + 1) : cmd;
+
+        // Derive a human-readable type tag
+        String tag;
+        if (d.contains("knotclient") || d.contains("minecraftclient"))
+            tag = "Minecraft (Fabric/Quilt JVM)";
+        else if (d.contains("net.minecraft"))
+            tag = "Minecraft JVM";
+        else if (d.contains("net.fabricmc"))
+            tag = "Fabric Loader JVM";
+        else if (d.contains("forge"))
+            tag = "Forge JVM";
+        else if (d.contains("moonsworth") || d.contains("lunarclient"))
+            tag = "Lunar Client JVM";
+        else if (d.contains("modrinth") || d.contains("theseus"))
+            tag = "Modrinth Launcher";
+        else
+            tag = "Java Process";
+
+        // Show thread count as a quick sanity check (game JVM has many threads)
+        long threads = ph.children().count() + 1;
+        return String.format("%-30s  exe=%-10s  pid=%d", tag, exe, ph.pid());
     }
 
     /**

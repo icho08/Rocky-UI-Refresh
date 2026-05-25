@@ -2,9 +2,14 @@ package dev.i726.rocky.utils;
 
 import dev.i726.rocky.Main;
 import dev.i726.rocky.Rocky;
+import dev.i726.rocky.event.EventManager;
+import dev.i726.rocky.event.events.*;
 import dev.i726.rocky.gui.ClickGuiScreen;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.SelfDestruct;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
+import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.projectile.ProjectileUtil;
@@ -17,6 +22,7 @@ import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.Box;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
+import org.lwjgl.glfw.GLFWKeyCallbackI;
 
 import java.lang.instrument.Instrumentation;
 import java.util.HashMap;
@@ -69,6 +75,14 @@ public final class AgentTarget {
                             Rocky.INSTANCE = null;
                         }
                         new Main().onInitializeClient();
+
+                        // Wire Fabric API events → Rocky EventManager.
+                        // Rocky's own events are fired by mixin bytecode applied at class-load
+                        // time — those transforms are absent when we inject at runtime.
+                        // Fabric API's events DO fire (Fabric's own mixins ran at startup),
+                        // so bridging through them gives every module a live event feed.
+                        setupFabricBridge(mc);
+
                         System.out.println("[Rocky] Hyper-Trigger Engine v4.0 Active.");
                         startInputLoop();
                     } catch (Throwable e) {
@@ -82,6 +96,70 @@ public final class AgentTarget {
                 e.printStackTrace();
             }
         }, "Rocky-Bootstrap").start();
+    }
+
+    private static final java.util.concurrent.atomic.AtomicBoolean FABRIC_BRIDGE_REGISTERED
+            = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /**
+     * Registers Fabric API event handlers that forward into Rocky's EventManager.
+     *
+     * WHY: Rocky fires its events from mixin bytecode injected at class-load time.
+     * When we attach at runtime the JVM classes are already loaded — those injections
+     * never happened, so no events would ever reach any module.
+     * Fabric API's OWN events work because Fabric's mixin transformer ran at startup.
+     * We register listeners on those and re-dispatch into Rocky's bus.
+     *
+     * Guarded by FABRIC_BRIDGE_REGISTERED so re-injection doesn't double-register.
+     */
+    private static void setupFabricBridge(MinecraftClient mc) {
+        if (!FABRIC_BRIDGE_REGISTERED.compareAndSet(false, true)) {
+            System.out.println("[Rocky] Fabric bridge already registered — skipping.");
+            return;
+        }
+
+        // ── Tick ────────────────────────────────────────────────────────────────
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            if (Rocky.INSTANCE == null) return;
+            try { EventManager.fire(new TickListener.TickEvent()); }
+            catch (Throwable ignored) {}
+            if (client.player != null) {
+                try { EventManager.fire(new PlayerTickListener.PlayerTickEvent()); }
+                catch (Throwable ignored) {}
+            }
+        });
+
+        // ── HUD overlay (2D) ────────────────────────────────────────────────────
+        HudRenderCallback.EVENT.register((context, tickCounter) -> {
+            if (Rocky.INSTANCE == null) return;
+            try {
+                EventManager.fire(new HudListener.HudEvent(context, tickCounter.getTickProgress(true)));
+            } catch (Throwable ignored) {}
+        });
+
+        // ── 3-D world render (ESP, NameTags, Tracers …) ─────────────────────────
+        WorldRenderEvents.LAST.register(context -> {
+            if (Rocky.INSTANCE == null) return;
+            try {
+                float delta = context.tickCounter().getTickProgress(true);
+                EventManager.fire(new GameRenderListener.GameRenderEvent(context.matrixStack(), delta));
+            } catch (Throwable ignored) {}
+        });
+
+        // ── Keyboard (GUI toggle, module keybinds) ──────────────────────────────
+        // Chain onto the existing GLFW key callback so nothing is lost.
+        long windowHandle = mc.getWindow().getHandle();
+        GLFWKeyCallbackI[] chain = new GLFWKeyCallbackI[1];
+        GLFWKeyCallbackI newKeyCallback = (window, key, scancode, action, mods) -> {
+            if (Rocky.INSTANCE != null && action != GLFW.GLFW_RELEASE) {
+                try { EventManager.fire(new ButtonListener.ButtonEvent(key, window, 1)); }
+                catch (Throwable ignored) {}
+            }
+            if (chain[0] != null) chain[0].invoke(window, key, scancode, action, mods);
+        };
+        chain[0] = GLFW.glfwSetKeyCallback(windowHandle, newKeyCallback);
+
+        System.out.println("[Rocky] Fabric bridge: tick / HUD / 3D-render / keyboard wired.");
     }
 
     private static void startInputLoop() {

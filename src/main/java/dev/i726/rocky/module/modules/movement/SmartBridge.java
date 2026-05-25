@@ -169,7 +169,7 @@ public final class SmartBridge extends Module implements TickListener {
      * packet, no instant 180° snap, no bot signature. Block is placed once aligned.
      */
     private void runGodPhase(ClientPlayerEntity p) {
-        boolean hasBlocks = resolveBlockSlot() != -1;
+        boolean hasBlocks = isHoldingBlock();
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
         if (!hasBlocks && requireBlocks.getValue()) {
@@ -285,7 +285,7 @@ public final class SmartBridge extends Module implements TickListener {
 
     private void runAssistPhase(ClientPlayerEntity p) {
         safeWalkActive = false;
-        boolean hasBlocks = resolveBlockSlot() != -1;
+        boolean hasBlocks = isHoldingBlock();
         boolean canSneak  = !requireBlocks.getValue() || hasBlocks;
         mc.options.sneakKey.setPressed(canSneak && isNearEdge(p));
 
@@ -380,6 +380,12 @@ public final class SmartBridge extends Module implements TickListener {
         if (main.getItem() instanceof BlockItem) n += main.getCount();
         if (off.getItem() instanceof BlockItem)  n += off.getCount();
         return n;
+    }
+
+    /** True only when the item the player is currently holding is a placeable block. */
+    private boolean isHoldingBlock() {
+        if (mc.player == null) return false;
+        return mc.player.getMainHandStack().getItem() instanceof BlockItem;
     }
 
     private void restoreGodRotation() {

@@ -80,8 +80,14 @@ public final class GodBridge extends Module implements TickListener {
 
     public static boolean shouldSafeWalk() {
         if (INSTANCE == null || !INSTANCE.isEnabled()) return false;
-        if (INSTANCE.requireBlocks.getValue()) return INSTANCE.resolveBlockSlot() != -1;
+        if (INSTANCE.requireBlocks.getValue()) return INSTANCE.isHoldingBlock();
         return true;
+    }
+
+    /** True only when the item the player is currently holding is a placeable block. */
+    private boolean isHoldingBlock() {
+        if (mc.player == null) return false;
+        return mc.player.getMainHandStack().getItem() instanceof BlockItem;
     }
 
     @Override

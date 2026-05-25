@@ -8,11 +8,8 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
 import net.minecraft.block.BlockState;
-import net.minecraft.client.network.ClientCommonNetworkHandler;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.ClientConnection;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
@@ -20,7 +17,6 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.lang.reflect.Field;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class Scaffold extends Module implements TickListener {
@@ -65,9 +61,8 @@ public final class Scaffold extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
 
-        // Safe walk — only if we actually have blocks when Require Blocks is ON
-        boolean hasBlocks = resolveBlockSlot() != -1;
-        boolean doSafeWalk = safeWalk.getValue() && (!requireBlocks.getValue() || hasBlocks);
+        // Safe walk — only if the player is HOLDING a block when Require Blocks is ON
+        boolean doSafeWalk = safeWalk.getValue() && (!requireBlocks.getValue() || isHoldingBlock());
         mc.options.sneakKey.setPressed(doSafeWalk);
 
         BlockPos feetPos   = mc.player.getBlockPos();
@@ -169,19 +164,9 @@ public final class Scaffold extends Module implements TickListener {
         return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
     }
 
-    private ClientConnection getConnection() {
-        try {
-            Class<?> cls = ClientCommonNetworkHandler.class;
-            while (cls != null) {
-                for (Field f : cls.getDeclaredFields()) {
-                    if (ClientConnection.class.isAssignableFrom(f.getType())) {
-                        f.setAccessible(true);
-                        return (ClientConnection) f.get(mc.getNetworkHandler());
-                    }
-                }
-                cls = cls.getSuperclass();
-            }
-        } catch (Exception ignored) {}
-        return null;
+    /** True only when the item the player is currently holding is a placeable block. */
+    private boolean isHoldingBlock() {
+        if (mc.player == null) return false;
+        return mc.player.getMainHandStack().getItem() instanceof BlockItem;
     }
 }

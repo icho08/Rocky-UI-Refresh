@@ -128,7 +128,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
             .setDescription(EncryptedString.of("Shows toast pop-ups when modules toggle"));
 
     private final KeybindSetting editorKey = new KeybindSetting(
-            EncryptedString.of("HUD Editor Key"), GLFW.GLFW_KEY_KP_0)
+            EncryptedString.of("HUD Editor Key"), GLFW.GLFW_KEY_KP_0, false)
             .setDescription(EncryptedString.of("Open the HUD layout editor to drag panels"));
 
     // ── State ─────────────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 package dev.i726.rocky.module.modules.render;
 
-import com.mojang.blaze3d.systems.RenderSystem;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.event.events.HudListener;
@@ -13,6 +12,7 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.client.render.Camera;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
@@ -23,16 +23,20 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Phase 1 (GameRenderListener): project world positions using the real GPU matrices.
- * Phase 2 (HudListener):        draw collected tag data onto the 2D HUD.
+ * Two-phase nametag rendering.
  *
- * This two-phase approach fixes the "tag follows crosshair" bug caused by
- * manual trigonometry that doesn't match the actual rendering camera.
+ * Phase 1 (GameRenderListener): project world positions to screen using
+ *   the view-rotation matrix from event.matrices (built in WorldRendererMixin as
+ *   conjugate of camera.getRotation()) plus a manual perspective divide with the
+ *   player's FOV setting. This fires at the end of the world-render pass when the
+ *   camera is fully set up, so tags lock correctly to player positions.
+ *
+ * Phase 2 (HudListener): draw the collected 2-D tag data onto the HUD.
  */
 public final class NameTags extends Module implements GameRenderListener, HudListener {
 
     private static final class TagData {
-        final int   screenX, screenY;
+        final int    screenX, screenY;
         final String label;
         final boolean isFriend;
         TagData(int x, int y, String l, boolean f) {
@@ -84,21 +88,28 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
         super.onDisable();
     }
 
-    // ── Phase 1: project using real rendering matrices ────────────────────────
+    // ── Phase 1: world → screen projection ──────────────────────────────────
 
     @Override
     public void onGameRender(GameRenderEvent event) {
         pendingTags.clear();
         if (mc.player == null || mc.world == null) return;
 
-        // combined = projection * modelView  (modelView has camera at origin)
-        Matrix4f combined = new Matrix4f(RenderSystem.getProjectionMatrix())
-                .mul(event.matrices.peek().getPositionMatrix());
+        Camera cam    = mc.gameRenderer.getCamera();
+        Vec3d  camPos = cam.getPos();
+        int    winW   = mc.getWindow().getScaledWidth();
+        int    winH   = mc.getWindow().getScaledHeight();
+        float  maxD   = (float) maxDist.getValue();
 
-        Vec3d camPos  = mc.gameRenderer.getCamera().getPos();
-        int   winW    = mc.getWindow().getScaledWidth();
-        int   winH    = mc.getWindow().getScaledHeight();
-        float maxD    = (float) maxDist.getValue();
+        // event.matrices.peek().getPositionMatrix() is the view-rotation matrix
+        // (conjugate of camera.getRotation() applied to an identity MatrixStack).
+        // Transforming a camera-relative world vector with it yields eye space.
+        Matrix4f viewRot = event.matrices.peek().getPositionMatrix();
+
+        // FOV from player settings — used for the perspective divide.
+        double fovYRad     = Math.toRadians(mc.options.getFov().getValue());
+        double tanHalfFovY = Math.tan(fovYRad / 2.0);
+        double aspect      = (double) winW / winH;
 
         for (var entity : mc.world.getEntities()) {
             if (!(entity instanceof PlayerEntity target)) continue;
@@ -112,17 +123,27 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
             float ry = (float)(lerp.y + target.getHeight() + 0.35 - camPos.y);
             float rz = (float)(lerp.z - camPos.z);
 
-            Vector4f clip = combined.transform(new Vector4f(rx, ry, rz, 1f));
-            if (clip.w <= 0.001f) continue;
+            // Transform to eye space using the view-rotation matrix.
+            // w component stays 1 (no translation in this matrix).
+            Vector4f eye = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
 
-            float ndcX = clip.x / clip.w;
-            float ndcY = clip.y / clip.w;
-            if (ndcX < -1.1f || ndcX > 1.1f || ndcY < -1.1f || ndcY > 1.1f) continue;
+            // In this coordinate frame, "forward" is the -Z axis (OpenGL eye space).
+            // eye.z < 0 means the point is in front of the camera.
+            if (eye.z >= -0.001f) continue;
+
+            float fwdDepth = -eye.z;   // positive depth
+
+            float ndcX = (float)(eye.x  / (fwdDepth * tanHalfFovY * aspect));
+            float ndcY = (float)(eye.y  / (fwdDepth * tanHalfFovY));
+
+            // Cull if off-screen (with a small margin)
+            if (ndcX < -1.15f || ndcX > 1.15f || ndcY < -1.15f || ndcY > 1.15f) continue;
 
             int screenX = (int)((ndcX + 1f) * 0.5f * winW);
-            int screenY = (int)((1f - ndcY) * 0.5f * winH);
+            int screenY = (int)((1f - ndcY) * 0.5f * winH);   // Y flipped: NDC +Y = top
 
             boolean isFriend = Rocky.INSTANCE.getFriendManager().isFriend(target.getUuidAsString());
+
             StringBuilder sb = new StringBuilder(target.getName().getString());
             if (showHealth.getValue()) {
                 float hp = Math.min(target.getHealth() + target.getAbsorptionAmount(), 20f);
@@ -140,7 +161,7 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
         }
     }
 
-    // ── Phase 2: draw projected tag data onto the HUD ────────────────────────
+    // ── Phase 2: draw collected tags on the HUD ──────────────────────────────
 
     @Override
     public void onRenderHud(HudEvent event) {

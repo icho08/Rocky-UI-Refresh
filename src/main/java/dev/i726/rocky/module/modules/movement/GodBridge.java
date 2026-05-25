@@ -6,12 +6,9 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.network.ClientCommonNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.ClientConnection;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
@@ -19,25 +16,22 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.lang.reflect.Field;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * GodBridge — anticheat-safe automated god bridging.
+ * GodBridge — undetectable god bridging.
  *
- * SafeWalk is handled by the PlayerEntityMixin.clipAtLedge injection which
- * returns true whenever this module is enabled — Minecraft's own physics clips
- * movement at the block edge, so the server never sees an invalid position.
+ * Direction: always uses the player's FACING direction (opposite = behind them).
+ * Velocity is NOT used for direction — diagonal movement makes it unreliable.
  *
- * Block placement uses a single silent rotation packet:
- *   1. LookAndOnGround aimed at a randomised point on the block face
- *   2. PlayerInteractBlockC2SPacket (via interactBlock)
+ * Rotation: smoothly lerps the player's actual camera (setYaw/setPitch) toward
+ * the block face each tick. The server receives this via normal movement packets
+ * — no special LookAndOnGround packets, no instant snap, no bot signature.
+ * The block is placed once the camera is within the alignment threshold.
+ * After placement the camera snaps back immediately (1-tick correction is normal).
  *
- * Only ONE rotation packet is sent — no snap-and-restore pair. The server sees
- * a natural "quick look → place" sequence. The rotation is returned to its
- * original value by the very next normal movement packet that Minecraft's own
- * code sends (with lastSentYaw/lastSentPitch carrying originals), so there is
- * never a bot-signature instant reverse.
+ * SafeWalk: PlayerEntityMixin.clipAtLedge returns true when enabled, giving
+ * the same edge-clip as vanilla sneaking with zero extra packets.
  */
 public final class GodBridge extends Module implements TickListener {
 
@@ -55,6 +49,14 @@ public final class GodBridge extends Module implements TickListener {
             EncryptedString.of("Place Jitter"), 0, 4, 1, 1)
             .setDescription(EncryptedString.of("Random extra ticks per placement (humanisation)"));
 
+    private final NumberSetting rotSpeed = new NumberSetting(
+            EncryptedString.of("Rot Speed"), 5, 20, 12, 1)
+            .setDescription(EncryptedString.of("Camera rotation speed toward block face (degrees per tick, higher = faster)"));
+
+    private final NumberSetting alignThreshold = new NumberSetting(
+            EncryptedString.of("Align Threshold"), 5, 30, 15, 1)
+            .setDescription(EncryptedString.of("Degrees within which the camera must be aligned before placing"));
+
     private final NumberSetting blockSlot = new NumberSetting(
             EncryptedString.of("Block Slot"), 0, 9, 0, 1)
             .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot only)"));
@@ -64,20 +66,18 @@ public final class GodBridge extends Module implements TickListener {
             .setDescription(EncryptedString.of("When ON: safe-walk and sprint only activate if you have blocks. When OFF: always active"));
 
     private int cooldown = 0;
+    // Saved yaw/pitch before we started rotating toward the block — restored after place
+    private float savedYaw   = Float.NaN;
+    private float savedPitch = Float.NaN;
 
     public GodBridge() {
         super(EncryptedString.of("God Bridge"),
-                EncryptedString.of("Automated god bridging with anticheat-safe packet rotation"),
+                EncryptedString.of("Automated god bridging with undetectable smooth rotation"),
                 -1, CategoryManager.BRIDGING);
         INSTANCE = this;
-        addSettings(autoSprint, placeDelay, placeJitter, blockSlot, requireBlocks);
+        addSettings(autoSprint, placeDelay, placeJitter, rotSpeed, alignThreshold, blockSlot, requireBlocks);
     }
 
-    /**
-     * Used by PlayerEntityMixin.clipAtLedge to keep the player from walking
-     * off the edge without sending sneak packets.
-     * If Require Blocks is ON, only clips at ledge when blocks are in hand.
-     */
     public static boolean shouldSafeWalk() {
         if (INSTANCE == null || !INSTANCE.isEnabled()) return false;
         if (INSTANCE.requireBlocks.getValue()) return INSTANCE.resolveBlockSlot() != -1;
@@ -86,7 +86,9 @@ public final class GodBridge extends Module implements TickListener {
 
     @Override
     public void onEnable() {
-        cooldown = 0;
+        cooldown  = 0;
+        savedYaw  = Float.NaN;
+        savedPitch = Float.NaN;
         Clutch.placing = false;
         eventManager.add(TickListener.class, this);
         super.onEnable();
@@ -94,6 +96,7 @@ public final class GodBridge extends Module implements TickListener {
 
     @Override
     public void onDisable() {
+        restoreSavedRotation();
         Clutch.placing = false;
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         eventManager.remove(TickListener.class, this);
@@ -105,62 +108,87 @@ public final class GodBridge extends Module implements TickListener {
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
-        if (resolveBlockSlot() == -1) return;
-        if (!p.isOnGround()) return;
+        if (resolveBlockSlot() == -1) { restoreSavedRotation(); return; }
+        if (!p.isOnGround()) { restoreSavedRotation(); return; }
 
         Vec3d v = p.getVelocity();
-        if (Math.abs(v.x) + Math.abs(v.z) < 0.01) return;
+        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) { restoreSavedRotation(); return; }
 
         if (autoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
-        if (cooldown > 0) { cooldown--; return; }
+        if (cooldown > 0) { cooldown--; restoreSavedRotation(); return; }
 
-        Direction placeDir = cardinalFromMotion(v.x, v.z);
-        BlockPos standing  = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
-        BlockPos target    = standing.offset(placeDir);
+        // ── Direction: facing-based (stable), not velocity-based ──────────────
+        // In god bridge the player faces the destination and walks backward.
+        // The block extends in the direction BEHIND the player = opposite of facing.
+        Direction placeDir = p.getHorizontalFacing().getOpposite();
+        BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
+        BlockPos  target   = standing.offset(placeDir);
 
-        if (!mc.world.getBlockState(target).isAir()) return;
-        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) return;
+        if (!mc.world.getBlockState(target).isAir()) { restoreSavedRotation(); return; }
+        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { restoreSavedRotation(); return; }
 
-        // Randomise the exact hit point on the face — avoids always hitting the exact center
+        // ── Aim point on the side face of the standing block ──────────────────
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         double faceOffX = placeDir.getOffsetX() * 0.5;
         double faceOffZ = placeDir.getOffsetZ() * 0.5;
-        double jitterH  = rng.nextDouble(-0.12, 0.12);
-        double jitterY  = rng.nextDouble(-0.15, 0.05);
+        double jitterH  = rng.nextDouble(-0.1, 0.1);
+        double jitterY  = rng.nextDouble(-0.1, 0.05);
 
         Vec3d aimPoint = Vec3d.ofCenter(standing).add(
                 faceOffX + (placeDir.getOffsetX() == 0 ? jitterH : 0),
-                -0.25 + jitterY,
+                -0.2 + jitterY,
                 faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
-        int useSlot = resolveBlockSlot();
+        float[] needed = calcLook(p.getEyePos(), aimPoint);
+        float   needYaw   = needed[0];
+        float   needPitch = MathHelper.clamp(needed[1], 55f, 85f);
+
+        // ── Smooth camera rotation ────────────────────────────────────────────
+        // Save the player's real looking direction on first approach so we can
+        // restore it cleanly after the placement.
+        if (Float.isNaN(savedYaw)) {
+            savedYaw   = p.getYaw();
+            savedPitch = p.getPitch();
+        }
+
+        float speed     = rotSpeed.getValueInt();
+        float curYaw    = p.getYaw();
+        float curPitch  = p.getPitch();
+        float newYaw    = lerpAngle(curYaw,   needYaw,   speed / 90f);
+        float newPitch  = lerpAngle(curPitch, needPitch, speed / 90f);
+
+        // Apply rotation via player state — carried to server in next position packet,
+        // no separate LookAndOnGround packet needed.
+        p.setYaw(newYaw);
+        p.setPitch(newPitch);
+
+        // Only place when camera is actually aligned with the target face
+        float yawDiff   = Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw));
+        float pitchDiff = Math.abs(MathHelper.wrapDegrees(needPitch - newPitch));
+        float threshold = alignThreshold.getValueInt();
+        if (yawDiff > threshold || pitchDiff > threshold) return; // still rotating
+
+        // ── Place block ───────────────────────────────────────────────────────
+        int useSlot  = resolveBlockSlot();
         if (useSlot == -1) return;
         int prevSlot = p.getInventory().getSelectedSlot();
         if (useSlot != prevSlot) p.getInventory().setSelectedSlot(useSlot);
 
-        Hand hand = Hand.MAIN_HAND;
         BlockHitResult bhr = new BlockHitResult(aimPoint, placeDir, standing, false);
-
-        float[] look       = calcLook(p.getEyePos(), aimPoint);
-        float targetYaw    = look[0];
-        // Humanised pitch: 50–80° range with a little random wobble
-        float naturalPitch = MathHelper.clamp(look[1], 50f, 80f)
-                           + (float) rng.nextDouble(-4.0, 4.0);
-        float targetPitch  = MathHelper.clamp(naturalPitch, 50f, 82f);
-        boolean onGround   = p.isOnGround();
-        boolean hCol       = p.horizontalCollision;
-
-        ClientConnection conn = getConnection();
-        if (conn == null) return;
 
         Clutch.placing = true;
         try {
-            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(targetYaw, targetPitch, onGround, hCol));
-            if (mc.interactionManager.interactBlock(p, hand, bhr).isAccepted()) {
-                p.swingHand(hand);
+            if (mc.interactionManager.interactBlock(p, Hand.MAIN_HAND, bhr).isAccepted()) {
+                p.swingHand(Hand.MAIN_HAND);
                 cooldown = placeDelay.getValueInt()
                          + (int)(Math.random() * (placeJitter.getValueInt() + 1));
+                // Restore real rotation immediately after the place
+                restoreSavedRotation();
+                p.setYaw(savedYaw);
+                p.setPitch(savedPitch);
+                savedYaw   = Float.NaN;
+                savedPitch = Float.NaN;
             }
         } finally {
             Clutch.placing = false;
@@ -170,12 +198,22 @@ public final class GodBridge extends Module implements TickListener {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Returns the hotbar slot to use (0-8), or -1 if no usable block is available.
-     * blockSlot=0 → auto-find first block in hotbar.
-     * blockSlot=1-9 → use that fixed slot only (0-indexed = value-1).
-     */
+    private void restoreSavedRotation() {
+        if (Float.isNaN(savedYaw) || mc.player == null) return;
+        mc.player.setYaw(savedYaw);
+        mc.player.setPitch(savedPitch);
+        savedYaw   = Float.NaN;
+        savedPitch = Float.NaN;
+    }
+
+    /** Linearly interpolates an angle (handles 0°/360° wrap). t=1 = instant snap. */
+    private static float lerpAngle(float from, float to, float t) {
+        float delta = MathHelper.wrapDegrees(to - from);
+        return from + delta * MathHelper.clamp(t, 0f, 1f);
+    }
+
     private int resolveBlockSlot() {
+        if (mc.player == null) return -1;
         int setting = blockSlot.getValueInt();
         if (setting >= 1 && setting <= 9) {
             int idx = setting - 1;
@@ -189,12 +227,6 @@ public final class GodBridge extends Module implements TickListener {
         return -1;
     }
 
-    private Direction cardinalFromMotion(double dx, double dz) {
-        return Math.abs(dx) > Math.abs(dz)
-                ? (dx > 0 ? Direction.EAST  : Direction.WEST)
-                : (dz > 0 ? Direction.SOUTH : Direction.NORTH);
-    }
-
     private static float[] calcLook(Vec3d from, Vec3d to) {
         double dx = to.x - from.x;
         double dy = to.y - from.y;
@@ -203,21 +235,5 @@ public final class GodBridge extends Module implements TickListener {
         float yaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float pitch = (float) Math.toDegrees(-Math.atan2(dy, hDist));
         return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
-    }
-
-    private ClientConnection getConnection() {
-        try {
-            Class<?> cls = ClientCommonNetworkHandler.class;
-            while (cls != null) {
-                for (Field f : cls.getDeclaredFields()) {
-                    if (ClientConnection.class.isAssignableFrom(f.getType())) {
-                        f.setAccessible(true);
-                        return (ClientConnection) f.get(mc.getNetworkHandler());
-                    }
-                }
-                cls = cls.getSuperclass();
-            }
-        } catch (Exception ignored) {}
-        return null;
     }
 }

@@ -4,16 +4,12 @@ import dev.i726.rocky.event.events.TickListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
-import dev.i726.rocky.module.setting.MinMaxSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.network.ClientCommonNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
-import net.minecraft.network.ClientConnection;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
@@ -21,7 +17,6 @@ import net.minecraft.util.math.Direction;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.lang.reflect.Field;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class SmartBridge extends Module implements TickListener {
@@ -101,6 +96,9 @@ public final class SmartBridge extends Module implements TickListener {
     private int   lastBlockCount     = -1;
     private float lastHealth         = 20f;
     private boolean healthInitialized = false;
+    // Saved rotation before we started lerping the camera toward the block face
+    private float savedYaw   = Float.NaN;
+    private float savedPitch = Float.NaN;
 
     public SmartBridge() {
         super(EncryptedString.of("Smart Bridge"),
@@ -119,12 +117,15 @@ public final class SmartBridge extends Module implements TickListener {
         healthInitialized   = false;
         lastBlockCount      = -1;
         safeWalkActive      = false;
+        savedYaw            = Float.NaN;
+        savedPitch          = Float.NaN;
     }
 
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
         safeWalkActive = false;
+        restoreGodRotation();
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         Clutch.placing = false;
     }
@@ -159,23 +160,32 @@ public final class SmartBridge extends Module implements TickListener {
     }
 
     // ── God Phase ─────────────────────────────────────────────────────────────
-
+    /**
+     * Direction fix: always use the player's FACING direction (opposite = behind them).
+     * Velocity-based cardinals fail on diagonal movement, placing blocks sideways.
+     *
+     * Rotation fix: smoothly lerp the actual camera toward the block face each tick.
+     * The server receives the rotation via normal position packets — no LookAndOnGround
+     * packet, no instant 180° snap, no bot signature. Block is placed once aligned.
+     */
     private void runGodPhase(ClientPlayerEntity p) {
-        if (resolveBlockSlot() == -1) {
+        boolean hasBlocks = resolveBlockSlot() != -1;
+        boolean protect   = !requireBlocks.getValue() || hasBlocks;
+
+        if (!hasBlocks && requireBlocks.getValue()) {
             safeWalkActive = false;
             mc.options.sneakKey.setPressed(false);
+            restoreGodRotation();
             return;
         }
+
         if (!p.isOnGround()) {
             mc.options.sneakKey.setPressed(false);
+            restoreGodRotation();
             return;
         }
 
         // ── Fall protection ──────────────────────────────────────────────────
-        // If Require Blocks is ON and nothing is available, stay passive.
-        boolean hasBlocks = resolveBlockSlot() != -1;
-        boolean protect   = !requireBlocks.getValue() || hasBlocks;
-
         switch (godFallMode.getMode()) {
             case SafeWalk -> {
                 safeWalkActive = protect;
@@ -195,63 +205,75 @@ public final class SmartBridge extends Module implements TickListener {
             }
         }
 
-        // ── Direction and target ──────────────────────────────────────────────
+        // ── Direction (facing-based, not velocity-based) ───────────────────
         Vec3d v = p.getVelocity();
-        if (Math.abs(v.x) + Math.abs(v.z) < 0.01) return;
+        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) { restoreGodRotation(); return; }
 
         if (godAutoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
-        Direction placeDir = cardinalFromMotion(v.x, v.z);
+        // The block always extends BEHIND the player (opposite of where they face).
+        // For backward god bridging: player faces North, walks South, block goes South.
+        Direction placeDir = p.getHorizontalFacing().getOpposite();
         BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
         BlockPos  target   = standing.offset(placeDir);
 
-        if (!mc.world.getBlockState(target).isAir()) return;
-        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) return;
+        if (!mc.world.getBlockState(target).isAir()) { restoreGodRotation(); return; }
+        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { restoreGodRotation(); return; }
 
-        if (placeCooldown > 0) return;
+        if (placeCooldown > 0) { restoreGodRotation(); return; }
 
-        // Randomise hit point on the block face for human-looking rotation variance
+        // ── Aim point on the side face ─────────────────────────────────────
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         double faceOffX = placeDir.getOffsetX() * 0.5;
         double faceOffZ = placeDir.getOffsetZ() * 0.5;
-        double jitterH  = rng.nextDouble(-0.12, 0.12);
-        double jitterY  = rng.nextDouble(-0.15, 0.05);
+        double jitterH  = rng.nextDouble(-0.1, 0.1);
+        double jitterY  = rng.nextDouble(-0.1, 0.05);
 
         Vec3d aimPoint = Vec3d.ofCenter(standing).add(
                 faceOffX + (placeDir.getOffsetX() == 0 ? jitterH : 0),
-                -0.25 + jitterY,
+                -0.2 + jitterY,
                 faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
+        // ── Smooth camera rotation (no special packets) ────────────────────
+        float[] needed     = calcLook(p.getEyePos(), aimPoint);
+        float   needYaw    = needed[0];
+        float   needPitch  = MathHelper.clamp(needed[1], 55f, 85f);
+
+        // First approach this cycle — save original rotation for restoration
+        if (Float.isNaN(savedYaw)) {
+            savedYaw   = p.getYaw();
+            savedPitch = p.getPitch();
+        }
+
+        // Lerp at ~12°/tick — fast enough to align in 2-3 ticks, slow enough
+        // to look like human mouse movement to the anticheat
+        float newYaw   = lerpAngle(p.getYaw(),   needYaw,   0.55f);
+        float newPitch = lerpAngle(p.getPitch(),  needPitch, 0.55f);
+        p.setYaw(newYaw);
+        p.setPitch(newPitch);
+
+        // Only place once camera is close enough to the target face
+        float yawDiff   = Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw));
+        float pitchDiff = Math.abs(MathHelper.wrapDegrees(needPitch - newPitch));
+        if (yawDiff > 18f || pitchDiff > 18f) return; // still rotating
+
+        // ── Place block ───────────────────────────────────────────────────
         int useSlot  = resolveBlockSlot();
+        if (useSlot == -1) return;
         int prevSlot = p.getInventory().getSelectedSlot();
         if (useSlot != prevSlot) p.getInventory().setSelectedSlot(useSlot);
 
         BlockHitResult bhr = new BlockHitResult(aimPoint, placeDir, standing, false);
-        Hand           hand = Hand.MAIN_HAND;
-
-        // ── Single silent rotation packet ─────────────────────────────────────
-        float[] look         = calcLook(p.getEyePos(), aimPoint);
-        float   targetYaw    = look[0];
-        float   naturalPitch = MathHelper.clamp(look[1], 50f, 80f)
-                             + (float) rng.nextDouble(-4.0, 4.0);
-        float   targetPitch  = MathHelper.clamp(naturalPitch, 50f, 82f);
-        boolean onGround     = p.isOnGround();
-        boolean hCol         = p.horizontalCollision;
-
-        ClientConnection conn = getConnection();
-        if (conn == null) {
-            if (useSlot != prevSlot) p.getInventory().setSelectedSlot(prevSlot);
-            return;
-        }
 
         Clutch.placing = true;
         try {
-            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(targetYaw, targetPitch, onGround, hCol));
-            if (mc.interactionManager.interactBlock(p, hand, bhr).isAccepted()) {
-                p.swingHand(hand);
+            if (mc.interactionManager.interactBlock(p, Hand.MAIN_HAND, bhr).isAccepted()) {
+                p.swingHand(Hand.MAIN_HAND);
                 phaseBlocksPlaced++;
-                placeCooldown = 2 + (int)(Math.random() * 2);
+                placeCooldown = 2 + rng.nextInt(3);
                 if (phaseBlocksPlaced >= currentPhaseTarget) advancePhase();
+                // Restore real rotation right after the block is registered
+                restoreGodRotation();
             }
         } finally {
             Clutch.placing = false;
@@ -360,10 +382,17 @@ public final class SmartBridge extends Module implements TickListener {
         return n;
     }
 
-    private Direction cardinalFromMotion(double dx, double dz) {
-        return Math.abs(dx) > Math.abs(dz)
-                ? (dx > 0 ? Direction.EAST : Direction.WEST)
-                : (dz > 0 ? Direction.SOUTH : Direction.NORTH);
+    private void restoreGodRotation() {
+        if (Float.isNaN(savedYaw) || mc.player == null) return;
+        mc.player.setYaw(savedYaw);
+        mc.player.setPitch(savedPitch);
+        savedYaw   = Float.NaN;
+        savedPitch = Float.NaN;
+    }
+
+    private static float lerpAngle(float from, float to, float t) {
+        float delta = MathHelper.wrapDegrees(to - from);
+        return from + delta * MathHelper.clamp(t, 0f, 1f);
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {
@@ -376,19 +405,4 @@ public final class SmartBridge extends Module implements TickListener {
         return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
     }
 
-    private ClientConnection getConnection() {
-        try {
-            Class<?> cls = ClientCommonNetworkHandler.class;
-            while (cls != null) {
-                for (Field f : cls.getDeclaredFields()) {
-                    if (ClientConnection.class.isAssignableFrom(f.getType())) {
-                        f.setAccessible(true);
-                        return (ClientConnection) f.get(mc.getNetworkHandler());
-                    }
-                }
-                cls = cls.getSuperclass();
-            }
-        } catch (Exception ignored) {}
-        return null;
-    }
 }

@@ -102,6 +102,21 @@ public class CategoryPanel {
         ctx.drawText(MinecraftClient.getInstance().textRenderer,
                 name.toUpperCase(), ix + 9, iy + 5, GuiTheme.textPrimary(), false);
 
+        // ── Header icon tooltips ─────────────────────────────────────────────
+        if (isOverHeader(mouseX, mouseY)) {
+            if (mouseX >= ix + WIDTH - ICON_W) {
+                dev.i726.rocky.gui.ClickGuiScreen.queueTooltip(
+                        collapsed ? "Expand — show all modules in this panel"
+                                  : "Collapse — hide module list",
+                        mouseX, mouseY);
+            } else if (mouseX >= ix + WIDTH - ICON_W * 2) {
+                dev.i726.rocky.gui.ClickGuiScreen.queueTooltip(
+                        hideMinor ? "Show all modules including minor ones"
+                                  : "Hide minor/utility modules to reduce clutter",
+                        mouseX, mouseY);
+            }
+        }
+
         // ── Module rows ─────────────────────────────────────────────────────
         if (animatedH > 0) {
             int bodyTop = iy + HEADER_H;

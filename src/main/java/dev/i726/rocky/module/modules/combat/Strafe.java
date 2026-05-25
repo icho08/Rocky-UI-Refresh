@@ -33,7 +33,7 @@ public final class Strafe extends Module implements TickListener {
     public Strafe() {
         super(EncryptedString.of("Strafe"),
                 EncryptedString.of("Automatically strafes around your target during combat"),
-                -1, CategoryManager.PVP);
+                -1, CategoryManager.BLATANT);
         addSettings(mode, speed, radius, onlyAttacking);
     }
 

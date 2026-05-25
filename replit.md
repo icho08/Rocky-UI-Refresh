@@ -53,6 +53,39 @@ A Minecraft Fabric mod for version 1.21.x with a custom in-game GUI.
 - `Timer` uses reflection on `renderTickCounter` — field candidates: `msPerTick`, `tickLength`, `timerSpeed`, `timeScale`, plus several intermediary names.
 - `NightVision` (potion-based) is now named "Night Vision" in-game to avoid clash with `Fullbright`.
 
+## Changes applied in this session
+
+### NameTags — fixed world-to-screen projection
+- Rewrote to two-phase: `GameRenderListener` collects screen coords using real JOML GPU matrices (`proj * modelView`), then `HudListener` draws them. Tags now lock to player bodies and no longer drift with the crosshair.
+- Import: `com.mojang.blaze3d.systems.RenderSystem`, `org.joml.Matrix4f/Vector4f`.
+
+### HUD — draggable panels + HUD editor screen
+- `HUD.java` now stores `storedX[5]` / `storedY[5]` (NaN = use computed default).
+- Positions loaded from `rocky/hud_positions.txt` on enable; saved on editor close.
+- New `HudEditorScreen.java` opens via the "HUD Editor Key" keybind (default: Numpad 0). Drag any panel, then ESC to save. "Reset All" clears overrides.
+- `onRenderHud` uses `px(id, default)` / `py(id, default)` helpers for all 5 panels. Module arraylist supports absolute X anchor too.
+
+### Blatant toggle — no more full GUI rebuild
+- `BlatantModules` now calls `ClickGuiScreen.addBlatantPanel()` / `removeBlatantPanel()` instead of `refreshPanels()`, so other panels keep their scroll/expanded state.
+
+### Search module removed
+- `Search.java` deleted; `add(new Search())` removed from `ModuleManager`.
+
+### CategoryPanel — header icon tooltips
+- Hovering the ▼ (collapse) or ≡ (minor-filter) icons in any panel header shows a descriptive tooltip via `ClickGuiScreen.queueTooltip()`.
+
+### KillAura & Strafe → BLATANT category
+- Both now use `CategoryManager.BLATANT` so they only appear when "Blatant Modules" is enabled.
+
+## Gotchas
+
+- `ModeSetting.cycleBack()` was added in this rewrite — it does not exist in the original repo.
+- `RenderUtils.deltaTime()` returns `1/fps`; multiply by a speed constant (e.g. `12f`) for smooth animation interpolation.
+- `Fullbright` uses reflection to write to `OptionInstance.value` — if Fabric remapping changes the field name, add candidates to the array in `cacheField()`.
+- `Timer` uses reflection on `renderTickCounter` — field candidates: `msPerTick`, `tickLength`, `timerSpeed`, `timeScale`, plus several intermediary names.
+- `NightVision` (potion-based) is now named "Night Vision" in-game to avoid clash with `Fullbright`.
+- `NameTags` uses `proj.mul(modelView)` (JOML): `proj = new Matrix4f(RenderSystem.getProjectionMatrix())`, `modelView = event.matrices.peek().getPositionMatrix()`. Combined transforms camera-relative coords to clip space.
+
 ## User preferences
 
 _Populate as you build._

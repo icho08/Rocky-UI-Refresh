@@ -61,6 +61,27 @@ public class ClickGuiScreen extends Screen {
         }
     }
 
+    /** Adds the Blatant panel without destroying any other panels. */
+    public static void addBlatantPanel() {
+        if (currentInstance == null) return;
+        boolean exists = panels.stream()
+                .anyMatch(p -> p.getName().equals(CategoryManager.BLATANT.getName()));
+        if (exists) return;
+        List<Module> mods = currentInstance.getModulesForCategory(CategoryManager.BLATANT);
+        if (mods.isEmpty()) return;
+        float px = 8 + panels.size() * (CategoryPanel.WIDTH + 5);
+        float py = 42;
+        ProfileManager pm = Rocky.INSTANCE.getProfileManager();
+        double[] saved = pm.getPanelPosition(CategoryManager.BLATANT.getName());
+        if (saved != null) { px = (float) saved[0]; py = (float) saved[1]; }
+        panels.add(new CategoryPanel(CategoryManager.BLATANT.getName(), mods, px, py));
+    }
+
+    /** Removes the Blatant panel without touching the rest. */
+    public static void removeBlatantPanel() {
+        panels.removeIf(p -> p.getName().equals(CategoryManager.BLATANT.getName()));
+    }
+
     @Override
     protected void init() {
         currentInstance = this;

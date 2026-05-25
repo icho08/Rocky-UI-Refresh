@@ -1,6 +1,8 @@
 package dev.i726.rocky.module.modules.render;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import dev.i726.rocky.Rocky;
+import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.event.events.HudListener;
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.CategoryManager;
@@ -9,18 +11,36 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TextRenderer;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.util.Window;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
 import java.awt.Color;
+import java.util.ArrayList;
+import java.util.List;
 
-public final class NameTags extends Module implements HudListener {
+/**
+ * Phase 1 (GameRenderListener): project world positions using the real GPU matrices.
+ * Phase 2 (HudListener):        draw collected tag data onto the 2D HUD.
+ *
+ * This two-phase approach fixes the "tag follows crosshair" bug caused by
+ * manual trigonometry that doesn't match the actual rendering camera.
+ */
+public final class NameTags extends Module implements GameRenderListener, HudListener {
+
+    private static final class TagData {
+        final int   screenX, screenY;
+        final String label;
+        final boolean isFriend;
+        TagData(int x, int y, String l, boolean f) {
+            screenX = x; screenY = y; label = l; isFriend = f;
+        }
+    }
+
+    private final List<TagData> pendingTags = new ArrayList<>();
 
     private final BooleanSetting showHealth = new BooleanSetting(
             EncryptedString.of("Health"), true)
@@ -32,11 +52,11 @@ public final class NameTags extends Module implements HudListener {
 
     private final BooleanSetting showDistance = new BooleanSetting(
             EncryptedString.of("Distance"), true)
-            .setDescription(EncryptedString.of("Show distance to player in blocks"));
+            .setDescription(EncryptedString.of("Show distance in blocks"));
 
     private final BooleanSetting friendColor = new BooleanSetting(
             EncryptedString.of("Friend Color"), true)
-            .setDescription(EncryptedString.of("Render friends' tags in green"));
+            .setDescription(EncryptedString.of("Render friends tags in green"));
 
     private final NumberSetting maxDist = new NumberSetting(
             EncryptedString.of("Max Distance"), 10, 128, 64, 1)
@@ -51,39 +71,59 @@ public final class NameTags extends Module implements HudListener {
 
     @Override
     public void onEnable() {
+        eventManager.add(GameRenderListener.class, this);
         eventManager.add(HudListener.class, this);
         super.onEnable();
     }
 
     @Override
     public void onDisable() {
+        eventManager.remove(GameRenderListener.class, this);
         eventManager.remove(HudListener.class, this);
+        pendingTags.clear();
         super.onDisable();
     }
 
+    // ── Phase 1: project using real rendering matrices ────────────────────────
+
     @Override
-    public void onRenderHud(HudEvent event) {
+    public void onGameRender(GameRenderEvent event) {
+        pendingTags.clear();
         if (mc.player == null || mc.world == null) return;
-        DrawContext ctx = event.context;
-        Camera cam = mc.gameRenderer.getCamera();
-        Window win = mc.getWindow();
+
+        // combined = projection * modelView  (modelView has camera at origin)
+        Matrix4f combined = new Matrix4f(RenderSystem.getProjectionMatrix())
+                .mul(event.matrices.peek().getPositionMatrix());
+
+        Vec3d camPos  = mc.gameRenderer.getCamera().getPos();
+        int   winW    = mc.getWindow().getScaledWidth();
+        int   winH    = mc.getWindow().getScaledHeight();
+        float maxD    = (float) maxDist.getValue();
 
         for (var entity : mc.world.getEntities()) {
             if (!(entity instanceof PlayerEntity target)) continue;
             if (target == mc.player) continue;
 
             float dist = target.distanceTo(mc.player);
-            if (dist > maxDist.getValue()) continue;
+            if (dist > maxD) continue;
 
-            // World-to-screen projection
-            Vec3d worldPos = new Vec3d(target.getX(), target.getY() + target.getHeight() + 0.35, target.getZ());
-            int[] screen = worldToScreen(worldPos, cam, win);
-            if (screen == null) continue;
+            Vec3d lerp = target.getLerpedPos(event.delta);
+            float rx = (float)(lerp.x - camPos.x);
+            float ry = (float)(lerp.y + target.getHeight() + 0.35 - camPos.y);
+            float rz = (float)(lerp.z - camPos.z);
 
-            // Build label
+            Vector4f clip = combined.transform(new Vector4f(rx, ry, rz, 1f));
+            if (clip.w <= 0.001f) continue;
+
+            float ndcX = clip.x / clip.w;
+            float ndcY = clip.y / clip.w;
+            if (ndcX < -1.1f || ndcX > 1.1f || ndcY < -1.1f || ndcY > 1.1f) continue;
+
+            int screenX = (int)((ndcX + 1f) * 0.5f * winW);
+            int screenY = (int)((1f - ndcY) * 0.5f * winH);
+
             boolean isFriend = Rocky.INSTANCE.getFriendManager().isFriend(target.getUuidAsString());
             StringBuilder sb = new StringBuilder(target.getName().getString());
-
             if (showHealth.getValue()) {
                 float hp = Math.min(target.getHealth() + target.getAbsorptionAmount(), 20f);
                 sb.append(" §c").append(Math.round(hp)).append("hp");
@@ -96,64 +136,34 @@ public final class NameTags extends Module implements HudListener {
                 sb.append(" §8").append(Math.round(dist)).append("m");
             }
 
-            String label = sb.toString();
-            int textW = TextRenderer.getWidth(label);
-            int padX = 5, padY = 3;
-            int bw = textW + padX * 2;
-            int bh = mc.textRenderer.fontHeight + padY * 2;
-            int bx = screen[0] - bw / 2;
-            int by = screen[1] - bh;
-
-            // Background
-            ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
-            ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
-
-            // Accent top line
-            Color ac = isFriend && friendColor.getValue()
-                    ? new Color(34, 197, 94)
-                    : GuiTheme.accent();
-            ctx.fill(bx, by, bx + bw, by + 1,
-                    GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 200));
-
-            // Text
-            int nameColor = isFriend && friendColor.getValue()
-                    ? GuiTheme.rgba(34, 197, 94, 255)
-                    : GuiTheme.textPrimary();
-            TextRenderer.drawString(label, ctx, bx + padX, by + padY, nameColor);
+            pendingTags.add(new TagData(screenX, screenY, sb.toString(), isFriend));
         }
     }
 
-    /**
-     * Projects a world-space Vec3d to screen-space pixel coordinates.
-     * Returns null if the point is behind the camera.
-     */
-    private static int[] worldToScreen(Vec3d world, Camera cam, Window win) {
-        Vec3d delta = world.subtract(cam.getPos());
+    // ── Phase 2: draw projected tag data onto the HUD ────────────────────────
 
-        float yawRad   = (float) Math.toRadians(cam.getYaw());
-        float pitchRad = (float) Math.toRadians(cam.getPitch());
+    @Override
+    public void onRenderHud(HudEvent event) {
+        DrawContext ctx = event.context;
+        for (TagData tag : pendingTags) {
+            int textW = TextRenderer.getWidth(tag.label);
+            int padX  = 5, padY = 3;
+            int bw    = textW + padX * 2;
+            int bh    = mc.textRenderer.fontHeight + padY * 2;
+            int bx    = tag.screenX - bw / 2;
+            int by    = tag.screenY - bh;
 
-        // Rotate delta by negative camera yaw (around Y axis)
-        double cosY = Math.cos(yawRad),  sinY = Math.sin(yawRad);
-        double rx =  delta.x * cosY + delta.z * sinY;
-        double ry =  delta.y;
-        double rz = -delta.x * sinY + delta.z * cosY;
+            ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
+            ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
 
-        // Rotate delta by negative camera pitch (around X axis)
-        double cosPi = Math.cos(-pitchRad), sinPi = Math.sin(-pitchRad);
-        double ry2 = ry * cosPi - rz * sinPi;
-        double rz2 = ry * sinPi + rz * cosPi;
+            Color ac = tag.isFriend && friendColor.getValue()
+                    ? new Color(34, 197, 94) : GuiTheme.accent();
+            ctx.fill(bx, by, bx + bw, by + 1,
+                    GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 200));
 
-        // rz2 is the depth along the look vector — must be positive (in front)
-        if (rz2 < 0.1) return null;
-
-        float fovRad  = (float) Math.toRadians(MinecraftClient.getInstance().options.getFov().getValue());
-        float aspect  = (float) win.getScaledWidth() / win.getScaledHeight();
-        float tanHalf = (float) Math.tan(fovRad / 2.0);
-
-        int sx = (int)((rx / (rz2 * tanHalf * aspect) + 1.0) / 2.0 * win.getScaledWidth());
-        int sy = (int)((-ry2 / (rz2 * tanHalf) + 1.0) / 2.0 * win.getScaledHeight());
-
-        return new int[]{sx, sy};
+            int col = tag.isFriend && friendColor.getValue()
+                    ? GuiTheme.rgba(34, 197, 94, 255) : GuiTheme.textPrimary();
+            TextRenderer.drawString(tag.label, ctx, bx + padX, by + padY, col);
+        }
     }
 }

@@ -58,7 +58,7 @@ public final class KillAura extends Module implements TickListener {
     public KillAura() {
         super(EncryptedString.of("Kill Aura"),
                 EncryptedString.of("Automatically attacks nearby entities"),
-                -1, CategoryManager.PVP);
+                -1, CategoryManager.BLATANT);
         addSettings(targets, sort, rotate, range, cps, fullCooldown, friendCheck, throughWalls);
     }
 

@@ -9,19 +9,19 @@ public final class BlatantModules extends Module {
 
     public BlatantModules() {
         super(EncryptedString.of("Blatant Modules"),
-                EncryptedString.of("Shows the Blatant category — modules that only work on servers without anti-cheat"),
+                EncryptedString.of("Shows the Blatant category — only for servers without anti-cheat"),
                 -1, CategoryManager.GUI);
     }
 
     @Override
     public void onEnable() {
-        ClickGuiScreen.refreshPanels();
+        ClickGuiScreen.addBlatantPanel();
         super.onEnable();
     }
 
     @Override
     public void onDisable() {
-        ClickGuiScreen.refreshPanels();
+        ClickGuiScreen.removeBlatantPanel();
         super.onDisable();
     }
 }

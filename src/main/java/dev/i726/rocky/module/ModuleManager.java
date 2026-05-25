@@ -129,7 +129,6 @@ public final class ModuleManager implements ButtonListener {
                 add(new SelfDestruct());
                 add(new BlatantModules());
                 add(new ThemePicker());
-                add(new Search());
         }
 
         public List<Module> getEnabledModules() {

@@ -99,29 +99,41 @@ public final class HUD extends Module implements HudListener, ButtonListener {
             EncryptedString.of("Info Bar"), true)
             .setDescription(EncryptedString.of("Shows ROCKY / FPS / Ping / Server top-left"));
 
+    private final BooleanSetting showFps = new BooleanSetting(
+            EncryptedString.of("  FPS"), true)
+            .setDescription(EncryptedString.of("Show frames per second in the info bar"));
+
+    private final BooleanSetting showPing = new BooleanSetting(
+            EncryptedString.of("  Ping"), true)
+            .setDescription(EncryptedString.of("Show network latency in the info bar"));
+
+    private final BooleanSetting showServer = new BooleanSetting(
+            EncryptedString.of("  Server"), true)
+            .setDescription(EncryptedString.of("Show server address in the info bar"));
+
+    private final BooleanSetting clock = new BooleanSetting(
+            EncryptedString.of("  Clock"), true)
+            .setDescription(EncryptedString.of("Show real-world time in the info bar"));
+
     private final BooleanSetting modules = new BooleanSetting(
             EncryptedString.of("Modules"), true)
             .setDescription(EncryptedString.of("Renders the enabled module list top-right"));
 
     private final BooleanSetting coords = new BooleanSetting(
             EncryptedString.of("Coordinates"), true)
-            .setDescription(EncryptedString.of("Shows XYZ position and facing direction below the info bar"));
+            .setDescription(EncryptedString.of("Shows XYZ position and facing direction"));
+
+    private final BooleanSetting bpsHud = new BooleanSetting(
+            EncryptedString.of("  BPS"), true)
+            .setDescription(EncryptedString.of("Blocks-per-second speed meter"));
 
     private final BooleanSetting armorHud = new BooleanSetting(
             EncryptedString.of("Armor"), true)
-            .setDescription(EncryptedString.of("Shows armor piece durability bars bottom-left"));
+            .setDescription(EncryptedString.of("Shows armor piece durability bars"));
 
     private final BooleanSetting effectsHud = new BooleanSetting(
             EncryptedString.of("Potions"), true)
             .setDescription(EncryptedString.of("Lists active potion effects and remaining durations"));
-
-    private final BooleanSetting bpsHud = new BooleanSetting(
-            EncryptedString.of("BPS"), true)
-            .setDescription(EncryptedString.of("Blocks-per-second speed meter"));
-
-    private final BooleanSetting clock = new BooleanSetting(
-            EncryptedString.of("Clock"), true)
-            .setDescription(EncryptedString.of("Appends real-world time to the info bar"));
 
     private final BooleanSetting toasts = new BooleanSetting(
             EncryptedString.of("Notifications"), true)
@@ -143,7 +155,8 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 EncryptedString.of("Heads-up display"),
                 -1,
                 CategoryManager.GUI);
-        addSettings(info, modules, coords, armorHud, effectsHud, bpsHud, clock, toasts, editorKey);
+        addSettings(info, showFps, showPing, showServer, clock,
+                modules, coords, bpsHud, armorHud, effectsHud, toasts, editorKey);
     }
 
     @Override
@@ -189,19 +202,23 @@ public final class HUD extends Module implements HudListener, ButtonListener {
 
         // ── 1. Info Bar ────────────────────────────────────────────────────
         if (info.getValue() && mc.player != null) {
-            String ping = "0ms";
-            if (mc.getNetworkHandler() != null) {
-                PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
-                if (entry != null) ping = entry.getLatency() + "ms";
+            StringBuilder sfx = new StringBuilder();
+            if (showFps.getValue()) {
+                sfx.append("  |  ").append(mc.getCurrentFps()).append(" FPS");
             }
-            String fps    = mc.getCurrentFps() + " FPS";
-            String server = mc.getCurrentServerEntry() == null
-                    ? "Singleplayer" : mc.getCurrentServerEntry().address;
-
-            StringBuilder sfx = new StringBuilder("  |  ")
-                    .append(fps).append("  |  ").append(ping).append("  |  ").append(server);
-            if (clock.getValue())
+            if (showPing.getValue() && mc.getNetworkHandler() != null) {
+                PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
+                String ping = entry != null ? entry.getLatency() + "ms" : "0ms";
+                sfx.append("  |  ").append(ping);
+            }
+            if (showServer.getValue()) {
+                String server = mc.getCurrentServerEntry() == null
+                        ? "Singleplayer" : mc.getCurrentServerEntry().address;
+                sfx.append("  |  ").append(server);
+            }
+            if (clock.getValue()) {
                 sfx.append("  |  ").append(LocalTime.now().format(TIME_FMT));
+            }
 
             String suffix = sfx.toString();
             int rockyW = TextRenderer.getWidth("ROCKY");

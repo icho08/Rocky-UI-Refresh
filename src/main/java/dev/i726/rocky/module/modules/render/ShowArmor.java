@@ -61,7 +61,7 @@ public final class ShowArmor extends Module implements GameRenderListener {
         float     tickDelta = mc.getRenderTickCounter().getTickProgress(true);
 
         VertexConsumerProvider.Immediate immediate =
-                mc.getBufferBuilders().getEffectVertexConsumers();
+                mc.getBufferBuilders().getEntityVertexConsumers();
 
         MatrixStack matrices = event.matrices;
 

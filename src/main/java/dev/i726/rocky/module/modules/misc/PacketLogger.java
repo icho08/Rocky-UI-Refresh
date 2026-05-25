@@ -8,7 +8,7 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.module.setting.StringSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.Util;
+import net.minecraft.client.MinecraftClient;
 
 import java.io.*;
 import java.nio.file.*;
@@ -62,7 +62,7 @@ public final class PacketLogger extends Module implements PacketSendListener, Pa
     @Override
     public void onEnable() {
         try {
-            Path dir = Util.getGameDir().toPath().resolve("rocky");
+            Path dir = MinecraftClient.getInstance().runDirectory.toPath().resolve("rocky");
             Files.createDirectories(dir);
             logFile = dir.resolve("packet_log.txt");
 

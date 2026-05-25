@@ -75,13 +75,17 @@ public final class Clutch extends Module implements TickListener {
             EncryptedString.of("Click Simulation"), false)
             .setDescription(EncryptedString.of("Simulate right-click for CPS counters"));
 
+    private final NumberSetting blockSlot = new NumberSetting(
+            EncryptedString.of("Block Slot"), 0, 9, 0, 1)
+            .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot only)"));
+
     private int prevSlot = -1;
 
     public Clutch() {
         super(EncryptedString.of("Clutch"),
                 EncryptedString.of("Places a block under you when falling to save your life"),
                 -1, CategoryManager.BRIDGING);
-        addSettings(fallSpeed, onlyVoid, voidCheck, onSneak, switchToBlock, switchBack, clickSimulation);
+        addSettings(fallSpeed, onlyVoid, voidCheck, onSneak, switchToBlock, switchBack, clickSimulation, blockSlot);
     }
 
     @Override
@@ -181,6 +185,12 @@ public final class Clutch extends Module implements TickListener {
     }
 
     private int findBlockInHotbar() {
+        int setting = blockSlot.getValueInt();
+        if (setting >= 1 && setting <= 9) {
+            int idx = setting - 1;
+            ItemStack stack = mc.player.getInventory().getStack(idx);
+            return (!stack.isEmpty() && stack.getItem() instanceof BlockItem) ? idx : -1;
+        }
         for (int i = 0; i < 9; i++) {
             if (mc.player.getInventory().getStack(i).getItem() instanceof BlockItem) return i;
         }

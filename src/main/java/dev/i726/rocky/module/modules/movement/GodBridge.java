@@ -55,6 +55,10 @@ public final class GodBridge extends Module implements TickListener {
             EncryptedString.of("Place Jitter"), 0, 4, 1, 1)
             .setDescription(EncryptedString.of("Random extra ticks per placement (humanisation)"));
 
+    private final NumberSetting blockSlot = new NumberSetting(
+            EncryptedString.of("Block Slot"), 0, 9, 0, 1)
+            .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot only)"));
+
     private int cooldown = 0;
 
     public GodBridge() {
@@ -62,7 +66,7 @@ public final class GodBridge extends Module implements TickListener {
                 EncryptedString.of("Automated god bridging with anticheat-safe packet rotation"),
                 -1, CategoryManager.BRIDGING);
         INSTANCE = this;
-        addSettings(autoSprint, placeDelay, placeJitter);
+        addSettings(autoSprint, placeDelay, placeJitter, blockSlot);
     }
 
     /**
@@ -94,7 +98,7 @@ public final class GodBridge extends Module implements TickListener {
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
-        if (!isHoldingBlocks(p)) return;
+        if (resolveBlockSlot() == -1) return;
         if (!p.isOnGround()) return;
 
         Vec3d v = p.getVelocity();
@@ -123,7 +127,12 @@ public final class GodBridge extends Module implements TickListener {
                 -0.25 + jitterY,
                 faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
-        Hand hand = p.getMainHandStack().getItem() instanceof BlockItem ? Hand.MAIN_HAND : Hand.OFF_HAND;
+        int useSlot = resolveBlockSlot();
+        if (useSlot == -1) return;
+        int prevSlot = p.getInventory().getSelectedSlot();
+        if (useSlot != prevSlot) p.getInventory().setSelectedSlot(useSlot);
+
+        Hand hand = Hand.MAIN_HAND;
         BlockHitResult bhr = new BlockHitResult(aimPoint, placeDir, standing, false);
 
         float[] look       = calcLook(p.getEyePos(), aimPoint);
@@ -140,9 +149,6 @@ public final class GodBridge extends Module implements TickListener {
 
         Clutch.placing = true;
         try {
-            // Single rotation packet — no snap-and-restore.
-            // The server sees: look-toward-block → place. Natural human behaviour.
-            // The original rotation returns via the next normal PositionAndRotation packet.
             conn.send(new PlayerMoveC2SPacket.LookAndOnGround(targetYaw, targetPitch, onGround, hCol));
             if (mc.interactionManager.interactBlock(p, hand, bhr).isAccepted()) {
                 p.swingHand(hand);
@@ -151,15 +157,29 @@ public final class GodBridge extends Module implements TickListener {
             }
         } finally {
             Clutch.placing = false;
+            if (useSlot != prevSlot) p.getInventory().setSelectedSlot(prevSlot);
         }
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private boolean isHoldingBlocks(ClientPlayerEntity p) {
-        ItemStack main = p.getMainHandStack(), off = p.getOffHandStack();
-        return (main.getItem() instanceof BlockItem && main.getCount() > 0)
-                || (off.getItem() instanceof BlockItem && off.getCount() > 0);
+    /**
+     * Returns the hotbar slot to use (0-8), or -1 if no usable block is available.
+     * blockSlot=0 → auto-find first block in hotbar.
+     * blockSlot=1-9 → use that fixed slot only (0-indexed = value-1).
+     */
+    private int resolveBlockSlot() {
+        int setting = blockSlot.getValueInt();
+        if (setting >= 1 && setting <= 9) {
+            int idx = setting - 1;
+            ItemStack stack = mc.player.getInventory().getStack(idx);
+            return (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) ? idx : -1;
+        }
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getStack(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) return i;
+        }
+        return -1;
     }
 
     private Direction cardinalFromMotion(double dx, double dz) {

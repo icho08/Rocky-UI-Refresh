@@ -80,6 +80,10 @@ public final class SmartBridge extends Module implements TickListener {
             EncryptedString.of("Damage Threshold"), 0.0, 10.0, 0.5, 0.5)
             .setDescription(EncryptedString.of("Half-hearts of damage in one tick that trigger Stop On Damage"));
 
+    private final NumberSetting blockSlot = new NumberSetting(
+            EncryptedString.of("Block Slot"), 0, 9, 0, 1)
+            .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot only)"));
+
     public enum BridgeMode { SMART, GOD_ONLY, ASSIST_ONLY }
     private final ModeSetting<BridgeMode> mode = new ModeSetting<>(
             EncryptedString.of("Mode"), BridgeMode.SMART, BridgeMode.class)
@@ -99,7 +103,7 @@ public final class SmartBridge extends Module implements TickListener {
                 EncryptedString.of("Intelligent bridging assist"),
                 -1, CategoryManager.BRIDGING);
         addSettings(mode, godBridgeBlocks, assistMinBlocks, assistMaxBlocks,
-                godAutoSprint, godFallMode, godLookAhead, stopOnDamage, damageThreshold);
+                godAutoSprint, godFallMode, godLookAhead, stopOnDamage, damageThreshold, blockSlot);
     }
 
     @Override
@@ -153,7 +157,7 @@ public final class SmartBridge extends Module implements TickListener {
     // ── God Phase ─────────────────────────────────────────────────────────────
 
     private void runGodPhase(ClientPlayerEntity p) {
-        if (!isHoldingBlocks(p)) {
+        if (resolveBlockSlot() == -1) {
             safeWalkActive = false;
             mc.options.sneakKey.setPressed(false);
             return;
@@ -213,21 +217,27 @@ public final class SmartBridge extends Module implements TickListener {
                 -0.25 + jitterY,
                 faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
-        BlockHitResult bhr  = new BlockHitResult(aimPoint, placeDir, standing, false);
-        Hand           hand = p.getMainHandStack().getItem() instanceof BlockItem ? Hand.MAIN_HAND : Hand.OFF_HAND;
+        int useSlot  = resolveBlockSlot();
+        int prevSlot = p.getInventory().getSelectedSlot();
+        if (useSlot != prevSlot) p.getInventory().setSelectedSlot(useSlot);
+
+        BlockHitResult bhr = new BlockHitResult(aimPoint, placeDir, standing, false);
+        Hand           hand = Hand.MAIN_HAND;
 
         // ── Single silent rotation packet ─────────────────────────────────────
-        // One LookAndOnGround before the interact — no snap-and-restore pair.
-        float[] look       = calcLook(p.getEyePos(), aimPoint);
-        float   targetYaw  = look[0];
+        float[] look         = calcLook(p.getEyePos(), aimPoint);
+        float   targetYaw    = look[0];
         float   naturalPitch = MathHelper.clamp(look[1], 50f, 80f)
                              + (float) rng.nextDouble(-4.0, 4.0);
-        float   targetPitch = MathHelper.clamp(naturalPitch, 50f, 82f);
-        boolean onGround   = p.isOnGround();
-        boolean hCol       = p.horizontalCollision;
+        float   targetPitch  = MathHelper.clamp(naturalPitch, 50f, 82f);
+        boolean onGround     = p.isOnGround();
+        boolean hCol         = p.horizontalCollision;
 
         ClientConnection conn = getConnection();
-        if (conn == null) return;
+        if (conn == null) {
+            if (useSlot != prevSlot) p.getInventory().setSelectedSlot(prevSlot);
+            return;
+        }
 
         Clutch.placing = true;
         try {
@@ -240,6 +250,7 @@ public final class SmartBridge extends Module implements TickListener {
             }
         } finally {
             Clutch.placing = false;
+            if (useSlot != prevSlot) p.getInventory().setSelectedSlot(prevSlot);
         }
     }
 
@@ -315,10 +326,23 @@ public final class SmartBridge extends Module implements TickListener {
         return h >= MIN_HEIGHT;
     }
 
-    private boolean isHoldingBlocks(ClientPlayerEntity p) {
-        ItemStack main = p.getMainHandStack(), off = p.getOffHandStack();
-        return (main.getItem() instanceof BlockItem && main.getCount() > 0)
-                || (off.getItem() instanceof BlockItem && off.getCount() > 0);
+    /**
+     * Returns the hotbar slot to use (0-8), or -1 if no usable block is available.
+     * blockSlot=0 → auto-find first block in hotbar.
+     * blockSlot=1-9 → use that fixed slot only (0-indexed = value-1).
+     */
+    private int resolveBlockSlot() {
+        int setting = blockSlot.getValueInt();
+        if (setting >= 1 && setting <= 9) {
+            int idx = setting - 1;
+            ItemStack stack = mc.player.getInventory().getStack(idx);
+            return (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) ? idx : -1;
+        }
+        for (int i = 0; i < 9; i++) {
+            ItemStack stack = mc.player.getInventory().getStack(i);
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) return i;
+        }
+        return -1;
     }
 
     private int totalBlockCount(ClientPlayerEntity p) {

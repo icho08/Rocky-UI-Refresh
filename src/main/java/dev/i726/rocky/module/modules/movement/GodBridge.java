@@ -20,23 +20,24 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 import java.lang.reflect.Field;
+import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * GodBridge — standalone god bridge.
+ * GodBridge — anticheat-safe automated god bridging.
  *
- * SafeWalk is handled by the {@code PlayerEntityMixin.clipAtLedge} injection
- * which returns {@code true} whenever this module is enabled — that is the
- * safest possible fall-protection: Minecraft's own physics clips movement at
- * the block edge before any position packet is generated, so the server never
- * sees an invalid position.
+ * SafeWalk is handled by the PlayerEntityMixin.clipAtLedge injection which
+ * returns true whenever this module is enabled — Minecraft's own physics clips
+ * movement at the block edge, so the server never sees an invalid position.
  *
- * Block placement uses packet-level silent rotation:
- *   1. {@code LookAndOnGround} aimed at the block face
- *   2. {@code PlayerInteractBlockC2SPacket} (via interactBlock)
- *   3. {@code LookAndOnGround} restoring original rotation
+ * Block placement uses a single silent rotation packet:
+ *   1. LookAndOnGround aimed at a randomised point on the block face
+ *   2. PlayerInteractBlockC2SPacket (via interactBlock)
  *
- * All three arrive in the same server tick, so Grim's "interact with what
- * you look at" check passes and the camera never visibly snaps.
+ * Only ONE rotation packet is sent — no snap-and-restore pair. The server sees
+ * a natural "quick look → place" sequence. The rotation is returned to its
+ * original value by the very next normal movement packet that Minecraft's own
+ * code sends (with lastSentYaw/lastSentPitch carrying originals), so there is
+ * never a bot-signature instant reverse.
  */
 public final class GodBridge extends Module implements TickListener {
 
@@ -65,8 +66,8 @@ public final class GodBridge extends Module implements TickListener {
     }
 
     /**
-     * Used by {@code PlayerEntityMixin.clipAtLedge} to keep the player from
-     * walking off the edge — identical to sneaking but completely server-side-safe.
+     * Used by PlayerEntityMixin.clipAtLedge to keep the player from walking
+     * off the edge without sending sneak packets.
      */
     public static boolean shouldSafeWalk() {
         return INSTANCE != null && INSTANCE.isEnabled();
@@ -93,15 +94,9 @@ public final class GodBridge extends Module implements TickListener {
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
-        // Only work when holding blocks
         if (!isHoldingBlocks(p)) return;
-
-        // clipAtLedge mixin handles fall protection automatically when enabled.
-        // No sneakKey manipulation needed — no extra packets, no AC flags.
-
         if (!p.isOnGround()) return;
 
-        // Need to be moving to place
         Vec3d v = p.getVelocity();
         if (Math.abs(v.x) + Math.abs(v.z) < 0.01) return;
 
@@ -109,7 +104,6 @@ public final class GodBridge extends Module implements TickListener {
 
         if (cooldown > 0) { cooldown--; return; }
 
-        // Place behind the player's walking direction
         Direction placeDir = cardinalFromMotion(v.x, v.z);
         BlockPos standing  = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
         BlockPos target    = standing.offset(placeDir);
@@ -117,37 +111,44 @@ public final class GodBridge extends Module implements TickListener {
         if (!mc.world.getBlockState(target).isAir()) return;
         if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) return;
 
-        // Aim at the exposed side face of the standing block
-        Vec3d aimPoint = Vec3d.ofCenter(standing)
-                .add(placeDir.getOffsetX() * 0.5, -0.25, placeDir.getOffsetZ() * 0.5);
+        // Randomise the exact hit point on the face — avoids always hitting the exact center
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        double faceOffX = placeDir.getOffsetX() * 0.5;
+        double faceOffZ = placeDir.getOffsetZ() * 0.5;
+        double jitterH  = rng.nextDouble(-0.12, 0.12);
+        double jitterY  = rng.nextDouble(-0.15, 0.05);
+
+        Vec3d aimPoint = Vec3d.ofCenter(standing).add(
+                faceOffX + (placeDir.getOffsetX() == 0 ? jitterH : 0),
+                -0.25 + jitterY,
+                faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
         Hand hand = p.getMainHandStack().getItem() instanceof BlockItem ? Hand.MAIN_HAND : Hand.OFF_HAND;
         BlockHitResult bhr = new BlockHitResult(aimPoint, placeDir, standing, false);
 
-        // ── Silent packet rotation ────────────────────────────────────────────
-        // Calculate the yaw/pitch that genuinely points at aimPoint, send it to
-        // the server before the interact packet, then immediately restore.
-        // p.setYaw/setPitch is never called — no desync with lastSentYaw/Pitch.
-        float[] look     = calcLook(p.getEyePos(), aimPoint);
-        float targetYaw   = look[0];
-        float targetPitch = MathHelper.clamp(look[1], 60f, 90f);
-        float origYaw     = p.getYaw();
-        float origPitch   = p.getPitch();
-        boolean onGround  = p.isOnGround();
-        boolean hCol      = p.horizontalCollision;
+        float[] look       = calcLook(p.getEyePos(), aimPoint);
+        float targetYaw    = look[0];
+        // Humanised pitch: 50–80° range with a little random wobble
+        float naturalPitch = MathHelper.clamp(look[1], 50f, 80f)
+                           + (float) rng.nextDouble(-4.0, 4.0);
+        float targetPitch  = MathHelper.clamp(naturalPitch, 50f, 82f);
+        boolean onGround   = p.isOnGround();
+        boolean hCol       = p.horizontalCollision;
 
         ClientConnection conn = getConnection();
         if (conn == null) return;
 
         Clutch.placing = true;
         try {
+            // Single rotation packet — no snap-and-restore.
+            // The server sees: look-toward-block → place. Natural human behaviour.
+            // The original rotation returns via the next normal PositionAndRotation packet.
             conn.send(new PlayerMoveC2SPacket.LookAndOnGround(targetYaw, targetPitch, onGround, hCol));
             if (mc.interactionManager.interactBlock(p, hand, bhr).isAccepted()) {
                 p.swingHand(hand);
                 cooldown = placeDelay.getValueInt()
                          + (int)(Math.random() * (placeJitter.getValueInt() + 1));
             }
-            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(origYaw, origPitch, onGround, hCol));
         } finally {
             Clutch.placing = false;
         }

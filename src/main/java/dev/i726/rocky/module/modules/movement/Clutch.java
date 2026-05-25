@@ -148,7 +148,7 @@ public final class Clutch extends Module implements TickListener {
 
         placing = true;
         try {
-            // 1. Tell the server we are looking at the block face
+            // 1. Tell the server we are looking at the block face (single packet — no snap-and-restore)
             conn.send(new PlayerMoveC2SPacket.LookAndOnGround(blockYaw, blockPitch, onGround, hCol));
 
             // 2. Place the block
@@ -156,8 +156,10 @@ public final class Clutch extends Module implements TickListener {
             mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
             mc.player.swingHand(Hand.MAIN_HAND);
 
-            // 3. Restore original rotation — server sees a normal correction
-            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(origYaw, origPitch, onGround, hCol));
+            // No restore packet — the next normal PositionAndRotation from Minecraft's
+            // own movement code carries the original yaw/pitch back to the server,
+            // which looks like a natural 1-tick mouse correction rather than an
+            // instant bot-signature snap-and-restore within the same tick.
         } finally {
             placing = false;
         }

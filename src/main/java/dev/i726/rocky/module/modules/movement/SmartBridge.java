@@ -8,8 +8,6 @@ import dev.i726.rocky.module.setting.MinMaxSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import dev.i726.rocky.utils.RotationUtils;
-import dev.i726.rocky.utils.rotation.Rotation;
 import net.minecraft.client.network.ClientCommonNetworkHandler;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.BlockItem;
@@ -24,8 +22,17 @@ import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 import java.lang.reflect.Field;
+import java.util.concurrent.ThreadLocalRandom;
 
 public final class SmartBridge extends Module implements TickListener {
+
+    /**
+     * Set to true while the god phase is active so that PlayerEntityMixin.clipAtLedge
+     * clips movement at the block edge (safe-walk behaviour) WITHOUT enabling the
+     * standalone GodBridge module. This avoids the double-placement bug where both
+     * SmartBridge and GodBridge independently place blocks in the same tick.
+     */
+    public static volatile boolean safeWalkActive = false;
 
     private static final double EDGE_DISTANCE = 0.25;
     private static final int    MIN_HEIGHT    = 1;
@@ -46,10 +53,6 @@ public final class SmartBridge extends Module implements TickListener {
      * Sneak    — presses the sneak key when you're about to fall. Sends real
      *            sneak packets. Legitimate and safe on all anticheats.
      * Off      — no fall protection; relies on your own timing.
-     *
-     * (Snap and Smooth velocity-zeroing modes were removed — they manipulate
-     * client-side velocity without informing the server, which causes Grim's
-     * position-prediction check to flag an "invalid move".)
      */
     public enum ProtectionMode { SafeWalk, Sneak, Off }
 
@@ -107,12 +110,13 @@ public final class SmartBridge extends Module implements TickListener {
         currentPhaseTarget  = godBridgeBlocks.getValueInt();
         healthInitialized   = false;
         lastBlockCount      = -1;
+        safeWalkActive      = false;
     }
 
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
-        if (GodBridge.INSTANCE != null) GodBridge.INSTANCE.setEnabled(false);
+        safeWalkActive = false;
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         Clutch.placing = false;
     }
@@ -122,14 +126,18 @@ public final class SmartBridge extends Module implements TickListener {
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
+        // ── Damage threshold check ────────────────────────────────────────────
         float health = p.getHealth();
         if (!healthInitialized) {
             lastHealth = health;
             healthInitialized = true;
-        } else if (stopOnDamage.getValue() && (lastHealth - health) >= damageThreshold.getValue()) {
-            lastHealth = health;
-            this.toggle();
-            return;
+        } else {
+            float delta = lastHealth - health;
+            if (stopOnDamage.getValue() && delta >= (float) damageThreshold.getValue()) {
+                lastHealth = health;
+                this.toggle();
+                return;
+            }
         }
         lastHealth = health;
 
@@ -138,7 +146,7 @@ public final class SmartBridge extends Module implements TickListener {
         boolean doGod    = mode.isMode(BridgeMode.SMART) ? phase == Phase.GOD : mode.isMode(BridgeMode.GOD_ONLY);
         boolean doAssist = mode.isMode(BridgeMode.SMART) ? phase == Phase.ASSIST : mode.isMode(BridgeMode.ASSIST_ONLY);
 
-        if (doGod)    runGodPhase(p);
+        if (doGod)         runGodPhase(p);
         else if (doAssist) runAssistPhase(p);
     }
 
@@ -146,30 +154,34 @@ public final class SmartBridge extends Module implements TickListener {
 
     private void runGodPhase(ClientPlayerEntity p) {
         if (!isHoldingBlocks(p)) {
-            if (GodBridge.INSTANCE.isEnabled()) GodBridge.INSTANCE.setEnabled(false);
+            safeWalkActive = false;
             mc.options.sneakKey.setPressed(false);
             return;
         }
-        if (!p.isOnGround()) { mc.options.sneakKey.setPressed(false); return; }
+        if (!p.isOnGround()) {
+            mc.options.sneakKey.setPressed(false);
+            return;
+        }
 
         // ── Fall protection ──────────────────────────────────────────────────
+        // SafeWalk: set our own static flag checked by PlayerEntityMixin.clipAtLedge.
+        // This gives the same clip-at-edge behaviour as sneaking without enabling
+        // GodBridge (which would cause double block placements).
         switch (godFallMode.getMode()) {
             case SafeWalk -> {
-                // clipAtLedge mixin returns true — Minecraft's own movement
-                // code clips the player at the edge. No packets modified.
-                if (!GodBridge.INSTANCE.isEnabled()) GodBridge.INSTANCE.setEnabled(true);
+                safeWalkActive = true;
                 mc.options.sneakKey.setPressed(false);
             }
             case Sneak -> {
-                if (GodBridge.INSTANCE.isEnabled()) GodBridge.INSTANCE.setEnabled(false);
+                safeWalkActive = false;
                 if (isAboutToFallOff()) {
                     mc.options.sneakKey.setPressed(true);
-                    return; // wait until we're safe to place
+                    return;
                 }
                 mc.options.sneakKey.setPressed(false);
             }
             case Off -> {
-                if (GodBridge.INSTANCE.isEnabled()) GodBridge.INSTANCE.setEnabled(false);
+                safeWalkActive = false;
                 mc.options.sneakKey.setPressed(false);
             }
         }
@@ -187,33 +199,32 @@ public final class SmartBridge extends Module implements TickListener {
         if (!mc.world.getBlockState(target).isAir()) return;
         if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) return;
 
-        // Aim at the center of the exposed side face of the standing block
-        Vec3d aimPoint = Vec3d.ofCenter(standing)
-                .add(placeDir.getOffsetX() * 0.5, -0.25, placeDir.getOffsetZ() * 0.5);
+        if (placeCooldown > 0) return;
+
+        // Randomise hit point on the block face for human-looking rotation variance
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        double faceOffX = placeDir.getOffsetX() * 0.5;
+        double faceOffZ = placeDir.getOffsetZ() * 0.5;
+        double jitterH  = rng.nextDouble(-0.12, 0.12);
+        double jitterY  = rng.nextDouble(-0.15, 0.05);
+
+        Vec3d aimPoint = Vec3d.ofCenter(standing).add(
+                faceOffX + (placeDir.getOffsetX() == 0 ? jitterH : 0),
+                -0.25 + jitterY,
+                faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
         BlockHitResult bhr  = new BlockHitResult(aimPoint, placeDir, standing, false);
         Hand           hand = p.getMainHandStack().getItem() instanceof BlockItem ? Hand.MAIN_HAND : Hand.OFF_HAND;
 
-        if (placeCooldown > 0) return;
-
-        // ── Silent packet-level rotation ──────────────────────────────────────
-        // 1. Calculate the yaw/pitch that points at aimPoint from the player's eye.
-        // 2. Send a LookAndOnGround packet with that rotation — the server now
-        //    believes we are looking at the target face.
-        // 3. Place the block (server validates the rotation → passes).
-        // 4. Send LookAndOnGround to restore original rotation.
-        //
-        // We never call p.setYaw() / p.setPitch(), so Minecraft's
-        // lastSentYaw/lastSentPitch tracking stays in sync with the real camera
-        // and there is no rotation desync or "invalid interact" flag.
-
-        Rotation desired     = RotationUtils.getDirection(p, aimPoint);
-        float    targetYaw   = (float) desired.yaw();
-        float    targetPitch = MathHelper.clamp((float) desired.pitch(), 60f, 90f);
-        float    origYaw     = p.getYaw();
-        float    origPitch   = p.getPitch();
-        boolean  onGround    = p.isOnGround();
-        boolean  hCol        = p.horizontalCollision;
+        // ── Single silent rotation packet ─────────────────────────────────────
+        // One LookAndOnGround before the interact — no snap-and-restore pair.
+        float[] look       = calcLook(p.getEyePos(), aimPoint);
+        float   targetYaw  = look[0];
+        float   naturalPitch = MathHelper.clamp(look[1], 50f, 80f)
+                             + (float) rng.nextDouble(-4.0, 4.0);
+        float   targetPitch = MathHelper.clamp(naturalPitch, 50f, 82f);
+        boolean onGround   = p.isOnGround();
+        boolean hCol       = p.horizontalCollision;
 
         ClientConnection conn = getConnection();
         if (conn == null) return;
@@ -224,10 +235,9 @@ public final class SmartBridge extends Module implements TickListener {
             if (mc.interactionManager.interactBlock(p, hand, bhr).isAccepted()) {
                 p.swingHand(hand);
                 phaseBlocksPlaced++;
-                placeCooldown = 2 + (int)(Math.random() * 2); // 2-3 ticks jitter
+                placeCooldown = 2 + (int)(Math.random() * 2);
                 if (phaseBlocksPlaced >= currentPhaseTarget) advancePhase();
             }
-            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(origYaw, origPitch, onGround, hCol));
         } finally {
             Clutch.placing = false;
         }
@@ -236,6 +246,7 @@ public final class SmartBridge extends Module implements TickListener {
     // ── Assist Phase ──────────────────────────────────────────────────────────
 
     private void runAssistPhase(ClientPlayerEntity p) {
+        safeWalkActive = false;
         mc.options.sneakKey.setPressed(isNearEdge(p));
 
         int currentCount = totalBlockCount(p);
@@ -256,6 +267,7 @@ public final class SmartBridge extends Module implements TickListener {
         phaseBlocksPlaced = 0;
         if (phase == Phase.GOD) {
             phase = Phase.ASSIST;
+            safeWalkActive = false;
             int min = assistMinBlocks.getValueInt();
             int max = Math.max(min, assistMaxBlocks.getValueInt());
             currentPhaseTarget = (min == max) ? min
@@ -323,11 +335,16 @@ public final class SmartBridge extends Module implements TickListener {
                 : (dz > 0 ? Direction.SOUTH : Direction.NORTH);
     }
 
-    /**
-     * Gets the {@link ClientConnection} via reflection so we can send raw
-     * packets (rotation spoofs) without going through any higher-level API
-     * that might add unwanted side effects.
-     */
+    private static float[] calcLook(Vec3d from, Vec3d to) {
+        double dx = to.x - from.x;
+        double dy = to.y - from.y;
+        double dz = to.z - from.z;
+        double hDist = Math.sqrt(dx * dx + dz * dz);
+        float yaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float pitch = (float) Math.toDegrees(-Math.atan2(dy, hDist));
+        return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
+    }
+
     private ClientConnection getConnection() {
         try {
             Class<?> cls = ClientCommonNetworkHandler.class;

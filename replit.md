@@ -53,6 +53,17 @@ A Minecraft Fabric mod for version 1.21.x with a custom in-game GUI.
 - `Timer` uses reflection on `renderTickCounter` — field candidates: `msPerTick`, `tickLength`, `timerSpeed`, `timeScale`, plus several intermediary names.
 - `NightVision` (potion-based) is now named "Night Vision" in-game to avoid clash with `Fullbright`.
 
+## Bridging module fixes (latest)
+
+### SmartBridge — fixed double-placement in GOD/SMART mode
+- Root cause: `runGodPhase` was calling `GodBridge.INSTANCE.setEnabled(true)` to get SafeWalk behaviour, which caused GodBridge's own `TickListener` to place blocks at the same time as SmartBridge → "2 blocks back" glitch.
+- Fix: Added `SmartBridge.safeWalkActive` public static volatile boolean. `PlayerEntityMixin.clipAtLedge` now checks `SmartBridge.safeWalkActive` in addition to `GodBridge.shouldSafeWalk()`. SmartBridge sets this flag directly instead of enabling GodBridge. GodBridge is no longer touched by SmartBridge at all.
+- Damage threshold: comparison now uses explicit `float` cast (`delta >= (float) damageThreshold.getValue()`) to avoid float/double precision surprises.
+
+### GodBridge, SmartBridge, Clutch — reduced detectability
+- Removed the "snap-and-restore" double rotation packet pattern. All three now send ONE `LookAndOnGround` before the interact, then let Minecraft's own next `PositionAndRotation` packet naturally return the rotation. The server sees: look-toward-block → place → gradual return (human), not: look → place → instant snap-back (bot).
+- GodBridge & SmartBridge god phase: randomise the exact hit point on the block face (±0.12 H, ±0.15 V jitter) and pitch (50–82° with ±4° noise) instead of always hitting the dead center at a fixed 60-90° angle.
+
 ## Changes applied in this session
 
 ### NameTags — fixed world-to-screen projection

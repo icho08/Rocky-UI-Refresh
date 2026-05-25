@@ -891,24 +891,42 @@ public final class StandaloneBootstrap {
      * Finds candidate JVM processes and sorts them by a relevance score so
      * the actual game JVM (deepest child, most MC-like arguments) appears first.
      *
+     * Uses a three-layer cmdline strategy so it works on every platform:
+     *   1. ProcessHandle.info().arguments()  — standard, works on most JDKs
+     *   2. /proc/<pid>/cmdline               — Linux fallback when (1) is empty
+     *   3. wmic/PowerShell                   — Windows fallback when (1) is empty
+     *
      * Scoring:
-     * +3 command-line contains "net.minecraft" (main class)
-     * +3 command-line contains "knotclient" / "minecraftclient" (Fabric main)
-     * +3 command-line contains "com.moonsworth" (Moonsworth launcher)
+     * +4 command-line contains "net.minecraft" or "net/minecraft" (main class)
+     * +4 command-line contains "knotclient" / "minecraftclient" (Fabric/Quilt main)
+     * +3 command-line contains "com.moonsworth" (Lunar)
      * +2 command-line contains "-cp" or "-classpath" (real JVM, not wrapper)
-     * +2 process has a parent that is also a candidate (child > parent)
+     * +2 process has a parent that is also a candidate (deepest child wins)
      * +1 command-line contains "minecraft"
-     * -2 command is just "java" with nothing minecraft-specific (likely launcher)
      */
     private static List<ProcessHandle> findMinecraftProcesses() {
+        // Build a PID→full-cmdline map using the best available source
+        java.util.Map<Long, String> pidCmdline = buildCmdlineMap();
+
         List<ProcessHandle> all = new ArrayList<>();
         for (ProcessHandle ph : ProcessHandle.allProcesses().toArray(ProcessHandle[]::new)) {
-            String full = (ph.info().command().orElse("") + " "
-                    + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
+            String full = pidCmdline.getOrDefault(ph.pid(), "").toLowerCase();
+            if (full.isEmpty()) {
+                // Final fallback: use whatever ProcessHandle gives us
+                full = (ph.info().command().orElse("") + " "
+                        + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
+            }
             boolean isJava = full.contains("java");
-            boolean hasMC = full.contains("minecraft")
-                    || full.contains("knotclient") || full.contains("modrinth")
-                    || full.contains("theseus") || full.contains("moonsworth");
+            boolean hasMC  = full.contains("minecraft")
+                    || full.contains("knotclient")
+                    || full.contains("minecraftclient")
+                    || full.contains("fabricloader")
+                    || full.contains("fabric-loader")
+                    || full.contains("modrinth")
+                    || full.contains("theseus")
+                    || full.contains("moonsworth")
+                    || full.contains("lunarclient")
+                    || full.contains("net.fabricmc");
             if (isJava && hasMC)
                 all.add(ph);
         }
@@ -917,31 +935,115 @@ public final class StandaloneBootstrap {
         java.util.Set<Long> candidatePids = new java.util.HashSet<>();
         all.forEach(p -> candidatePids.add(p.pid()));
 
-        all.sort((a, b) -> Integer.compare(score(b, candidatePids), score(a, candidatePids)));
+        all.sort((a, b) -> Integer.compare(
+                score(b, candidatePids, pidCmdline),
+                score(a, candidatePids, pidCmdline)));
         return all;
     }
 
-    private static int score(ProcessHandle ph, java.util.Set<Long> siblings) {
-        String full = (ph.info().command().orElse("") + " "
-                + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
+    /**
+     * Builds a PID → full command-line string map using the best available source.
+     * On Linux, /proc/<pid>/cmdline gives the full untruncated args even when
+     * ProcessHandle.info().arguments() is empty (e.g. the JVM hides them).
+     * On Windows, falls back to `wmic` / PowerShell.
+     */
+    private static java.util.Map<Long, String> buildCmdlineMap() {
+        java.util.Map<Long, String> map = new java.util.HashMap<>();
+        String os = System.getProperty("os.name", "").toLowerCase();
+
+        if (os.contains("linux") || os.contains("mac")) {
+            // Read /proc/<pid>/cmdline for every running process (Linux only;
+            // macOS falls through to ProcessHandle since /proc is not mounted there).
+            java.io.File proc = new java.io.File("/proc");
+            if (proc.exists()) {
+                java.io.File[] entries = proc.listFiles();
+                if (entries != null) {
+                    for (java.io.File entry : entries) {
+                        if (!entry.getName().matches("\\d+")) continue;
+                        try {
+                            long pid = Long.parseLong(entry.getName());
+                            byte[] raw = java.nio.file.Files.readAllBytes(
+                                    entry.toPath().resolve("cmdline"));
+                            // args are NUL-separated; replace NUL with space
+                            String cmdline = new String(raw, java.nio.charset.StandardCharsets.UTF_8)
+                                    .replace('\0', ' ').trim();
+                            if (!cmdline.isEmpty())
+                                map.put(pid, cmdline);
+                        } catch (Throwable ignored) {}
+                    }
+                }
+                return map; // Linux /proc worked — no need for other sources
+            }
+        }
+
+        if (os.contains("windows")) {
+            // Try wmic first (available on older Windows), then PowerShell
+            try {
+                Process p = new ProcessBuilder("wmic", "process", "get",
+                        "ProcessId,CommandLine", "/format:csv")
+                        .redirectErrorStream(true).start();
+                String out = new String(p.getInputStream().readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8);
+                p.waitFor();
+                for (String line : out.split("\r?\n")) {
+                    // CSV format: Node,CommandLine,ProcessId
+                    String[] cols = line.split(",", -1);
+                    if (cols.length < 3) continue;
+                    try {
+                        long pid = Long.parseLong(cols[cols.length - 1].trim());
+                        String cmdline = String.join(" ", java.util.Arrays.copyOfRange(
+                                cols, 1, cols.length - 1));
+                        if (!cmdline.isBlank())
+                            map.put(pid, cmdline);
+                    } catch (NumberFormatException ignored) {}
+                }
+                if (!map.isEmpty()) return map;
+            } catch (Throwable ignored) {}
+
+            // PowerShell fallback
+            try {
+                Process p = new ProcessBuilder("powershell", "-Command",
+                        "Get-WmiObject Win32_Process | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation")
+                        .redirectErrorStream(true).start();
+                String out = new String(p.getInputStream().readAllBytes(),
+                        java.nio.charset.StandardCharsets.UTF_8);
+                p.waitFor();
+                for (String line : out.split("\r?\n")) {
+                    line = line.replace("\"", "");
+                    String[] cols = line.split(",", 2);
+                    if (cols.length < 2) continue;
+                    try {
+                        long pid = Long.parseLong(cols[0].trim());
+                        map.put(pid, cols[1]);
+                    } catch (NumberFormatException ignored) {}
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        // macOS / fallback: rely on ProcessHandle (already populated by caller)
+        return map;
+    }
+
+    private static int score(ProcessHandle ph, java.util.Set<Long> siblings,
+                              java.util.Map<Long, String> cmdlines) {
+        String full = cmdlines.getOrDefault(ph.pid(), "").toLowerCase();
+        if (full.isEmpty()) {
+            full = (ph.info().command().orElse("") + " "
+                    + String.join(" ", ph.info().arguments().orElse(new String[0]))).toLowerCase();
+        }
         int s = 0;
-        if (full.contains("net.minecraft"))
-            s += 3;
+        if (full.contains("net.minecraft") || full.contains("net/minecraft"))
+            s += 4;
         if (full.contains("knotclient") || full.contains("minecraftclient"))
+            s += 4;
+        if (full.contains("net.fabricmc") || full.contains("fabricloader"))
             s += 3;
-        if (full.contains("moonsworth"))
+        if (full.contains("moonsworth") || full.contains("lunarclient"))
             s += 3;
         if (full.contains("-cp") || full.contains("-classpath"))
             s += 2;
         if (full.contains("minecraft"))
             s += 1;
-        // Bonus if this process's parent is also a candidate (this is the child JVM)
-        ph.parent().ifPresent(parent -> {
-            if (siblings.contains(parent.pid())) {
-                // can't modify s here directly; handled via lambda workaround below
-            }
-        });
-        // Parent-is-candidate check via re-query
         boolean parentIsCandidate = ph.parent()
                 .map(p -> siblings.contains(p.pid()))
                 .orElse(false);

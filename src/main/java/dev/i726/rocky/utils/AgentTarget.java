@@ -28,13 +28,18 @@ public final class AgentTarget {
     private static int bridgeCooldown = 0;
 
     public static void init(String args, Instrumentation inst) {
+        // Reset destruct flag so re-injection always works, even after a previous self-destruct.
+        // This is safe: the flag only blocked running threads from the old session;
+        // those threads are already dead (the HyperEngine loop exits on destruct=true),
+        // so clearing it here just opens the door for a clean new session.
+        try { SelfDestruct.destruct = false; } catch (Throwable ignored) {}
+
         System.out.println("[Rocky] Agent target reached. Initializing Hyper-Trigger v4.0...");
 
         new Thread(() -> {
             try {
                 int attempts = 0;
                 while (attempts < 100) {
-                    if (SelfDestruct.destruct) return;
                     try {
                         if (MinecraftClient.getInstance() != null && MinecraftClient.getInstance().getWindow() != null) break;
                     } catch (Throwable ignored) {}
@@ -43,11 +48,11 @@ public final class AgentTarget {
                 }
 
                 MinecraftClient mc = MinecraftClient.getInstance();
-                if (mc == null || SelfDestruct.destruct) return;
+                if (mc == null) return;
 
                 mc.execute(() -> {
                     try {
-                        if (Rocky.INSTANCE == null && !SelfDestruct.destruct) {
+                        if (Rocky.INSTANCE == null) {
                             new Main().onInitializeClient();
                             System.out.println("[Rocky] Hyper-Trigger Engine v4.0 Active.");
                             try {

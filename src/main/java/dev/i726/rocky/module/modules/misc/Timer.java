@@ -27,7 +27,7 @@ public final class Timer extends Module implements TickListener {
     public Timer() {
         super(EncryptedString.of("Timer"),
                 EncryptedString.of("Speeds up or slows down the game tick rate"),
-                -1, CategoryManager.AUTOMATION);
+                -1, CategoryManager.BLATANT);
         addSettings(speed, resetOnDisable);
     }
 

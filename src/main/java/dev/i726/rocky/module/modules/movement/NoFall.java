@@ -45,7 +45,7 @@ public final class NoFall extends Module implements PacketSendListener {
     public NoFall() {
         super(EncryptedString.of("No Fall"),
                 EncryptedString.of("Prevents fall damage by spoofing ground packets"),
-                -1, CategoryManager.MOVEMENT);
+                -1, CategoryManager.BLATANT);
         addSettings(mode, minDist);
     }
 

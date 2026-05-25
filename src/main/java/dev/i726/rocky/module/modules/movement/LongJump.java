@@ -30,7 +30,7 @@ public final class LongJump extends Module implements TickListener {
     public LongJump() {
         super(EncryptedString.of("Long Jump"),
                 EncryptedString.of("Boosts horizontal distance when jumping"),
-                -1, CategoryManager.MOVEMENT);
+                -1, CategoryManager.BLATANT);
         addSettings(boost, heightBoost, onlyForward, requireSprint);
     }
 

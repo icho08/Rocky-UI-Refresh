@@ -1,22 +1,44 @@
 package dev.i726.rocky.module.modules.render;
 
 import dev.i726.rocky.event.events.GameRenderListener;
+import dev.i726.rocky.event.events.HudListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.entity.EquipmentSlot;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.RotationAxis;
 import net.minecraft.util.math.Vec3d;
+import org.joml.Matrix4f;
+import org.joml.Vector4f;
 
-public final class ShowArmor extends Module implements GameRenderListener {
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Two-phase armor display rendering (mirrors the NameTags pattern).
+ *
+ * Phase 1 (GameRenderListener): project each player's head position to screen
+ *   coords using the view-rotation matrix + manual perspective divide.
+ *
+ * Phase 2 (HudListener): draw armor text at the collected 2-D positions.
+ */
+public final class ShowArmor extends Module implements GameRenderListener, HudListener {
+
+    private static final class ArmorData {
+        final int    screenX, screenY;
+        final String text;
+        final boolean lowDurability;
+        ArmorData(int x, int y, String t, boolean low) {
+            screenX = x; screenY = y; text = t; lowDurability = low;
+        }
+    }
+
+    private final List<ArmorData> pending = new ArrayList<>();
 
     private final NumberSetting range = new NumberSetting(
             EncryptedString.of("Range"), 10, 100, 30, 5);
@@ -43,64 +65,85 @@ public final class ShowArmor extends Module implements GameRenderListener {
     @Override
     public void onEnable() {
         eventManager.add(GameRenderListener.class, this);
+        eventManager.add(HudListener.class, this);
         super.onEnable();
     }
 
     @Override
     public void onDisable() {
         eventManager.remove(GameRenderListener.class, this);
+        eventManager.remove(HudListener.class, this);
+        pending.clear();
         super.onDisable();
     }
 
+    // ── Phase 1: world → screen projection ──────────────────────────────────
+
     @Override
     public void onGameRender(GameRenderEvent event) {
+        pending.clear();
         if (mc.player == null || mc.world == null) return;
 
-        Camera    cam    = mc.gameRenderer.getCamera();
-        Vec3d     camPos = cam.getPos();
-        float     tickDelta = mc.getRenderTickCounter().getTickProgress(true);
+        Camera cam    = mc.gameRenderer.getCamera();
+        Vec3d  camPos = cam.getPos();
+        int    winW   = mc.getWindow().getScaledWidth();
+        int    winH   = mc.getWindow().getScaledHeight();
+        float  maxD   = (float) range.getValue();
 
-        VertexConsumerProvider.Immediate immediate =
-                mc.getBufferBuilders().getEntityVertexConsumers();
+        Matrix4f viewRot = event.matrices.peek().getPositionMatrix();
 
-        MatrixStack matrices = event.matrices;
+        double fovYRad     = Math.toRadians(mc.options.getFov().getValue());
+        double tanHalfFovY = Math.tan(fovYRad / 2.0);
+        double aspect      = (double) winW / winH;
 
         for (PlayerEntity player : mc.world.getPlayers()) {
             if (player == mc.player || !player.isAlive()) continue;
-            if (mc.player.distanceTo(player) > range.getValue()) continue;
+            if (mc.player.distanceTo(player) > maxD) continue;
 
             String text = buildArmorText(player);
             if (text.isEmpty()) continue;
 
-            Vec3d pos = player.getLerpedPos(tickDelta);
-            double dx = pos.x - camPos.x;
-            double dy = pos.y - camPos.y + player.getHeight() + 0.35;
-            double dz = pos.z - camPos.z;
+            Vec3d lerp = player.getLerpedPos(event.delta);
+            float rx = (float)(lerp.x - camPos.x);
+            float ry = (float)(lerp.y + player.getHeight() + 0.35 - camPos.y);
+            float rz = (float)(lerp.z - camPos.z);
 
-            boolean lowDurability = hasLowDurability(player);
-            int textColor = (colorWarning.getValue() && lowDurability) ? 0xFF4444 : 0xE5E7EB;
+            Vector4f eye = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
 
-            matrices.push();
-            matrices.translate(dx, dy, dz);
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-cam.getYaw()));
-            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(cam.getPitch()));
-            matrices.scale(-0.025f, -0.025f, 0.025f);
+            if (eye.z >= -0.001f) continue;
 
-            float w = mc.textRenderer.getWidth(text) / 2f;
-            mc.textRenderer.draw(
-                    text, -w, 0, textColor, false,
-                    matrices.peek().getPositionMatrix(),
-                    immediate,
-                    TextRenderer.TextLayerType.SEE_THROUGH,
-                    0x50000000,
-                    15728880
-            );
+            float fwdDepth = -eye.z;
 
-            matrices.pop();
+            float ndcX = (float)(eye.x / (fwdDepth * tanHalfFovY * aspect));
+            float ndcY = (float)(eye.y / (fwdDepth * tanHalfFovY));
+
+            if (ndcX < -1.15f || ndcX > 1.15f || ndcY < -1.15f || ndcY > 1.15f) continue;
+
+            int screenX = (int)((ndcX + 1f) * 0.5f * winW);
+            int screenY = (int)((1f - ndcY) * 0.5f * winH);
+
+            boolean low = hasLowDurability(player);
+            pending.add(new ArmorData(screenX, screenY, text, low));
         }
-
-        immediate.draw();
     }
+
+    // ── Phase 2: draw on HUD ─────────────────────────────────────────────────
+
+    @Override
+    public void onRenderHud(HudEvent event) {
+        DrawContext ctx = event.context;
+        for (ArmorData data : pending) {
+            int color = (colorWarning.getValue() && data.lowDurability) ? 0xFFFF4444 : 0xFFE5E7EB;
+            int tw = mc.textRenderer.getWidth(data.text);
+            int tx = data.screenX - tw / 2;
+            int ty = data.screenY - mc.textRenderer.fontHeight;
+
+            ctx.fill(tx - 2, ty - 1, tx + tw + 2, ty + mc.textRenderer.fontHeight + 1, 0x80000000);
+            ctx.drawText(mc.textRenderer, data.text, tx, ty, color, false);
+        }
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
 
     private String buildArmorText(PlayerEntity player) {
         EquipmentSlot[] slots  = { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET };

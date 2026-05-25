@@ -13,7 +13,7 @@ public final class Hitboxes extends Module {
         super(EncryptedString.of("Hitbox Expand"),
                 EncryptedString.of("Expands player hitboxes"),
                 -1,
-                CategoryManager.PVP);
+                CategoryManager.BLATANT);
         addSetting(size);
     }
 

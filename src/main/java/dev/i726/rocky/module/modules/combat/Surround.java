@@ -47,7 +47,7 @@ public final class Surround extends Module implements TickListener {
     public Surround() {
         super(EncryptedString.of("Surround"),
                 EncryptedString.of("Places blocks around your feet for crystal PvP protection"),
-                -1, CategoryManager.CRYSTAL);
+                -1, CategoryManager.BLATANT);
         addSettings(delay, onlyGround, center, renderPlaced);
     }
 

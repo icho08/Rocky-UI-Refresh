@@ -27,7 +27,7 @@ public final class Scaffold extends Module implements TickListener {
     public Scaffold() {
         super(EncryptedString.of("Scaffold"),
                 EncryptedString.of("Automatically places blocks under your feet as you walk"),
-                -1, CategoryManager.BRIDGING);
+                -1, CategoryManager.BLATANT);
         addSettings(safeWalk, tower, sprint);
     }
 

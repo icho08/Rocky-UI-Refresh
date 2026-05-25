@@ -50,16 +50,26 @@ public final class AgentTarget {
                 MinecraftClient mc = MinecraftClient.getInstance();
                 if (mc == null) return;
 
+                // Write the signal file NOW — before mc.execute — so the injector
+                // confirms the agent reached this point even if init() throws later.
+                try {
+                    new java.io.File(System.getProperty("java.io.tmpdir"),
+                            ".rocky-init-ok").createNewFile();
+                } catch (Exception ignored) {}
+
                 mc.execute(() -> {
                     try {
-                        if (Rocky.INSTANCE == null) {
-                            new Main().onInitializeClient();
-                            System.out.println("[Rocky] Hyper-Trigger Engine v4.0 Active.");
-                            try {
-                                new java.io.File(System.getProperty("java.io.tmpdir"),
-                                        ".rocky-init-ok").createNewFile();
-                            } catch (Exception ignored) {}
+                        if (Rocky.INSTANCE != null) {
+                            // Previous session still alive — tear it down cleanly
+                            // so the new injection replaces it.
+                            try { Rocky.INSTANCE.getModuleManager()
+                                    .getModules().forEach(m -> m.setEnabled(false)); }
+                            catch (Throwable ignored) {}
+                            Rocky.INSTANCE = null;
                         }
+                        new Main().onInitializeClient();
+                        System.out.println("[Rocky] Hyper-Trigger Engine v4.0 Active.");
+                        startInputLoop();
                     } catch (Exception e) { e.printStackTrace(); }
                 });
 

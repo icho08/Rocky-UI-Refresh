@@ -306,6 +306,11 @@ public final class StandaloneBootstrap {
             // Strategy: try __libc_dlopen_mode first (always present in glibc),
             // then fall back to plain dlopen.  Each attempt is its own gdb run so
             // a failure in the first does not abort the second.
+            // Try symbols in order. Each gets its own gdb run so a failure on one
+            // (e.g. symbol not found) does not abort the others.
+            // We avoid complex casts — "call dlopen(...)" is the simplest form that
+            // works when the symbol is in the dynamic table of any loaded library.
+            // __libc_dlopen_mode is preferred because it does not need libdl.
             String[] dlSymbols = { "__libc_dlopen_mode", "dlopen", "__dlopen" };
             StringBuilder combined = new StringBuilder();
 
@@ -317,7 +322,12 @@ public final class StandaloneBootstrap {
                     "-p", String.valueOf(pid),
                     "-ex", "set confirm off",
                     "-ex", "set pagination off",
-                    "-ex", "call (void*(*)(const char*,int))" + sym + "(\"" + soPath + "\", 2)",
+                    // Two-step: assign the function pointer, then call it.
+                    // This avoids the ambiguity of call CAST(args) where GDB may
+                    // display the cast result rather than the invocation result.
+                    "-ex", "set $rfn = (void*(*)(const char*,int))" + sym,
+                    "-ex", "set $rh  = $rfn(\"" + soPath + "\", 2)",
+                    "-ex", "print $rh",
                     "-ex", "shell sleep 1",
                     "-ex", "detach",
                     "-ex", "quit"
@@ -331,16 +341,21 @@ public final class StandaloneBootstrap {
                 String out = new String(raw, StandardCharsets.UTF_8);
                 combined.append(out);
 
-                // If dlopen returned a non-null handle, injection succeeded
-                if (out.contains("= (void *) 0x") && !out.contains("= (void *) 0x0\n")
-                        && !out.contains("= (void *) 0x0 \n")) {
+                // "No symbol" means this sym doesn't exist — try the next one
+                if (out.contains("No symbol") || out.contains("no symbol")) continue;
+
+                // If gdb itself is not on PATH, bail out entirely
+                if (exitCode == 127 || (out.isEmpty() && exitCode != 0)) return null;
+
+                // Any non-null pointer in $rh means dlopen loaded the library
+                // GDB prints the result as: $N = (type) 0xADDRESS
+                // Null (failure) would be 0x0; any other value is success.
+                boolean hasResult = out.contains("$rh =") || out.contains("= 0x");
+                boolean isNull    = out.contains("= 0x0\n") || out.contains("= 0x0 ")
+                                  || out.contains("(void *) 0");
+                if (hasResult && !isNull) {
                     System.out.println("[+] GDB dlopen via " + sym + " succeeded.");
                     return combined.toString();
-                }
-
-                // If gdb itself is not on PATH, bail immediately
-                if (exitCode == 127 || (out.isEmpty() && exitCode != 0)) {
-                    return null;
                 }
             }
 

@@ -9,7 +9,6 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.SelfDestruct;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.fabricmc.fabric.api.client.rendering.v1.WorldRenderEvents;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.projectile.ProjectileUtil;
@@ -137,15 +136,6 @@ public final class AgentTarget {
             } catch (Throwable ignored) {}
         });
 
-        // ── 3-D world render (ESP, NameTags, Tracers …) ─────────────────────────
-        WorldRenderEvents.LAST.register(context -> {
-            if (Rocky.INSTANCE == null) return;
-            try {
-                float delta = context.tickCounter().getTickProgress(true);
-                EventManager.fire(new GameRenderListener.GameRenderEvent(context.matrixStack(), delta));
-            } catch (Throwable ignored) {}
-        });
-
         // ── Keyboard (GUI toggle, module keybinds) ──────────────────────────────
         // Chain onto the existing GLFW key callback so nothing is lost.
         long windowHandle = mc.getWindow().getHandle();
@@ -159,7 +149,7 @@ public final class AgentTarget {
         };
         chain[0] = GLFW.glfwSetKeyCallback(windowHandle, newKeyCallback);
 
-        System.out.println("[Rocky] Fabric bridge: tick / HUD / 3D-render / keyboard wired.");
+        System.out.println("[Rocky] Fabric bridge: tick / HUD / keyboard wired. (3D-render needs mixin — ESP/Tracers off in inject mode)");
     }
 
     private static void startInputLoop() {

@@ -69,6 +69,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new AntiAFK());
                 add(new AutoXP());
                 add(new NoJumpDelay());
+                add(new PacketLogger());
                 add(new PingSpoof());
                 add(new FakeLag());
                 add(new AutoClicker());

@@ -84,6 +84,10 @@ public final class SmartBridge extends Module implements TickListener {
             EncryptedString.of("Block Slot"), 0, 9, 0, 1)
             .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot only)"));
 
+    private final BooleanSetting requireBlocks = new BooleanSetting(
+            EncryptedString.of("Require Blocks"), true)
+            .setDescription(EncryptedString.of("When ON: safe-walk and sneak only activate if you have blocks. When OFF: always active"));
+
     public enum BridgeMode { SMART, GOD_ONLY, ASSIST_ONLY }
     private final ModeSetting<BridgeMode> mode = new ModeSetting<>(
             EncryptedString.of("Mode"), BridgeMode.SMART, BridgeMode.class)
@@ -103,7 +107,7 @@ public final class SmartBridge extends Module implements TickListener {
                 EncryptedString.of("Intelligent bridging assist"),
                 -1, CategoryManager.BRIDGING);
         addSettings(mode, godBridgeBlocks, assistMinBlocks, assistMaxBlocks,
-                godAutoSprint, godFallMode, godLookAhead, stopOnDamage, damageThreshold, blockSlot);
+                godAutoSprint, godFallMode, godLookAhead, stopOnDamage, damageThreshold, blockSlot, requireBlocks);
     }
 
     @Override
@@ -168,17 +172,18 @@ public final class SmartBridge extends Module implements TickListener {
         }
 
         // ── Fall protection ──────────────────────────────────────────────────
-        // SafeWalk: set our own static flag checked by PlayerEntityMixin.clipAtLedge.
-        // This gives the same clip-at-edge behaviour as sneaking without enabling
-        // GodBridge (which would cause double block placements).
+        // If Require Blocks is ON and nothing is available, stay passive.
+        boolean hasBlocks = resolveBlockSlot() != -1;
+        boolean protect   = !requireBlocks.getValue() || hasBlocks;
+
         switch (godFallMode.getMode()) {
             case SafeWalk -> {
-                safeWalkActive = true;
+                safeWalkActive = protect;
                 mc.options.sneakKey.setPressed(false);
             }
             case Sneak -> {
                 safeWalkActive = false;
-                if (isAboutToFallOff()) {
+                if (protect && isAboutToFallOff()) {
                     mc.options.sneakKey.setPressed(true);
                     return;
                 }
@@ -258,7 +263,9 @@ public final class SmartBridge extends Module implements TickListener {
 
     private void runAssistPhase(ClientPlayerEntity p) {
         safeWalkActive = false;
-        mc.options.sneakKey.setPressed(isNearEdge(p));
+        boolean hasBlocks = resolveBlockSlot() != -1;
+        boolean canSneak  = !requireBlocks.getValue() || hasBlocks;
+        mc.options.sneakKey.setPressed(canSneak && isNearEdge(p));
 
         int currentCount = totalBlockCount(p);
         if (lastBlockCount < 0) {

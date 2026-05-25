@@ -59,6 +59,10 @@ public final class GodBridge extends Module implements TickListener {
             EncryptedString.of("Block Slot"), 0, 9, 0, 1)
             .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot only)"));
 
+    private final BooleanSetting requireBlocks = new BooleanSetting(
+            EncryptedString.of("Require Blocks"), true)
+            .setDescription(EncryptedString.of("When ON: safe-walk and sprint only activate if you have blocks. When OFF: always active"));
+
     private int cooldown = 0;
 
     public GodBridge() {
@@ -66,15 +70,18 @@ public final class GodBridge extends Module implements TickListener {
                 EncryptedString.of("Automated god bridging with anticheat-safe packet rotation"),
                 -1, CategoryManager.BRIDGING);
         INSTANCE = this;
-        addSettings(autoSprint, placeDelay, placeJitter, blockSlot);
+        addSettings(autoSprint, placeDelay, placeJitter, blockSlot, requireBlocks);
     }
 
     /**
      * Used by PlayerEntityMixin.clipAtLedge to keep the player from walking
      * off the edge without sending sneak packets.
+     * If Require Blocks is ON, only clips at ledge when blocks are in hand.
      */
     public static boolean shouldSafeWalk() {
-        return INSTANCE != null && INSTANCE.isEnabled();
+        if (INSTANCE == null || !INSTANCE.isEnabled()) return false;
+        if (INSTANCE.requireBlocks.getValue()) return INSTANCE.resolveBlockSlot() != -1;
+        return true;
     }
 
     @Override

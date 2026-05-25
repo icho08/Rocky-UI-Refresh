@@ -35,11 +35,15 @@ public final class Scaffold extends Module implements TickListener {
             EncryptedString.of("Block Slot"), 0, 9, 0, 1)
             .setDescription(EncryptedString.of("Hotbar slot to use for blocks (0 = auto-find first block, 1-9 = fixed slot)"));
 
+    private final BooleanSetting requireBlocks = new BooleanSetting(
+            EncryptedString.of("Require Blocks"), true)
+            .setDescription(EncryptedString.of("When ON: safe-walk only applies when you have blocks. When OFF: always active"));
+
     public Scaffold() {
         super(EncryptedString.of("Scaffold"),
                 EncryptedString.of("Automatically places blocks under your feet as you walk"),
                 -1, CategoryManager.BLATANT);
-        addSettings(safeWalk, tower, sprint, blockSlot);
+        addSettings(safeWalk, tower, sprint, blockSlot, requireBlocks);
     }
 
     @Override
@@ -61,8 +65,10 @@ public final class Scaffold extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
 
-        // Safe walk via sneak key — standard for scaffold, no special mixin needed
-        mc.options.sneakKey.setPressed(safeWalk.getValue());
+        // Safe walk — only if we actually have blocks when Require Blocks is ON
+        boolean hasBlocks = resolveBlockSlot() != -1;
+        boolean doSafeWalk = safeWalk.getValue() && (!requireBlocks.getValue() || hasBlocks);
+        mc.options.sneakKey.setPressed(doSafeWalk);
 
         BlockPos feetPos   = mc.player.getBlockPos();
         BlockPos belowFeet = feetPos.down();

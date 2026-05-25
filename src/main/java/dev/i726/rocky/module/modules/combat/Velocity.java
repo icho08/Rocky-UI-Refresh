@@ -56,7 +56,7 @@ public final class Velocity extends Module implements TickListener {
     public Velocity() {
         super(EncryptedString.of("Anti Knockback"),
                 EncryptedString.of("Reduces or cancels knockback with anticheat bypass"),
-                -1, CategoryManager.BLATANT);
+                -1, CategoryManager.PVP);
         addSettings(velocityMode, horizontal, vertical, gradualTicks, randomize);
     }
 

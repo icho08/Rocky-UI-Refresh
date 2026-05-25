@@ -42,7 +42,7 @@ public final class Reach extends Module {
     public Reach() {
         super(EncryptedString.of("Reach"),
                 EncryptedString.of("Extends attack reach distance with anticheat bypass"),
-                -1, CategoryManager.BLATANT);
+                -1, CategoryManager.PVP);
         addSettings(mode, distance, randomize, randomization, rerollOnHit);
     }
 

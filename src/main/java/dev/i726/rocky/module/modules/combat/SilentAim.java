@@ -60,7 +60,7 @@ public final class SilentAim extends Module implements TickListener, PacketSendL
     public SilentAim() {
         super(EncryptedString.of("Silent Aim"),
                 EncryptedString.of("Silently rotates on the server without moving your view"),
-                -1, CategoryManager.BLATANT);
+                -1, CategoryManager.PVP);
         addSettings(range, fov, smoothing, maxRotSpeed, players, mobs, weaponOnly, predict,
                 overrideCrosshair, gcdCorrection, randomBodyPart);
     }

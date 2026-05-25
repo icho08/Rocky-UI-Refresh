@@ -1,6 +1,7 @@
 package dev.i726.rocky.mixin;
 
 import net.fabricmc.loader.api.ModContainer;
+import net.fabricmc.loader.impl.FabricLoaderImpl;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -9,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import java.util.Collection;
 import java.util.stream.Collectors;
 
-@Mixin(targets = "net.fabricmc.loader.impl.FabricLoaderImpl", remap = false)
+@Mixin(value = FabricLoaderImpl.class, remap = false)
 public class FabricLoaderMixin {
 
     @Inject(method = "getAllMods", at = @At("RETURN"), cancellable = true, remap = false)

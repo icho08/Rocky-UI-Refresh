@@ -299,46 +299,52 @@ public final class StandaloneBootstrap {
      */
     private static String runGdb(long pid, String soPath, boolean useSudo) {
         try {
-            // Use a robust GDB script that handles the dlopen call safely
-            // and waits briefly before detaching to allow the constructor to run.
-            String gdbScript = String.format(
-                "set confirm off\\n" +
-                "set disassembly-flavor intel\\n" +
-                "set $dl = (void*(*)(const char*, int)) __libc_dlopen_mode\\n" +
-                "if !$dl\\n" +
-                "  set $dl = (void*(*)(const char*, int)) dlopen\\n" +
-                "end\\n" +
-                "if !$dl\\n" +
-                "  set $dl = (void*(*)(const char*, int)) __dlopen\\n" +
-                "end\\n" +
-                "if $dl\\n" +
-                "  call $dl(\"%s\", 2)\\n" +
-                "  shell sleep 0.5\\n" +
-                "end\\n" +
-                "detach\\n" +
-                "quit\\n", 
-                soPath
-            );
+            // Use -ex arguments instead of a script file so there is no risk of
+            // newline encoding issues (the old \\n approach wrote literal backslash-n
+            // which GDB does not treat as a line separator, causing parse errors).
+            //
+            // Strategy: try __libc_dlopen_mode first (always present in glibc),
+            // then fall back to plain dlopen.  Each attempt is its own gdb run so
+            // a failure in the first does not abort the second.
+            String[] dlSymbols = { "__libc_dlopen_mode", "dlopen", "__dlopen" };
+            StringBuilder combined = new StringBuilder();
 
-            File scriptFile = new File(System.getProperty("java.io.tmpdir"), "rocky_gdb_" + pid + ".script");
-            java.nio.file.Files.writeString(scriptFile.toPath(), gdbScript);
-            scriptFile.setReadable(true, false);
+            for (String sym : dlSymbols) {
+                List<String> cmd = new ArrayList<>();
+                if (useSudo) { cmd.add("sudo"); cmd.add("-n"); }
+                cmd.addAll(List.of(
+                    "gdb", "-batch",
+                    "-p", String.valueOf(pid),
+                    "-ex", "set confirm off",
+                    "-ex", "set pagination off",
+                    "-ex", "call (void*(*)(const char*,int))" + sym + "(\"" + soPath + "\", 2)",
+                    "-ex", "shell sleep 1",
+                    "-ex", "detach",
+                    "-ex", "quit"
+                ));
 
-            List<String> cmd = new ArrayList<>();
-            if (useSudo) {
-                cmd.add("sudo");
-                cmd.add("-n");
+                Process p = new ProcessBuilder(cmd)
+                        .redirectErrorStream(true)
+                        .start();
+                byte[] raw = p.getInputStream().readAllBytes();
+                int exitCode = p.waitFor();
+                String out = new String(raw, StandardCharsets.UTF_8);
+                combined.append(out);
+
+                // If dlopen returned a non-null handle, injection succeeded
+                if (out.contains("= (void *) 0x") && !out.contains("= (void *) 0x0\n")
+                        && !out.contains("= (void *) 0x0 \n")) {
+                    System.out.println("[+] GDB dlopen via " + sym + " succeeded.");
+                    return combined.toString();
+                }
+
+                // If gdb itself is not on PATH, bail immediately
+                if (exitCode == 127 || (out.isEmpty() && exitCode != 0)) {
+                    return null;
+                }
             }
-            cmd.addAll(List.of("gdb", "-p", String.valueOf(pid), "-batch", "-x", scriptFile.getAbsolutePath()));
 
-            Process p = new ProcessBuilder(cmd)
-                    .redirectErrorStream(true)
-                    .start();
-            byte[] raw = p.getInputStream().readAllBytes();
-            p.waitFor();
-            
-            scriptFile.delete();
-            return new String(raw, StandardCharsets.UTF_8);
+            return combined.toString();
         } catch (java.io.IOException e) {
             if (e.getMessage() != null && e.getMessage().contains("No such file"))
                 return null;

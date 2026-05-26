@@ -23,25 +23,28 @@ import java.util.concurrent.ThreadLocalRandom;
 /**
  * SmartBridge — three modes:
  *
- *  SMART       Alternates between God phase and Assist phase.
- *              God phase uses the same logic as the standalone GodBridge module
- *              (including burst-limit detection bypass and sneak-sync).
- *              Assist phase uses BridgeAssist logic (edge-sneak only, no rotation).
+ *  GOD_ONLY    Pure god bridging (same logic as GodBridge module):
+ *              backward key suppressed, silent rotation, burst-limit bypass,
+ *              sneak-sync. Runs indefinitely.
  *
- *  GOD_ONLY    Pure god bridging — identical to the GodBridge module, runs
- *              indefinitely without switching to assist.
+ *  ASSIST_ONLY Pure assist: auto-sneaks at edges, no rotation, no placement.
+ *              Mirrors BridgeAssist. Uses clipAtLedge via safeWalkActive flag
+ *              (assist mode doesn't suppress keys — sneak is the correct human
+ *              behaviour here and doesn't trigger god-bridge detection).
  *
- *  ASSIST_ONLY Pure assist mode — auto-sneaks at edges, no block placement.
- *              Mirrors BridgeAssist behaviour.
+ *  SMART       Alternates between the two above.
  *
- * SafeWalk: PlayerEntityMixin.clipAtLedge is gated on safeWalkActive AND
- * the player NOT pressing the forward key, so forward movement is never blocked.
+ * Key suppression vs clipAtLedge:
+ *   God phase → suppress backKey directly. Produces clean movement packets
+ *               with zero velocity-clamping signature. GodBridge.safeWalkActive
+ *               and PlayerEntityMixin.clipAtLedge are NOT used.
+ *   Assist phase → safeWalkActive=false, sneakKey pressed at edges (human).
  */
 public final class SmartBridge extends Module implements TickListener {
 
     /**
-     * Tells PlayerEntityMixin.clipAtLedge to clip at the ledge during the god phase
-     * without enabling the standalone GodBridge module (avoids double-placement).
+     * Used ONLY for legacy compatibility. God phase no longer sets this — it
+     * suppresses the backward key instead. Kept so PlayerEntityMixin compiles.
      */
     public static volatile boolean safeWalkActive = false;
 
@@ -53,7 +56,7 @@ public final class SmartBridge extends Module implements TickListener {
             EncryptedString.of("Mode"), BridgeMode.SMART, BridgeMode.class)
             .setDescription(EncryptedString.of("SMART: alternates God+Assist. GOD_ONLY: pure god bridge. ASSIST_ONLY: edge-sneak only"));
 
-    // ── God-phase settings (SMART + GOD_ONLY) ─────────────────────────────────
+    // ── God-phase settings ─────────────────────────────────────────────────────
 
     private final NumberSetting godBridgeBlocks = new NumberSetting(
             EncryptedString.of("God Blocks"), 1, 64, 16, 1)
@@ -77,21 +80,21 @@ public final class SmartBridge extends Module implements TickListener {
 
     private final BooleanSetting sneakSync = new BooleanSetting(
             EncryptedString.of("Sneak Sync"), true)
-            .setDescription(EncryptedString.of("Occasionally send a 1-tick sneak to break the never-sneak bot signature"));
+            .setDescription(EncryptedString.of("Occasionally send a 1-tick sneak to break the never-sneak bot pattern"));
 
-    // ── Assist-phase settings (SMART + ASSIST_ONLY) ───────────────────────────
+    // ── Assist-phase settings ─────────────────────────────────────────────────
 
     private final NumberSetting assistMinBlocks = new NumberSetting(
             EncryptedString.of("Assist Min Blocks"), 1, 32, 4, 1)
-            .setDescription(EncryptedString.of("(SMART) Min blocks to bridge in assist phase before switching back"));
+            .setDescription(EncryptedString.of("(SMART) Min blocks in assist phase before switching back"));
 
     private final NumberSetting assistMaxBlocks = new NumberSetting(
             EncryptedString.of("Assist Max Blocks"), 1, 64, 12, 1)
-            .setDescription(EncryptedString.of("(SMART) Max blocks to bridge in assist phase before switching back"));
+            .setDescription(EncryptedString.of("(SMART) Max blocks in assist phase before switching back"));
 
     private final NumberSetting assistEdgeDist = new NumberSetting(
             EncryptedString.of("Assist Edge Dist"), 0.05, 0.5, 0.25, 0.01)
-            .setDescription(EncryptedString.of("How close to a block edge before auto-sneak activates"));
+            .setDescription(EncryptedString.of("How close to an edge before auto-sneak activates"));
 
     private final NumberSetting assistLookAhead = new NumberSetting(
             EncryptedString.of("Assist Look-Ahead"), 0, 10, 3, 1)
@@ -105,7 +108,7 @@ public final class SmartBridge extends Module implements TickListener {
 
     private final NumberSetting damageThreshold = new NumberSetting(
             EncryptedString.of("Damage Threshold"), 0.0, 10.0, 0.5, 0.5)
-            .setDescription(EncryptedString.of("Half-hearts of damage in one tick that trigger Stop On Damage"));
+            .setDescription(EncryptedString.of("Half-hearts of damage per tick that trigger Stop On Damage"));
 
     private final NumberSetting blockSlot = new NumberSetting(
             EncryptedString.of("Block Slot"), 0, 9, 0, 1)
@@ -113,9 +116,9 @@ public final class SmartBridge extends Module implements TickListener {
 
     private final BooleanSetting requireBlocks = new BooleanSetting(
             EncryptedString.of("Require Blocks"), true)
-            .setDescription(EncryptedString.of("Safe-walk and sprint only activate when holding blocks"));
+            .setDescription(EncryptedString.of("Key suppression and sprint only activate when holding blocks"));
 
-    // ── Internal state ────────────────────────────────────────────────────────
+    // ── State ─────────────────────────────────────────────────────────────────
 
     private enum Phase { GOD, ASSIST }
     private Phase   phase               = Phase.GOD;
@@ -129,13 +132,12 @@ public final class SmartBridge extends Module implements TickListener {
     private boolean healthInitialized   = false;
     private boolean sneakReleaseNext    = false;
 
-    // Virtual server-side rotation for the god phase (camera never moves).
     private float godVirtualYaw   = Float.NaN;
     private float godVirtualPitch = Float.NaN;
 
     public SmartBridge() {
         super(EncryptedString.of("Smart Bridge"),
-                EncryptedString.of("Intelligent bridging assist — god, assist, or combined"),
+                EncryptedString.of("Intelligent bridging — god, assist, or combined"),
                 -1, CategoryManager.BRIDGING);
         addSettings(
                 mode,
@@ -148,15 +150,15 @@ public final class SmartBridge extends Module implements TickListener {
     @Override
     public void onEnable() {
         eventManager.add(TickListener.class, this);
-        phase                = Phase.GOD;
-        phaseBlocksPlaced    = 0;
-        currentPhaseTarget   = godBridgeBlocks.getValueInt();
+        phase                 = Phase.GOD;
+        phaseBlocksPlaced     = 0;
+        currentPhaseTarget    = godBridgeBlocks.getValueInt();
         consecutivePlacements = 0;
-        burstPauseCooldown   = 0;
-        sneakReleaseNext     = false;
-        healthInitialized    = false;
-        lastBlockCount       = -1;
-        safeWalkActive       = false;
+        burstPauseCooldown    = 0;
+        sneakReleaseNext      = false;
+        healthInitialized     = false;
+        lastBlockCount        = -1;
+        safeWalkActive        = false;
     }
 
     @Override
@@ -164,12 +166,16 @@ public final class SmartBridge extends Module implements TickListener {
         eventManager.remove(TickListener.class, this);
         safeWalkActive       = false;
         sneakReleaseNext     = false;
-        RotationOverride.active = false;
+        RotationOverride.active            = false;
         RotationOverride.afterPacketAction = null;
         godVirtualYaw        = Float.NaN;
         godVirtualPitch      = Float.NaN;
-        if (mc.options != null) mc.options.sneakKey.setPressed(false);
-        Clutch.placing       = false;
+        if (mc.options != null) {
+            mc.options.sneakKey.setPressed(false);
+            // backKey: we only ever forced it to false; releasing here so
+            // the real physical key state is read on the next tick.
+        }
+        Clutch.placing = false;
     }
 
     @Override
@@ -177,17 +183,16 @@ public final class SmartBridge extends Module implements TickListener {
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
-        // ── Sneak-sync release from last tick ─────────────────────────────────
+        // Release sneak-sync from last tick
         if (sneakReleaseNext) {
             mc.options.sneakKey.setPressed(false);
             sneakReleaseNext = false;
         }
 
-        // ── Damage check ──────────────────────────────────────────────────────
+        // Damage check
         float health = p.getHealth();
         if (!healthInitialized) {
-            lastHealth = health;
-            healthInitialized = true;
+            lastHealth = health; healthInitialized = true;
         } else {
             float delta = lastHealth - health;
             if (stopOnDamage.getValue() && delta >= (float) damageThreshold.getValue()) {
@@ -200,46 +205,39 @@ public final class SmartBridge extends Module implements TickListener {
 
         if (placeCooldown > 0) placeCooldown--;
 
-        // ── Route to the correct phase based on mode ──────────────────────────
-        boolean isGodOnly    = mode.isMode(BridgeMode.GOD_ONLY);
-        boolean isAssistOnly = mode.isMode(BridgeMode.ASSIST_ONLY);
-        boolean isSmart      = mode.isMode(BridgeMode.SMART);
+        boolean isGod    = mode.isMode(BridgeMode.GOD_ONLY)
+                        || (mode.isMode(BridgeMode.SMART) && phase == Phase.GOD);
+        boolean isAssist = mode.isMode(BridgeMode.ASSIST_ONLY)
+                        || (mode.isMode(BridgeMode.SMART) && phase == Phase.ASSIST);
 
-        if (isGodOnly) {
-            runGodPhase(p);
-        } else if (isAssistOnly) {
-            runAssistPhase(p);
-        } else if (isSmart) {
-            if (phase == Phase.GOD)    runGodPhase(p);
-            else                       runAssistPhase(p);
-        }
+        if (isGod)         runGodPhase(p);
+        else if (isAssist) runAssistPhase(p);
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // GOD PHASE — identical logic to the standalone GodBridge module
-    //             (burst limit + sneak sync for Grim/NCP bypass)
+    // GOD PHASE — identical detection-bypass logic to standalone GodBridge
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void runGodPhase(ClientPlayerEntity p) {
         boolean hasBlocks = isHoldingBlock();
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
+        // ── Backward key suppression ──────────────────────────────────────────
+        // Replaces clipAtLedge. No velocity-clamping signature; movement packets
+        // look 100 % normal. Player simply cannot move backward while bridging.
+        if (p.isOnGround() && protect) {
+            mc.options.backKey.setPressed(false);
+        }
+
         if (!hasBlocks && requireBlocks.getValue()) {
-            safeWalkActive = false;
-            mc.options.sneakKey.setPressed(false);
             stepGodVirtualTowardReal(p);
             return;
         }
 
         if (!p.isOnGround()) {
-            safeWalkActive = false;
-            mc.options.sneakKey.setPressed(false);
             stepGodVirtualTowardReal(p);
             return;
         }
-
-        // Safe-walk (clipAtLedge via mixin — forward-movement-aware)
-        safeWalkActive = protect;
 
         Vec3d v = p.getVelocity();
         if (Math.abs(v.x) + Math.abs(v.z) < 0.005) {
@@ -250,7 +248,6 @@ public final class SmartBridge extends Module implements TickListener {
 
         if (godAutoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
-        // Burst pause
         if (burstPauseCooldown > 0) {
             burstPauseCooldown--;
             stepGodVirtualTowardReal(p);
@@ -267,7 +264,6 @@ public final class SmartBridge extends Module implements TickListener {
         if (!mc.world.getBlockState(target).isAir())       { stepGodVirtualTowardReal(p); return; }
         if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { stepGodVirtualTowardReal(p); return; }
 
-        // ── Jittered aim point ─────────────────────────────────────────────────
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         double faceOffX = placeDir.getOffsetX() * 0.5;
         double faceOffZ = placeDir.getOffsetZ() * 0.5;
@@ -285,7 +281,6 @@ public final class SmartBridge extends Module implements TickListener {
         float   pitchMax  = 80f + rng.nextFloat() * 6f;
         float   needPitch = MathHelper.clamp(needed[1], pitchMin, pitchMax);
 
-        // ── Silent server-side rotation ────────────────────────────────────────
         if (Float.isNaN(godVirtualYaw)) {
             godVirtualYaw   = p.getYaw();
             godVirtualPitch = p.getPitch();
@@ -313,7 +308,7 @@ public final class SmartBridge extends Module implements TickListener {
 
         if (fUseSlot != fPrev) p.getInventory().setSelectedSlot(fUseSlot);
 
-        // Sneak-sync: occasional 1-tick sneak to break never-sneak bot pattern
+        // Sneak-sync: random 1-tick sneak, breaks never-sneak bot signature
         if (sneakSync.getValue() && rng.nextInt(4) == 0) {
             mc.options.sneakKey.setPressed(true);
             sneakReleaseNext = true;
@@ -331,7 +326,6 @@ public final class SmartBridge extends Module implements TickListener {
 
                     placeCooldown = 2 + rng.nextInt(3);
 
-                    // Burst limit
                     int limit = burstLimit.getValueInt();
                     if (consecutivePlacements >= limit) {
                         consecutivePlacements = 0;
@@ -340,7 +334,6 @@ public final class SmartBridge extends Module implements TickListener {
                         burstPauseCooldown = pMin + (int)(Math.random() * (pMax - pMin + 1));
                     }
 
-                    // Check phase transition (SMART mode)
                     if (mode.isMode(BridgeMode.SMART) && phaseBlocksPlaced >= currentPhaseTarget) {
                         advancePhase();
                     }
@@ -379,24 +372,23 @@ public final class SmartBridge extends Module implements TickListener {
     }
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // ASSIST PHASE — mirrors BridgeAssist: auto-sneak at edges, no block placement
+    // ASSIST PHASE — mirrors BridgeAssist: edge-sneak only, no block placement
     // ═══════════════════════════════════════════════════════════════════════════
 
     private void runAssistPhase(ClientPlayerEntity p) {
-        // God phase artefacts
-        safeWalkActive = false;
+        // Clear god-phase state
         godVirtualYaw   = Float.NaN;
         godVirtualPitch = Float.NaN;
         RotationOverride.active            = false;
         RotationOverride.afterPacketAction = null;
         consecutivePlacements = 0;
+        safeWalkActive        = false;
 
         boolean hasBlocks = isHoldingBlock();
         boolean canSneak  = !requireBlocks.getValue() || hasBlocks;
 
         mc.options.sneakKey.setPressed(canSneak && isNearEdge(p));
 
-        // Count placed blocks by watching inventory decrease
         int currentCount = totalBlockCount(p);
         if (lastBlockCount < 0) {
             lastBlockCount = currentCount;
@@ -411,47 +403,33 @@ public final class SmartBridge extends Module implements TickListener {
         }
     }
 
-    /**
-     * Near-edge check for assist mode: only triggers when the edge that's close
-     * is in the BACKWARD direction (behind the player), matching how god bridge
-     * is used. This prevents auto-sneak from interfering with forward movement.
-     */
     private boolean isNearEdge(ClientPlayerEntity p) {
-        double x  = p.getX(), z = p.getZ();
+        double x = p.getX(), z = p.getZ();
         double vx = p.getVelocity().x, vz = p.getVelocity().z;
 
-        // Immediate: already over air?
         BlockPos currentBelow = BlockPos.ofFloored(x, p.getY() - 1, z);
-        if (mc.world.getBlockState(currentBelow).isAir() && hasMinFallHeight(currentBelow)) return true;
+        if (mc.world.getBlockState(currentBelow).isAir()) return true;
 
-        // Predicted position a few ticks out
         int la = assistLookAhead.getValueInt();
         double nextX = x + vx * la;
         double nextZ = z + vz * la;
-
         double edgeX = Math.min(nextX - Math.floor(nextX), Math.ceil(nextX) - nextX);
         double edgeZ = Math.min(nextZ - Math.floor(nextZ), Math.ceil(nextZ) - nextZ);
 
-        double edgeDist = assistEdgeDist.getValue();
-        if (edgeX <= edgeDist || edgeZ <= edgeDist) {
+        double edge = assistEdgeDist.getValue();
+        if (edgeX <= edge || edgeZ <= edge) {
             BlockPos nextBelow = BlockPos.ofFloored(nextX, p.getY() - 1, nextZ);
-            return mc.world.getBlockState(nextBelow).isAir() && hasMinFallHeight(nextBelow);
+            return mc.world.getBlockState(nextBelow).isAir();
         }
         return false;
     }
 
-    private boolean hasMinFallHeight(BlockPos pos) {
-        int h = 0;
-        while (h < 1 && mc.world.getBlockState(pos).isAir()) { pos = pos.down(); h++; }
-        return h >= 1;
-    }
-
-    // ── Phase management (SMART mode) ─────────────────────────────────────────
+    // ── Phase management ──────────────────────────────────────────────────────
 
     private void advancePhase() {
-        phaseBlocksPlaced  = 0;
-        godVirtualYaw      = Float.NaN;
-        godVirtualPitch    = Float.NaN;
+        phaseBlocksPlaced     = 0;
+        godVirtualYaw         = Float.NaN;
+        godVirtualPitch       = Float.NaN;
         RotationOverride.active            = false;
         RotationOverride.afterPacketAction = null;
         consecutivePlacements = 0;
@@ -502,12 +480,11 @@ public final class SmartBridge extends Module implements TickListener {
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {
-        double dx = to.x - from.x;
-        double dy = to.y - from.y;
-        double dz = to.z - from.z;
+        double dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
         double hDist = Math.sqrt(dx * dx + dz * dz);
-        float yaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float pitch = (float) Math.toDegrees(-Math.atan2(dy, hDist));
-        return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
+        return new float[]{
+            (float) Math.toDegrees(Math.atan2(-dx, dz)),
+            MathHelper.clamp((float) Math.toDegrees(-Math.atan2(dy, hDist)), -90f, 90f)
+        };
     }
 }

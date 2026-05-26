@@ -20,21 +20,20 @@ import net.minecraft.util.math.Vec3d;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * GodBridge — undetectable god bridging for Minecraft 1.21.x (Grim/NCP bypass).
+ * GodBridge — Grim/NCP bypass for 1.21.x
  *
- * Anti-detection measures:
- *  - Silent server-side rotation (RotationOverride) — the camera never moves.
- *  - Virtual yaw/pitch gradually step toward the target; no instant snap-back.
- *  - Burst limit: after N consecutive placements, force a randomised pause so
- *    the server never sees an infinite machine-perfect placement streak.
- *  - Sneak sync: on a random subset of placements, briefly press the sneak key
- *    (1 tick) to break the "never-sneak + god-place" bot signature.
- *  - Jittered hit-point on the block face so every interact packet looks subtly
- *    different to packet inspectors.
+ * Fall protection strategy: suppress the backward (S) key entirely while
+ * bridging is active. This produces completely normal movement packets —
+ * no clipAtLedge velocity clamping, no invisible-sneak signature, nothing
+ * for Grim to flag. If the player holds S they just don't move backward;
+ * the server sees unmodified forward motion the whole time.
  *
- * SafeWalk: PlayerEntityMixin.clipAtLedge returns true when enabled AND the
- * player is NOT pressing the forward key.  Forward movement is therefore fully
- * free; only backward/sideways ledge fall is prevented.
+ * Burst detection bypass: after N consecutive placements, force a
+ * randomised multi-tick pause so the server never sees a machine-perfect
+ * infinite streak (the #1 cause of god-bridge bans).
+ *
+ * Sneak sync: 25 % chance per placement to fire a 1-tick sneak, breaking
+ * the "never-sneak + ledge-place" bot pattern Grim tracks.
  */
 public final class GodBridge extends Module implements TickListener {
 
@@ -82,15 +81,14 @@ public final class GodBridge extends Module implements TickListener {
 
     private final BooleanSetting requireBlocks = new BooleanSetting(
             EncryptedString.of("Require Blocks"), true)
-            .setDescription(EncryptedString.of("Safe-walk and sprint only activate when holding blocks"));
+            .setDescription(EncryptedString.of("Key suppression and sprint only activate when holding blocks"));
 
     // ── State ─────────────────────────────────────────────────────────────────
-    private int   cooldown             = 0;
+    private int   cooldown              = 0;
     private int   consecutivePlacements = 0;
-    private int   burstPauseCooldown   = 0;
-    private boolean sneakReleaseNext   = false;
+    private int   burstPauseCooldown    = 0;
+    private boolean sneakReleaseNext    = false;
 
-    // Virtual server-side rotation — camera never sees these values.
     private float virtualYaw   = Float.NaN;
     private float virtualPitch = Float.NaN;
 
@@ -105,15 +103,9 @@ public final class GodBridge extends Module implements TickListener {
                 blockSlot, requireBlocks);
     }
 
-    /**
-     * Called by PlayerEntityMixin.clipAtLedge.
-     * Returns true only when enabled AND the player is not pressing forward —
-     * so forward movement is never blocked, only backward/sideways ledge-fall.
-     */
+    /** No longer uses clipAtLedge — kept for compatibility; always returns false. */
     public static boolean shouldSafeWalk() {
-        if (INSTANCE == null || !INSTANCE.isEnabled()) return false;
-        if (INSTANCE.requireBlocks.getValue() && !INSTANCE.isHoldingBlock()) return false;
-        return true;
+        return false;
     }
 
     private boolean isHoldingBlock() {
@@ -141,7 +133,13 @@ public final class GodBridge extends Module implements TickListener {
         virtualPitch     = Float.NaN;
         sneakReleaseNext = false;
         disarmOverride();
-        if (mc.options != null) mc.options.sneakKey.setPressed(false);
+        // Release any keys we may have suppressed
+        if (mc.options != null) {
+            mc.options.sneakKey.setPressed(false);
+            // backKey is released naturally — we only ever force it to false,
+            // so when we stop calling setPressed(false) the binding reads the
+            // real physical key state again on the next tick.
+        }
         eventManager.remove(TickListener.class, this);
         super.onDisable();
     }
@@ -154,20 +152,29 @@ public final class GodBridge extends Module implements TickListener {
             return;
         }
 
-        // Release sneak that was pressed last tick for sneak-sync
+        // Release sneak pressed by sneak-sync last tick
         if (sneakReleaseNext) {
             mc.options.sneakKey.setPressed(false);
             sneakReleaseNext = false;
         }
 
-        // No blocks or in the air — idle, gradually return virtual rotation
-        if (resolveBlockSlot() == -1 || !p.isOnGround()) {
+        boolean hasBlocks = resolveBlockSlot() != -1;
+        boolean protect   = !requireBlocks.getValue() || hasBlocks;
+
+        // ── Backward-key suppression (replaces clipAtLedge entirely) ──────────
+        // While on ground with blocks, physically stop the backward key from
+        // registering. Movement packets stay 100 % normal — no velocity clamping,
+        // no invisible-sneak signature.
+        if (p.isOnGround() && protect) {
+            mc.options.backKey.setPressed(false);
+        }
+
+        if (!hasBlocks || !p.isOnGround()) {
             consecutivePlacements = 0;
             stepVirtualTowardReal(p);
             return;
         }
 
-        // No horizontal movement — idle
         Vec3d v = p.getVelocity();
         if (Math.abs(v.x) + Math.abs(v.z) < 0.005) {
             consecutivePlacements = 0;
@@ -177,7 +184,7 @@ public final class GodBridge extends Module implements TickListener {
 
         if (autoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
-        // Burst pause: stop placing for a few ticks to look human
+        // Burst pause
         if (burstPauseCooldown > 0) {
             burstPauseCooldown--;
             stepVirtualTowardReal(p);
@@ -194,7 +201,7 @@ public final class GodBridge extends Module implements TickListener {
         if (!mc.world.getBlockState(target).isAir())       { stepVirtualTowardReal(p); return; }
         if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { stepVirtualTowardReal(p); return; }
 
-        // ── Aim point — jittered hit position on the side face ────────────────
+        // ── Jittered aim point on block face ──────────────────────────────────
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         double faceOffX = placeDir.getOffsetX() * 0.5;
         double faceOffZ = placeDir.getOffsetZ() * 0.5;
@@ -208,34 +215,30 @@ public final class GodBridge extends Module implements TickListener {
 
         float[] needed    = calcLook(p.getEyePos(), aimPoint);
         float   needYaw   = needed[0];
-        // Randomise pitch target range slightly each time for variety
         float   pitchMin  = 52f + rng.nextFloat() * 6f;
         float   pitchMax  = 80f + rng.nextFloat() * 6f;
         float   needPitch = MathHelper.clamp(needed[1], pitchMin, pitchMax);
 
-        // ── Virtual server-side rotation (camera stays still) ─────────────────
+        // ── Silent server-side rotation (camera stays still) ──────────────────
         if (Float.isNaN(virtualYaw)) {
             virtualYaw   = p.getYaw();
             virtualPitch = p.getPitch();
         }
 
-        // Vary rotation speed slightly each tick for human feel
-        float maxStep    = rotSpeed.getValueInt() + rng.nextFloat() * 2f - 1f;
+        float maxStep = rotSpeed.getValueInt() + rng.nextFloat() * 2f - 1f;
         virtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(needYaw   - virtualYaw),   -maxStep, maxStep);
         virtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(needPitch - virtualPitch), -maxStep, maxStep);
         virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
 
-        RotationOverride.serverYaw          = virtualYaw;
-        RotationOverride.serverPitch        = virtualPitch;
-        RotationOverride.active             = true;
-        RotationOverride.afterPacketAction  = null;
+        RotationOverride.serverYaw         = virtualYaw;
+        RotationOverride.serverPitch       = virtualPitch;
+        RotationOverride.active            = true;
+        RotationOverride.afterPacketAction = null;
 
-        // Wait until aligned before placing
         float threshold = alignThreshold.getValueInt();
         if (Math.abs(MathHelper.wrapDegrees(needYaw   - virtualYaw)) > threshold) return;
         if (Math.abs(MathHelper.wrapDegrees(needPitch - virtualPitch)) > threshold) return;
 
-        // ── Resolve slot ──────────────────────────────────────────────────────
         int useSlot = resolveBlockSlot();
         if (useSlot == -1) return;
 
@@ -245,8 +248,7 @@ public final class GodBridge extends Module implements TickListener {
 
         if (fUseSlot != fPrev) p.getInventory().setSelectedSlot(fUseSlot);
 
-        // Sneak-sync: randomly press sneak this tick so next movement packet
-        // carries sneak=true, breaking the "never-sneak" bot pattern.
+        // Sneak-sync: random 1-tick sneak to break the never-sneak bot pattern
         if (sneakSync.getValue() && rng.nextInt(4) == 0) {
             mc.options.sneakKey.setPressed(true);
             sneakReleaseNext = true;
@@ -261,17 +263,15 @@ public final class GodBridge extends Module implements TickListener {
                     pp.swingHand(Hand.MAIN_HAND);
                     consecutivePlacements++;
 
-                    // Base delay + random jitter
                     cooldown = placeDelay.getValueInt()
                              + (int)(Math.random() * (placeJitter.getValueInt() + 1));
 
-                    // Burst limit — force a humanisation pause after N blocks
                     int limit = burstLimit.getValueInt();
                     if (consecutivePlacements >= limit) {
                         consecutivePlacements = 0;
-                        int pauseMin = burstPauseMin.getValueInt();
-                        int pauseMax = Math.max(pauseMin, burstPauseMax.getValueInt());
-                        burstPauseCooldown = pauseMin + (int)(Math.random() * (pauseMax - pauseMin + 1));
+                        int pMin = burstPauseMin.getValueInt();
+                        int pMax = Math.max(pMin, burstPauseMax.getValueInt());
+                        burstPauseCooldown = pMin + (int)(Math.random() * (pMax - pMin + 1));
                     }
                 }
             } finally {
@@ -282,21 +282,13 @@ public final class GodBridge extends Module implements TickListener {
         };
     }
 
-    /**
-     * Gradually step virtualYaw/Pitch back toward the player's real camera rotation.
-     * Prevents a sudden yaw snap when bridging pauses or stops.
-     */
     private void stepVirtualTowardReal(ClientPlayerEntity p) {
-        if (Float.isNaN(virtualYaw) || p == null) {
-            disarmOverride();
-            return;
-        }
+        if (Float.isNaN(virtualYaw) || p == null) { disarmOverride(); return; }
         float realYaw   = p.getYaw();
         float realPitch = p.getPitch();
         if (Math.abs(MathHelper.wrapDegrees(realYaw - virtualYaw)) < 4f
                 && Math.abs(MathHelper.wrapDegrees(realPitch - virtualPitch)) < 4f) {
-            virtualYaw   = Float.NaN;
-            virtualPitch = Float.NaN;
+            virtualYaw = Float.NaN; virtualPitch = Float.NaN;
             disarmOverride();
             return;
         }
@@ -315,8 +307,6 @@ public final class GodBridge extends Module implements TickListener {
         RotationOverride.afterPacketAction = null;
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
     private int resolveBlockSlot() {
         if (mc.player == null) return -1;
         int setting = blockSlot.getValueInt();
@@ -333,12 +323,11 @@ public final class GodBridge extends Module implements TickListener {
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {
-        double dx = to.x - from.x;
-        double dy = to.y - from.y;
-        double dz = to.z - from.z;
+        double dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
         double hDist = Math.sqrt(dx * dx + dz * dz);
-        float yaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
-        float pitch = (float) Math.toDegrees(-Math.atan2(dy, hDist));
-        return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
+        return new float[]{
+            (float) Math.toDegrees(Math.atan2(-dx, dz)),
+            MathHelper.clamp((float) Math.toDegrees(-Math.atan2(dy, hDist)), -90f, 90f)
+        };
     }
 }

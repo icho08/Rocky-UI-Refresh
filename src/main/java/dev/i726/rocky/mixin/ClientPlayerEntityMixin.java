@@ -27,12 +27,15 @@ public class ClientPlayerEntityMixin extends AbstractClientPlayerEntity {
 		super(world, profile);
 	}
 
+	/**
+	 * HEAD: fire our movement-packet event, then silently swap the player's
+	 * yaw/pitch to the virtual server-side values so the position packet carries
+	 * the target rotation without the camera moving at all.
+	 */
 	@Inject(method = "sendMovementPackets", at = @At("HEAD"))
 	private void beforeMovementPackets(CallbackInfo ci) {
 		EventManager.fire(new MovementPacketListener.MovementPacketEvent());
 
-		// Silent rotation: swap player yaw/pitch to server-side override so the
-		// position packet carries our target rotation without moving the camera.
 		if (RotationOverride.active) {
 			ClientPlayerEntity self = (ClientPlayerEntity)(Object)this;
 			RotationOverride.savedRealYaw   = self.getYaw();
@@ -42,9 +45,26 @@ public class ClientPlayerEntityMixin extends AbstractClientPlayerEntity {
 		}
 	}
 
+	/**
+	 * RETURN: the position packet has now been sent to the server with the virtual
+	 * rotation.  Run any queued block-placement action FIRST (so Grim receives the
+	 * rotation before the interact), then restore the real camera values.
+	 *
+	 * Packet order Grim sees on a placement tick:
+	 *   PositionAndRotation(virtualYaw, virtualPitch)   ← rotation first
+	 *   InteractBlock(...)                              ← validated OK ✓
+	 *   [next tick] PositionAndRotation(virtual or return-step)
+	 */
 	@Inject(method = "sendMovementPackets", at = @At("RETURN"))
 	private void afterMovementPackets(CallbackInfo ci) {
-		// Restore real camera rotation after the packet has been sent.
+		// Run queued placement action while Grim's rotation state = virtualYaw
+		Runnable action = RotationOverride.afterPacketAction;
+		RotationOverride.afterPacketAction = null;
+		if (action != null) {
+			try { action.run(); } catch (Exception ignored) {}
+		}
+
+		// Restore the real camera rotation — player sees no change
 		if (!Float.isNaN(RotationOverride.savedRealYaw)) {
 			ClientPlayerEntity self = (ClientPlayerEntity)(Object)this;
 			self.setYaw(RotationOverride.savedRealYaw);

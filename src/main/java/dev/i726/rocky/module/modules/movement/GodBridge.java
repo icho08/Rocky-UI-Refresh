@@ -66,9 +66,6 @@ public final class GodBridge extends Module implements TickListener {
             .setDescription(EncryptedString.of("When ON: safe-walk and sprint only activate if you have blocks. When OFF: always active"));
 
     private int cooldown = 0;
-    // Saved yaw/pitch before we started rotating toward the block — restored after place
-    private float savedYaw   = Float.NaN;
-    private float savedPitch = Float.NaN;
 
     public GodBridge() {
         super(EncryptedString.of("God Bridge"),
@@ -92,9 +89,7 @@ public final class GodBridge extends Module implements TickListener {
 
     @Override
     public void onEnable() {
-        cooldown  = 0;
-        savedYaw  = Float.NaN;
-        savedPitch = Float.NaN;
+        cooldown = 0;
         Clutch.placing = false;
         eventManager.add(TickListener.class, this);
         super.onEnable();
@@ -102,7 +97,6 @@ public final class GodBridge extends Module implements TickListener {
 
     @Override
     public void onDisable() {
-        restoreSavedRotation();
         Clutch.placing = false;
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         eventManager.remove(TickListener.class, this);
@@ -114,15 +108,15 @@ public final class GodBridge extends Module implements TickListener {
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
-        if (resolveBlockSlot() == -1) { restoreSavedRotation(); return; }
-        if (!p.isOnGround()) { restoreSavedRotation(); return; }
+        if (resolveBlockSlot() == -1) return;
+        if (!p.isOnGround()) return;
 
         Vec3d v = p.getVelocity();
-        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) { restoreSavedRotation(); return; }
+        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) return;
 
         if (autoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
-        if (cooldown > 0) { cooldown--; restoreSavedRotation(); return; }
+        if (cooldown > 0) { cooldown--; return; }
 
         // ── Direction: facing-based (stable), not velocity-based ──────────────
         // In god bridge the player faces the destination and walks backward.
@@ -131,8 +125,8 @@ public final class GodBridge extends Module implements TickListener {
         BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
         BlockPos  target   = standing.offset(placeDir);
 
-        if (!mc.world.getBlockState(target).isAir()) { restoreSavedRotation(); return; }
-        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { restoreSavedRotation(); return; }
+        if (!mc.world.getBlockState(target).isAir()) return;
+        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) return;
 
         // ── Aim point on the side face of the standing block ──────────────────
         ThreadLocalRandom rng = ThreadLocalRandom.current();
@@ -151,29 +145,19 @@ public final class GodBridge extends Module implements TickListener {
         float   needPitch = MathHelper.clamp(needed[1], 55f, 85f);
 
         // ── Smooth camera rotation ────────────────────────────────────────────
-        // Save the player's real looking direction on first approach so we can
-        // restore it cleanly after the placement.
-        if (Float.isNaN(savedYaw)) {
-            savedYaw   = p.getYaw();
-            savedPitch = p.getPitch();
-        }
-
-        float speed     = rotSpeed.getValueInt();
-        float curYaw    = p.getYaw();
-        float curPitch  = p.getPitch();
-        float newYaw    = lerpAngle(curYaw,   needYaw,   speed / 90f);
-        float newPitch  = lerpAngle(curPitch, needPitch, speed / 90f);
-
-        // Apply rotation via player state — carried to server in next position packet,
-        // no separate LookAndOnGround packet needed.
+        // Lerp the actual camera toward the block face — the server sees this via
+        // normal position packets. No save/restore: after placement the camera stays
+        // where it is; the player's mouse naturally drifts it back with zero shake.
+        float speed    = rotSpeed.getValueInt();
+        float newYaw   = lerpAngle(p.getYaw(),   needYaw,   speed / 90f);
+        float newPitch = lerpAngle(p.getPitch(),  needPitch, speed / 90f);
         p.setYaw(newYaw);
         p.setPitch(newPitch);
 
-        // Only place when camera is actually aligned with the target face
-        float yawDiff   = Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw));
-        float pitchDiff = Math.abs(MathHelper.wrapDegrees(needPitch - newPitch));
+        // Only place when camera is close enough to the target face
         float threshold = alignThreshold.getValueInt();
-        if (yawDiff > threshold || pitchDiff > threshold) return; // still rotating
+        if (Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw)) > threshold) return;
+        if (Math.abs(MathHelper.wrapDegrees(needPitch - newPitch)) > threshold) return;
 
         // ── Place block ───────────────────────────────────────────────────────
         int useSlot  = resolveBlockSlot();
@@ -189,12 +173,6 @@ public final class GodBridge extends Module implements TickListener {
                 p.swingHand(Hand.MAIN_HAND);
                 cooldown = placeDelay.getValueInt()
                          + (int)(Math.random() * (placeJitter.getValueInt() + 1));
-                // Restore real rotation immediately after the place
-                restoreSavedRotation();
-                p.setYaw(savedYaw);
-                p.setPitch(savedPitch);
-                savedYaw   = Float.NaN;
-                savedPitch = Float.NaN;
             }
         } finally {
             Clutch.placing = false;
@@ -203,14 +181,6 @@ public final class GodBridge extends Module implements TickListener {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    private void restoreSavedRotation() {
-        if (Float.isNaN(savedYaw) || mc.player == null) return;
-        mc.player.setYaw(savedYaw);
-        mc.player.setPitch(savedPitch);
-        savedYaw   = Float.NaN;
-        savedPitch = Float.NaN;
-    }
 
     /** Linearly interpolates an angle (handles 0°/360° wrap). t=1 = instant snap. */
     private static float lerpAngle(float from, float to, float t) {

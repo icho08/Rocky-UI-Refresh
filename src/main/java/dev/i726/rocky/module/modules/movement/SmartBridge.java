@@ -96,9 +96,6 @@ public final class SmartBridge extends Module implements TickListener {
     private int   lastBlockCount     = -1;
     private float lastHealth         = 20f;
     private boolean healthInitialized = false;
-    // Saved rotation before we started lerping the camera toward the block face
-    private float savedYaw   = Float.NaN;
-    private float savedPitch = Float.NaN;
 
     public SmartBridge() {
         super(EncryptedString.of("Smart Bridge"),
@@ -117,15 +114,12 @@ public final class SmartBridge extends Module implements TickListener {
         healthInitialized   = false;
         lastBlockCount      = -1;
         safeWalkActive      = false;
-        savedYaw            = Float.NaN;
-        savedPitch          = Float.NaN;
     }
 
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
         safeWalkActive = false;
-        restoreGodRotation();
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         Clutch.placing = false;
     }
@@ -175,13 +169,11 @@ public final class SmartBridge extends Module implements TickListener {
         if (!hasBlocks && requireBlocks.getValue()) {
             safeWalkActive = false;
             mc.options.sneakKey.setPressed(false);
-            restoreGodRotation();
             return;
         }
 
         if (!p.isOnGround()) {
             mc.options.sneakKey.setPressed(false);
-            restoreGodRotation();
             return;
         }
 
@@ -207,7 +199,7 @@ public final class SmartBridge extends Module implements TickListener {
 
         // ── Direction (facing-based, not velocity-based) ───────────────────
         Vec3d v = p.getVelocity();
-        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) { restoreGodRotation(); return; }
+        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) return;
 
         if (godAutoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
@@ -217,10 +209,10 @@ public final class SmartBridge extends Module implements TickListener {
         BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
         BlockPos  target   = standing.offset(placeDir);
 
-        if (!mc.world.getBlockState(target).isAir()) { restoreGodRotation(); return; }
-        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { restoreGodRotation(); return; }
+        if (!mc.world.getBlockState(target).isAir()) return;
+        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) return;
 
-        if (placeCooldown > 0) { restoreGodRotation(); return; }
+        if (placeCooldown > 0) return;
 
         // ── Aim point on the side face ─────────────────────────────────────
         ThreadLocalRandom rng = ThreadLocalRandom.current();
@@ -234,28 +226,22 @@ public final class SmartBridge extends Module implements TickListener {
                 -0.2 + jitterY,
                 faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
-        // ── Smooth camera rotation (no special packets) ────────────────────
-        float[] needed     = calcLook(p.getEyePos(), aimPoint);
-        float   needYaw    = needed[0];
-        float   needPitch  = MathHelper.clamp(needed[1], 55f, 85f);
+        // ── Smooth camera rotation (no save/restore — zero shake) ──────────
+        // Lerp the camera toward the block face. After placement the camera
+        // stays wherever it ended up; the player's mouse drifts it back naturally.
+        // No snap-backs, no oscillation, no shake.
+        float[] needed    = calcLook(p.getEyePos(), aimPoint);
+        float   needYaw   = needed[0];
+        float   needPitch = MathHelper.clamp(needed[1], 55f, 85f);
 
-        // First approach this cycle — save original rotation for restoration
-        if (Float.isNaN(savedYaw)) {
-            savedYaw   = p.getYaw();
-            savedPitch = p.getPitch();
-        }
-
-        // Lerp at ~12°/tick — fast enough to align in 2-3 ticks, slow enough
-        // to look like human mouse movement to the anticheat
-        float newYaw   = lerpAngle(p.getYaw(),   needYaw,   0.55f);
-        float newPitch = lerpAngle(p.getPitch(),  needPitch, 0.55f);
+        float newYaw   = lerpAngle(p.getYaw(),   needYaw,   0.25f);
+        float newPitch = lerpAngle(p.getPitch(),  needPitch, 0.25f);
         p.setYaw(newYaw);
         p.setPitch(newPitch);
 
         // Only place once camera is close enough to the target face
-        float yawDiff   = Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw));
-        float pitchDiff = Math.abs(MathHelper.wrapDegrees(needPitch - newPitch));
-        if (yawDiff > 18f || pitchDiff > 18f) return; // still rotating
+        if (Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw)) > 18f) return;
+        if (Math.abs(MathHelper.wrapDegrees(needPitch - newPitch)) > 18f) return;
 
         // ── Place block ───────────────────────────────────────────────────
         int useSlot  = resolveBlockSlot();
@@ -272,8 +258,6 @@ public final class SmartBridge extends Module implements TickListener {
                 phaseBlocksPlaced++;
                 placeCooldown = 2 + rng.nextInt(3);
                 if (phaseBlocksPlaced >= currentPhaseTarget) advancePhase();
-                // Restore real rotation right after the block is registered
-                restoreGodRotation();
             }
         } finally {
             Clutch.placing = false;
@@ -386,14 +370,6 @@ public final class SmartBridge extends Module implements TickListener {
     private boolean isHoldingBlock() {
         if (mc.player == null) return false;
         return mc.player.getMainHandStack().getItem() instanceof BlockItem;
-    }
-
-    private void restoreGodRotation() {
-        if (Float.isNaN(savedYaw) || mc.player == null) return;
-        mc.player.setYaw(savedYaw);
-        mc.player.setPitch(savedPitch);
-        savedYaw   = Float.NaN;
-        savedPitch = Float.NaN;
     }
 
     private static float lerpAngle(float from, float to, float t) {

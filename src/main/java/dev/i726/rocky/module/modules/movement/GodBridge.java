@@ -161,12 +161,16 @@ public final class GodBridge extends Module implements TickListener {
         boolean hasBlocks = resolveBlockSlot() != -1;
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
-        // ── Backward-key suppression (replaces clipAtLedge entirely) ──────────
-        // While on ground with blocks, physically stop the backward key from
-        // registering. Movement packets stay 100 % normal — no velocity clamping,
-        // no invisible-sneak signature.
+        // ── Backward-key suppression — only when near the back edge ──────────
+        // Only suppress S when the player is within 0.4 blocks of the edge they
+        // would fall off (the face where the next block gets placed). In the
+        // middle of a block the key works normally; suppression only fires as
+        // they approach the dangerous ledge. Movement packets stay 100 % normal.
         if (p.isOnGround() && protect) {
-            mc.options.backKey.setPressed(false);
+            Direction backDir = p.getHorizontalFacing().getOpposite();
+            if (isNearBackEdge(p, backDir)) {
+                mc.options.backKey.setPressed(false);
+            }
         }
 
         if (!hasBlocks || !p.isOnGround()) {
@@ -320,6 +324,28 @@ public final class GodBridge extends Module implements TickListener {
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) return i;
         }
         return -1;
+    }
+
+    /**
+     * Returns true when the player's centre is within 0.4 blocks of the edge
+     * they would fall off in {@code dir} AND the block beyond that edge is air.
+     * Only in this narrow zone does backward-key suppression activate.
+     */
+    private boolean isNearBackEdge(ClientPlayerEntity p, Direction dir) {
+        if (mc.world == null) return false;
+        BlockPos standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
+        // Only suppress when the block we'd fall into is still air
+        if (!mc.world.getBlockState(standing.offset(dir)).isAir()) return false;
+
+        double px = p.getX(), pz = p.getZ();
+        double dist;
+        switch (dir) {
+            case NORTH -> dist = pz - Math.floor(pz);          // distance to north (−Z) edge
+            case SOUTH -> dist = Math.ceil(pz) - pz;           // distance to south (+Z) edge
+            case WEST  -> dist = px - Math.floor(px);          // distance to west  (−X) edge
+            default    -> dist = Math.ceil(px) - px;           // distance to east  (+X) edge
+        }
+        return dist < 0.4;
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {

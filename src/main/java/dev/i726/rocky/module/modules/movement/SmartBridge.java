@@ -222,11 +222,14 @@ public final class SmartBridge extends Module implements TickListener {
         boolean hasBlocks = isHoldingBlock();
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
-        // ── Backward key suppression ──────────────────────────────────────────
-        // Replaces clipAtLedge. No velocity-clamping signature; movement packets
-        // look 100 % normal. Player simply cannot move backward while bridging.
+        // ── Backward key suppression — only when near the back edge ──────────
+        // Suppress S only within 0.4 blocks of the dangerous ledge, not the
+        // whole time. Player can move backward freely in the middle of a block.
         if (p.isOnGround() && protect) {
-            mc.options.backKey.setPressed(false);
+            Direction backDir = p.getHorizontalFacing().getOpposite();
+            if (isNearBackEdge(p, backDir)) {
+                mc.options.backKey.setPressed(false);
+            }
         }
 
         if (!hasBlocks && requireBlocks.getValue()) {
@@ -477,6 +480,27 @@ public final class SmartBridge extends Module implements TickListener {
     private boolean isHoldingBlock() {
         if (mc.player == null) return false;
         return mc.player.getMainHandStack().getItem() instanceof BlockItem;
+    }
+
+    /**
+     * Returns true when the player's centre is within 0.4 blocks of the edge
+     * in {@code dir} AND the block beyond that edge is still air.
+     * Backward-key suppression only fires inside this narrow danger zone.
+     */
+    private boolean isNearBackEdge(ClientPlayerEntity p, Direction dir) {
+        if (mc.world == null) return false;
+        BlockPos standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
+        if (!mc.world.getBlockState(standing.offset(dir)).isAir()) return false;
+
+        double px = p.getX(), pz = p.getZ();
+        double dist;
+        switch (dir) {
+            case NORTH -> dist = pz - Math.floor(pz);
+            case SOUTH -> dist = Math.ceil(pz) - pz;
+            case WEST  -> dist = px - Math.floor(px);
+            default    -> dist = Math.ceil(px) - px;
+        }
+        return dist < 0.4;
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {

@@ -161,14 +161,12 @@ public final class GodBridge extends Module implements TickListener {
         boolean hasBlocks = resolveBlockSlot() != -1;
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
-        // ── Backward-key suppression — only when near the back edge ──────────
-        // Only suppress S when the player is within 0.4 blocks of the edge they
-        // would fall off (the face where the next block gets placed). In the
-        // middle of a block the key works normally; suppression only fires as
-        // they approach the dangerous ledge. Movement packets stay 100 % normal.
+        // ── Emergency brake — extreme edge only (0.12 blocks) ────────────────
+        // Key suppression is only a last-resort safety net, not the main
+        // bypass mechanism. Player can move backward freely everywhere else.
         if (p.isOnGround() && protect) {
             Direction backDir = p.getHorizontalFacing().getOpposite();
-            if (isNearBackEdge(p, backDir)) {
+            if (isNearBackEdge(p, backDir, 0.12)) {
                 mc.options.backKey.setPressed(false);
             }
         }
@@ -197,12 +195,21 @@ public final class GodBridge extends Module implements TickListener {
 
         if (cooldown > 0) { cooldown--; stepVirtualTowardReal(p); return; }
 
-        // ── Target block behind player ─────────────────────────────────────────
-        Direction placeDir = p.getHorizontalFacing().getOpposite();
-        BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
-        BlockPos  target   = standing.offset(placeDir);
+        // ── Target block behind player + predictive check ─────────────────────
+        // Compute both current and next-tick standing block. If the player will
+        // step onto air NEXT tick, trigger placement NOW (predictive) so the
+        // block is already there when they arrive — Grim never sees them airborne.
+        Direction placeDir  = p.getHorizontalFacing().getOpposite();
+        BlockPos  standing  = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
+        BlockPos  target    = standing.offset(placeDir);
 
-        if (!mc.world.getBlockState(target).isAir())       { stepVirtualTowardReal(p); return; }
+        BlockPos  nextStand = BlockPos.ofFloored(p.getX() + v.x, p.getY() - 1, p.getZ() + v.z);
+        boolean   targetAir = mc.world.getBlockState(target).isAir();
+        // Predictive: player will land on a different (air) block next tick
+        boolean   nextAir   = !nextStand.equals(standing)
+                           && mc.world.getBlockState(nextStand).isAir();
+
+        if (!targetAir && !nextAir) { stepVirtualTowardReal(p); return; }
         if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { stepVirtualTowardReal(p); return; }
 
         // ── Jittered aim point on block face ──────────────────────────────────
@@ -252,8 +259,15 @@ public final class GodBridge extends Module implements TickListener {
 
         if (fUseSlot != fPrev) p.getInventory().setSelectedSlot(fUseSlot);
 
-        // Sneak-sync: random 1-tick sneak to break the never-sneak bot pattern
-        if (sneakSync.getValue() && rng.nextInt(4) == 0) {
+        // ── Edge sneak — fires on EVERY ledge tick, not randomly ─────────────
+        // When the player is within 0.35 blocks of the back edge (about to step
+        // off), press sneak for this tick only. The movement packet that Grim
+        // receives will carry sneak=true, which is the only legitimate vanilla
+        // reason to not fall off the ledge → no flag. Sneak is released in
+        // afterPacketAction immediately after a successful placement, or next
+        // tick if placement didn't fire, so sprint resumes as fast as possible.
+        boolean edgeSneak = sneakSync.getValue() && isNearBackEdge(p, placeDir, 0.35);
+        if (edgeSneak) {
             mc.options.sneakKey.setPressed(true);
             sneakReleaseNext = true;
         }
@@ -265,8 +279,11 @@ public final class GodBridge extends Module implements TickListener {
             try {
                 if (mc.interactionManager.interactBlock(pp, Hand.MAIN_HAND, bhr).isAccepted()) {
                     pp.swingHand(Hand.MAIN_HAND);
-                    consecutivePlacements++;
+                    // Release sneak immediately — sprint resumes next tick
+                    mc.options.sneakKey.setPressed(false);
+                    sneakReleaseNext = false;
 
+                    consecutivePlacements++;
                     cooldown = placeDelay.getValueInt()
                              + (int)(Math.random() * (placeJitter.getValueInt() + 1));
 
@@ -327,25 +344,24 @@ public final class GodBridge extends Module implements TickListener {
     }
 
     /**
-     * Returns true when the player's centre is within 0.4 blocks of the edge
-     * they would fall off in {@code dir} AND the block beyond that edge is air.
-     * Only in this narrow zone does backward-key suppression activate.
+     * Returns true when the player's centre is within {@code threshold} blocks
+     * of the edge in {@code dir} AND the block beyond that edge is air.
+     *
+     * @param threshold  0.12 for emergency key-brake; 0.35 for edge-sneak trigger.
      */
-    private boolean isNearBackEdge(ClientPlayerEntity p, Direction dir) {
+    private boolean isNearBackEdge(ClientPlayerEntity p, Direction dir, double threshold) {
         if (mc.world == null) return false;
         BlockPos standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
-        // Only suppress when the block we'd fall into is still air
         if (!mc.world.getBlockState(standing.offset(dir)).isAir()) return false;
 
         double px = p.getX(), pz = p.getZ();
-        double dist;
-        switch (dir) {
-            case NORTH -> dist = pz - Math.floor(pz);          // distance to north (−Z) edge
-            case SOUTH -> dist = Math.ceil(pz) - pz;           // distance to south (+Z) edge
-            case WEST  -> dist = px - Math.floor(px);          // distance to west  (−X) edge
-            default    -> dist = Math.ceil(px) - px;           // distance to east  (+X) edge
-        }
-        return dist < 0.4;
+        double dist = switch (dir) {
+            case NORTH -> pz - Math.floor(pz);       // distance to north (−Z) edge
+            case SOUTH -> Math.ceil(pz) - pz;         // distance to south (+Z) edge
+            case WEST  -> px - Math.floor(px);        // distance to west  (−X) edge
+            default    -> Math.ceil(px) - px;          // distance to east  (+X) edge
+        };
+        return dist < threshold;
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {

@@ -222,12 +222,10 @@ public final class SmartBridge extends Module implements TickListener {
         boolean hasBlocks = isHoldingBlock();
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
-        // ── Backward key suppression — only when near the back edge ──────────
-        // Suppress S only within 0.4 blocks of the dangerous ledge, not the
-        // whole time. Player can move backward freely in the middle of a block.
+        // ── Emergency brake — extreme edge only (0.12 blocks) ────────────────
         if (p.isOnGround() && protect) {
             Direction backDir = p.getHorizontalFacing().getOpposite();
-            if (isNearBackEdge(p, backDir)) {
+            if (isNearBackEdge(p, backDir, 0.12)) {
                 mc.options.backKey.setPressed(false);
             }
         }
@@ -259,12 +257,16 @@ public final class SmartBridge extends Module implements TickListener {
 
         if (placeCooldown > 0) { stepGodVirtualTowardReal(p); return; }
 
-        // ── Target block behind player ─────────────────────────────────────────
-        Direction placeDir = p.getHorizontalFacing().getOpposite();
-        BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
-        BlockPos  target   = standing.offset(placeDir);
+        // ── Target block + predictive check ───────────────────────────────────
+        Direction placeDir  = p.getHorizontalFacing().getOpposite();
+        BlockPos  standing  = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
+        BlockPos  target    = standing.offset(placeDir);
+        Vec3d     vel       = p.getVelocity();
+        BlockPos  nextStand = BlockPos.ofFloored(p.getX() + vel.x, p.getY() - 1, p.getZ() + vel.z);
+        boolean   targetAir = mc.world.getBlockState(target).isAir();
+        boolean   nextAir   = !nextStand.equals(standing) && mc.world.getBlockState(nextStand).isAir();
 
-        if (!mc.world.getBlockState(target).isAir())       { stepGodVirtualTowardReal(p); return; }
+        if (!targetAir && !nextAir) { stepGodVirtualTowardReal(p); return; }
         if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { stepGodVirtualTowardReal(p); return; }
 
         ThreadLocalRandom rng = ThreadLocalRandom.current();
@@ -311,8 +313,11 @@ public final class SmartBridge extends Module implements TickListener {
 
         if (fUseSlot != fPrev) p.getInventory().setSelectedSlot(fUseSlot);
 
-        // Sneak-sync: random 1-tick sneak, breaks never-sneak bot signature
-        if (sneakSync.getValue() && rng.nextInt(4) == 0) {
+        // Edge sneak: fire on every tick where player is within 0.35 of the ledge.
+        // Released immediately in afterPacketAction on success so sprint resumes
+        // as soon as the block is confirmed placed.
+        boolean edgeSneak = sneakSync.getValue() && isNearBackEdge(p, placeDir, 0.35);
+        if (edgeSneak) {
             mc.options.sneakKey.setPressed(true);
             sneakReleaseNext = true;
         }
@@ -324,6 +329,10 @@ public final class SmartBridge extends Module implements TickListener {
             try {
                 if (mc.interactionManager.interactBlock(pp, Hand.MAIN_HAND, bhr).isAccepted()) {
                     pp.swingHand(Hand.MAIN_HAND);
+                    // Release sneak immediately — sprint resumes next tick
+                    mc.options.sneakKey.setPressed(false);
+                    sneakReleaseNext = false;
+
                     phaseBlocksPlaced++;
                     consecutivePlacements++;
 
@@ -483,24 +492,24 @@ public final class SmartBridge extends Module implements TickListener {
     }
 
     /**
-     * Returns true when the player's centre is within 0.4 blocks of the edge
-     * in {@code dir} AND the block beyond that edge is still air.
-     * Backward-key suppression only fires inside this narrow danger zone.
+     * Returns true when the player's centre is within {@code threshold} blocks
+     * of the edge in {@code dir} AND the block beyond that edge is still air.
+     *
+     * @param threshold  0.12 for emergency key-brake; 0.35 for edge-sneak trigger.
      */
-    private boolean isNearBackEdge(ClientPlayerEntity p, Direction dir) {
+    private boolean isNearBackEdge(ClientPlayerEntity p, Direction dir, double threshold) {
         if (mc.world == null) return false;
         BlockPos standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
         if (!mc.world.getBlockState(standing.offset(dir)).isAir()) return false;
 
         double px = p.getX(), pz = p.getZ();
-        double dist;
-        switch (dir) {
-            case NORTH -> dist = pz - Math.floor(pz);
-            case SOUTH -> dist = Math.ceil(pz) - pz;
-            case WEST  -> dist = px - Math.floor(px);
-            default    -> dist = Math.ceil(px) - px;
-        }
-        return dist < 0.4;
+        double dist = switch (dir) {
+            case NORTH -> pz - Math.floor(pz);
+            case SOUTH -> Math.ceil(pz) - pz;
+            case WEST  -> px - Math.floor(px);
+            default    -> Math.ceil(px) - px;
+        };
+        return dist < threshold;
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {

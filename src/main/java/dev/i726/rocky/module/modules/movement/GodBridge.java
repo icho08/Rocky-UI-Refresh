@@ -6,6 +6,7 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
+import dev.i726.rocky.utils.RotationOverride;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
@@ -24,11 +25,10 @@ import java.util.concurrent.ThreadLocalRandom;
  * Direction: always uses the player's FACING direction (opposite = behind them).
  * Velocity is NOT used for direction — diagonal movement makes it unreliable.
  *
- * Rotation: smoothly lerps the player's actual camera (setYaw/setPitch) toward
- * the block face each tick. The server receives this via normal movement packets
- * — no special LookAndOnGround packets, no instant snap, no bot signature.
- * The block is placed once the camera is within the alignment threshold.
- * After placement the camera snaps back immediately (1-tick correction is normal).
+ * Rotation: silent server-side rotation via RotationOverride. A virtual yaw/pitch
+ * gradually steps toward the block face each tick. ClientPlayerEntityMixin swaps
+ * these into the movement packet silently then immediately restores the real camera
+ * — the player sees zero camera movement. Block placed once virtual rotation aligns.
  *
  * SafeWalk: PlayerEntityMixin.clipAtLedge returns true when enabled, giving
  * the same edge-clip as vanilla sneaking with zero extra packets.
@@ -65,7 +65,11 @@ public final class GodBridge extends Module implements TickListener {
             EncryptedString.of("Require Blocks"), true)
             .setDescription(EncryptedString.of("When ON: safe-walk and sprint only activate if you have blocks. When OFF: always active"));
 
-    private int cooldown = 0;
+    private int   cooldown      = 0;
+    // Virtual server-side rotation, gradually stepped toward the block face.
+    // The camera never sees these — RotationOverride swaps them into the packet.
+    private float virtualYaw   = Float.NaN;
+    private float virtualPitch = Float.NaN;
 
     public GodBridge() {
         super(EncryptedString.of("God Bridge"),
@@ -89,7 +93,9 @@ public final class GodBridge extends Module implements TickListener {
 
     @Override
     public void onEnable() {
-        cooldown = 0;
+        cooldown      = 0;
+        virtualYaw    = Float.NaN;
+        virtualPitch  = Float.NaN;
         Clutch.placing = false;
         eventManager.add(TickListener.class, this);
         super.onEnable();
@@ -98,6 +104,9 @@ public final class GodBridge extends Module implements TickListener {
     @Override
     public void onDisable() {
         Clutch.placing = false;
+        RotationOverride.active = false;
+        virtualYaw   = Float.NaN;
+        virtualPitch = Float.NaN;
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         eventManager.remove(TickListener.class, this);
         super.onDisable();
@@ -105,6 +114,9 @@ public final class GodBridge extends Module implements TickListener {
 
     @Override
     public void onTick() {
+        // Clear silent rotation every tick; the code below re-arms it when needed.
+        RotationOverride.active = false;
+
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
@@ -112,7 +124,13 @@ public final class GodBridge extends Module implements TickListener {
         if (!p.isOnGround()) return;
 
         Vec3d v = p.getVelocity();
-        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) return;
+        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) {
+            // Player is stationary — reset virtual rotation so it re-syncs to
+            // real camera next time bridging starts.
+            virtualYaw   = Float.NaN;
+            virtualPitch = Float.NaN;
+            return;
+        }
 
         if (autoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
@@ -144,20 +162,29 @@ public final class GodBridge extends Module implements TickListener {
         float   needYaw   = needed[0];
         float   needPitch = MathHelper.clamp(needed[1], 55f, 85f);
 
-        // ── Smooth camera rotation ────────────────────────────────────────────
-        // Lerp the actual camera toward the block face — the server sees this via
-        // normal position packets. No save/restore: after placement the camera stays
-        // where it is; the player's mouse naturally drifts it back with zero shake.
-        float speed    = rotSpeed.getValueInt();
-        float newYaw   = lerpAngle(p.getYaw(),   needYaw,   speed / 90f);
-        float newPitch = lerpAngle(p.getPitch(),  needPitch, speed / 90f);
-        p.setYaw(newYaw);
-        p.setPitch(newPitch);
+        // ── Silent server-side rotation (camera never moves) ──────────────────
+        // virtualYaw/Pitch track the rotation we want the server to see.
+        // RotationOverride swaps them into the movement packet then immediately
+        // restores the real camera values — the player sees zero movement.
+        if (Float.isNaN(virtualYaw)) {
+            virtualYaw   = p.getYaw();
+            virtualPitch = p.getPitch();
+        }
 
-        // Only place when camera is close enough to the target face
+        float maxStep = rotSpeed.getValueInt(); // degrees per tick
+        virtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(needYaw   - virtualYaw),   -maxStep, maxStep);
+        virtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(needPitch - virtualPitch), -maxStep, maxStep);
+        virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
+
+        // Arm the mixin — next movement packet will silently carry these values
+        RotationOverride.serverYaw   = virtualYaw;
+        RotationOverride.serverPitch = virtualPitch;
+        RotationOverride.active      = true;
+
+        // Only place once the silent rotation is close enough to the block face
         float threshold = alignThreshold.getValueInt();
-        if (Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw)) > threshold) return;
-        if (Math.abs(MathHelper.wrapDegrees(needPitch - newPitch)) > threshold) return;
+        if (Math.abs(MathHelper.wrapDegrees(needYaw   - virtualYaw)) > threshold) return;
+        if (Math.abs(MathHelper.wrapDegrees(needPitch - virtualPitch)) > threshold) return;
 
         // ── Place block ───────────────────────────────────────────────────────
         int useSlot  = resolveBlockSlot();
@@ -181,12 +208,6 @@ public final class GodBridge extends Module implements TickListener {
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-
-    /** Linearly interpolates an angle (handles 0°/360° wrap). t=1 = instant snap. */
-    private static float lerpAngle(float from, float to, float t) {
-        float delta = MathHelper.wrapDegrees(to - from);
-        return from + delta * MathHelper.clamp(t, 0f, 1f);
-    }
 
     private int resolveBlockSlot() {
         if (mc.player == null) return -1;

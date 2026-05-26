@@ -7,6 +7,7 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
+import dev.i726.rocky.utils.RotationOverride;
 import net.minecraft.client.network.ClientPlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.ItemStack;
@@ -96,6 +97,9 @@ public final class SmartBridge extends Module implements TickListener {
     private int   lastBlockCount     = -1;
     private float lastHealth         = 20f;
     private boolean healthInitialized = false;
+    // Virtual server-side rotation for the god phase (camera never moves).
+    private float godVirtualYaw   = Float.NaN;
+    private float godVirtualPitch = Float.NaN;
 
     public SmartBridge() {
         super(EncryptedString.of("Smart Bridge"),
@@ -119,7 +123,10 @@ public final class SmartBridge extends Module implements TickListener {
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
-        safeWalkActive = false;
+        safeWalkActive  = false;
+        RotationOverride.active = false;
+        godVirtualYaw   = Float.NaN;
+        godVirtualPitch = Float.NaN;
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         Clutch.placing = false;
     }
@@ -155,19 +162,23 @@ public final class SmartBridge extends Module implements TickListener {
 
     // ── God Phase ─────────────────────────────────────────────────────────────
     /**
-     * Direction fix: always use the player's FACING direction (opposite = behind them).
-     * Velocity-based cardinals fail on diagonal movement, placing blocks sideways.
-     *
-     * Rotation fix: smoothly lerp the actual camera toward the block face each tick.
-     * The server receives the rotation via normal position packets — no LookAndOnGround
-     * packet, no instant 180° snap, no bot signature. Block is placed once aligned.
+     * Direction: always uses player's FACING direction (opposite = behind them).
+     * Rotation: silent server-side rotation via RotationOverride — the virtual
+     * yaw/pitch gradually step toward the block face each tick while the camera
+     * stays completely still. Blocks are placed once the server-side rotation
+     * aligns; no LookAndOnGround packets, no camera movement, no bot signature.
      */
     private void runGodPhase(ClientPlayerEntity p) {
+        // Clear override every entry; the rotation block below re-arms when ready.
+        RotationOverride.active = false;
+
         boolean hasBlocks = isHoldingBlock();
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
         if (!hasBlocks && requireBlocks.getValue()) {
-            safeWalkActive = false;
+            safeWalkActive  = false;
+            godVirtualYaw   = Float.NaN;
+            godVirtualPitch = Float.NaN;
             mc.options.sneakKey.setPressed(false);
             return;
         }
@@ -199,7 +210,12 @@ public final class SmartBridge extends Module implements TickListener {
 
         // ── Direction (facing-based, not velocity-based) ───────────────────
         Vec3d v = p.getVelocity();
-        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) return;
+        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) {
+            // Stationary — reset virtual rotation so it re-syncs to camera next time
+            godVirtualYaw   = Float.NaN;
+            godVirtualPitch = Float.NaN;
+            return;
+        }
 
         if (godAutoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
@@ -226,22 +242,32 @@ public final class SmartBridge extends Module implements TickListener {
                 -0.2 + jitterY,
                 faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
 
-        // ── Smooth camera rotation (no save/restore — zero shake) ──────────
-        // Lerp the camera toward the block face. After placement the camera
-        // stays wherever it ended up; the player's mouse drifts it back naturally.
-        // No snap-backs, no oscillation, no shake.
+        // ── Silent server-side rotation (camera never moves) ──────────────────
+        // godVirtualYaw/Pitch track the rotation the server will see.
+        // RotationOverride swaps them in at packet-send time then immediately
+        // restores the real camera — zero visible camera movement.
         float[] needed    = calcLook(p.getEyePos(), aimPoint);
         float   needYaw   = needed[0];
         float   needPitch = MathHelper.clamp(needed[1], 55f, 85f);
 
-        float newYaw   = lerpAngle(p.getYaw(),   needYaw,   0.25f);
-        float newPitch = lerpAngle(p.getPitch(),  needPitch, 0.25f);
-        p.setYaw(newYaw);
-        p.setPitch(newPitch);
+        if (Float.isNaN(godVirtualYaw)) {
+            godVirtualYaw   = p.getYaw();
+            godVirtualPitch = p.getPitch();
+        }
 
-        // Only place once camera is close enough to the target face
-        if (Math.abs(MathHelper.wrapDegrees(needYaw   - newYaw)) > 18f) return;
-        if (Math.abs(MathHelper.wrapDegrees(needPitch - newPitch)) > 18f) return;
+        float maxStep = 40f; // degrees per tick — within human-believable speed
+        godVirtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(needYaw   - godVirtualYaw),   -maxStep, maxStep);
+        godVirtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(needPitch - godVirtualPitch), -maxStep, maxStep);
+        godVirtualPitch  = MathHelper.clamp(godVirtualPitch, -90f, 90f);
+
+        // Arm the mixin — next movement packet will silently carry these values
+        RotationOverride.serverYaw   = godVirtualYaw;
+        RotationOverride.serverPitch = godVirtualPitch;
+        RotationOverride.active      = true;
+
+        // Only place once the silent rotation is aligned to the block face
+        if (Math.abs(MathHelper.wrapDegrees(needYaw   - godVirtualYaw)) > 18f) return;
+        if (Math.abs(MathHelper.wrapDegrees(needPitch - godVirtualPitch)) > 18f) return;
 
         // ── Place block ───────────────────────────────────────────────────
         int useSlot  = resolveBlockSlot();
@@ -289,6 +315,10 @@ public final class SmartBridge extends Module implements TickListener {
 
     private void advancePhase() {
         phaseBlocksPlaced = 0;
+        // Clear virtual rotation so it re-initialises cleanly on the next phase start
+        godVirtualYaw   = Float.NaN;
+        godVirtualPitch = Float.NaN;
+        RotationOverride.active = false;
         if (phase == Phase.GOD) {
             phase = Phase.ASSIST;
             safeWalkActive = false;
@@ -370,11 +400,6 @@ public final class SmartBridge extends Module implements TickListener {
     private boolean isHoldingBlock() {
         if (mc.player == null) return false;
         return mc.player.getMainHandStack().getItem() instanceof BlockItem;
-    }
-
-    private static float lerpAngle(float from, float to, float t) {
-        float delta = MathHelper.wrapDegrees(to - from);
-        return from + delta * MathHelper.clamp(t, 0f, 1f);
     }
 
     private static float[] calcLook(Vec3d from, Vec3d to) {

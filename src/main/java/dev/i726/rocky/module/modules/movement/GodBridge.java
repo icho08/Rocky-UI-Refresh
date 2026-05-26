@@ -20,18 +20,21 @@ import net.minecraft.util.math.Vec3d;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * GodBridge — undetectable god bridging.
+ * GodBridge — undetectable god bridging for Minecraft 1.21.x (Grim/NCP bypass).
  *
- * Direction: always uses the player's FACING direction (opposite = behind them).
- * Velocity is NOT used for direction — diagonal movement makes it unreliable.
+ * Anti-detection measures:
+ *  - Silent server-side rotation (RotationOverride) — the camera never moves.
+ *  - Virtual yaw/pitch gradually step toward the target; no instant snap-back.
+ *  - Burst limit: after N consecutive placements, force a randomised pause so
+ *    the server never sees an infinite machine-perfect placement streak.
+ *  - Sneak sync: on a random subset of placements, briefly press the sneak key
+ *    (1 tick) to break the "never-sneak + god-place" bot signature.
+ *  - Jittered hit-point on the block face so every interact packet looks subtly
+ *    different to packet inspectors.
  *
- * Rotation: silent server-side rotation via RotationOverride. A virtual yaw/pitch
- * gradually steps toward the block face each tick. ClientPlayerEntityMixin swaps
- * these into the movement packet silently then immediately restores the real camera
- * — the player sees zero camera movement. Block placed once virtual rotation aligns.
- *
- * SafeWalk: PlayerEntityMixin.clipAtLedge returns true when enabled, giving
- * the same edge-clip as vanilla sneaking with zero extra packets.
+ * SafeWalk: PlayerEntityMixin.clipAtLedge returns true when enabled AND the
+ * player is NOT pressing the forward key.  Forward movement is therefore fully
+ * free; only backward/sideways ledge fall is prevented.
  */
 public final class GodBridge extends Module implements TickListener {
 
@@ -46,46 +49,73 @@ public final class GodBridge extends Module implements TickListener {
             .setDescription(EncryptedString.of("Base ticks between block placements"));
 
     private final NumberSetting placeJitter = new NumberSetting(
-            EncryptedString.of("Place Jitter"), 0, 4, 1, 1)
+            EncryptedString.of("Place Jitter"), 0, 6, 2, 1)
             .setDescription(EncryptedString.of("Random extra ticks per placement (humanisation)"));
+
+    private final NumberSetting burstLimit = new NumberSetting(
+            EncryptedString.of("Burst Limit"), 2, 12, 5, 1)
+            .setDescription(EncryptedString.of("Max consecutive placements before a forced humanisation pause"));
+
+    private final NumberSetting burstPauseMin = new NumberSetting(
+            EncryptedString.of("Burst Pause Min"), 2, 15, 4, 1)
+            .setDescription(EncryptedString.of("Min ticks to pause after a burst"));
+
+    private final NumberSetting burstPauseMax = new NumberSetting(
+            EncryptedString.of("Burst Pause Max"), 2, 20, 9, 1)
+            .setDescription(EncryptedString.of("Max ticks to pause after a burst"));
+
+    private final BooleanSetting sneakSync = new BooleanSetting(
+            EncryptedString.of("Sneak Sync"), true)
+            .setDescription(EncryptedString.of("Occasionally send a 1-tick sneak to break the never-sneak bot pattern"));
 
     private final NumberSetting rotSpeed = new NumberSetting(
             EncryptedString.of("Rot Speed"), 5, 20, 12, 1)
-            .setDescription(EncryptedString.of("Camera rotation speed toward block face (degrees per tick, higher = faster)"));
+            .setDescription(EncryptedString.of("Server-side rotation speed toward block face (deg/tick)"));
 
     private final NumberSetting alignThreshold = new NumberSetting(
-            EncryptedString.of("Align Threshold"), 5, 30, 15, 1)
-            .setDescription(EncryptedString.of("Degrees within which the camera must be aligned before placing"));
+            EncryptedString.of("Align Threshold"), 3, 25, 12, 1)
+            .setDescription(EncryptedString.of("Degrees within which virtual rotation must align before placing"));
 
     private final NumberSetting blockSlot = new NumberSetting(
             EncryptedString.of("Block Slot"), 0, 9, 0, 1)
-            .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot only)"));
+            .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot)"));
 
     private final BooleanSetting requireBlocks = new BooleanSetting(
             EncryptedString.of("Require Blocks"), true)
-            .setDescription(EncryptedString.of("When ON: safe-walk and sprint only activate if you have blocks. When OFF: always active"));
+            .setDescription(EncryptedString.of("Safe-walk and sprint only activate when holding blocks"));
 
-    private int   cooldown      = 0;
-    // Virtual server-side rotation, gradually stepped toward the block face.
-    // The camera never sees these — RotationOverride swaps them into the packet.
+    // ── State ─────────────────────────────────────────────────────────────────
+    private int   cooldown             = 0;
+    private int   consecutivePlacements = 0;
+    private int   burstPauseCooldown   = 0;
+    private boolean sneakReleaseNext   = false;
+
+    // Virtual server-side rotation — camera never sees these values.
     private float virtualYaw   = Float.NaN;
     private float virtualPitch = Float.NaN;
 
     public GodBridge() {
         super(EncryptedString.of("God Bridge"),
-                EncryptedString.of("Automated god bridging with undetectable smooth rotation"),
+                EncryptedString.of("Automated god bridging with Grim/NCP bypass"),
                 -1, CategoryManager.BRIDGING);
         INSTANCE = this;
-        addSettings(autoSprint, placeDelay, placeJitter, rotSpeed, alignThreshold, blockSlot, requireBlocks);
+        addSettings(autoSprint, placeDelay, placeJitter,
+                burstLimit, burstPauseMin, burstPauseMax,
+                sneakSync, rotSpeed, alignThreshold,
+                blockSlot, requireBlocks);
     }
 
+    /**
+     * Called by PlayerEntityMixin.clipAtLedge.
+     * Returns true only when enabled AND the player is not pressing forward —
+     * so forward movement is never blocked, only backward/sideways ledge-fall.
+     */
     public static boolean shouldSafeWalk() {
         if (INSTANCE == null || !INSTANCE.isEnabled()) return false;
-        if (INSTANCE.requireBlocks.getValue()) return INSTANCE.isHoldingBlock();
+        if (INSTANCE.requireBlocks.getValue() && !INSTANCE.isHoldingBlock()) return false;
         return true;
     }
 
-    /** True only when the item the player is currently holding is a placeable block. */
     private boolean isHoldingBlock() {
         if (mc.player == null) return false;
         return mc.player.getMainHandStack().getItem() instanceof BlockItem;
@@ -93,19 +123,23 @@ public final class GodBridge extends Module implements TickListener {
 
     @Override
     public void onEnable() {
-        cooldown      = 0;
-        virtualYaw    = Float.NaN;
-        virtualPitch  = Float.NaN;
-        Clutch.placing = false;
+        cooldown              = 0;
+        consecutivePlacements = 0;
+        burstPauseCooldown    = 0;
+        sneakReleaseNext      = false;
+        virtualYaw            = Float.NaN;
+        virtualPitch          = Float.NaN;
+        Clutch.placing        = false;
         eventManager.add(TickListener.class, this);
         super.onEnable();
     }
 
     @Override
     public void onDisable() {
-        Clutch.placing = false;
-        virtualYaw   = Float.NaN;
-        virtualPitch = Float.NaN;
+        Clutch.placing   = false;
+        virtualYaw       = Float.NaN;
+        virtualPitch     = Float.NaN;
+        sneakReleaseNext = false;
         disarmOverride();
         if (mc.options != null) mc.options.sneakKey.setPressed(false);
         eventManager.remove(TickListener.class, this);
@@ -120,37 +154,52 @@ public final class GodBridge extends Module implements TickListener {
             return;
         }
 
-        // If not actively bridging, gradually return the virtual rotation to the
-        // real camera direction so the server never sees a sudden snap-back.
+        // Release sneak that was pressed last tick for sneak-sync
+        if (sneakReleaseNext) {
+            mc.options.sneakKey.setPressed(false);
+            sneakReleaseNext = false;
+        }
+
+        // No blocks or in the air — idle, gradually return virtual rotation
         if (resolveBlockSlot() == -1 || !p.isOnGround()) {
+            consecutivePlacements = 0;
             stepVirtualTowardReal(p);
             return;
         }
 
+        // No horizontal movement — idle
         Vec3d v = p.getVelocity();
         if (Math.abs(v.x) + Math.abs(v.z) < 0.005) {
+            consecutivePlacements = 0;
             stepVirtualTowardReal(p);
             return;
         }
 
         if (autoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
 
+        // Burst pause: stop placing for a few ticks to look human
+        if (burstPauseCooldown > 0) {
+            burstPauseCooldown--;
+            stepVirtualTowardReal(p);
+            return;
+        }
+
         if (cooldown > 0) { cooldown--; stepVirtualTowardReal(p); return; }
 
-        // ── Direction: facing-based (stable), not velocity-based ──────────────
+        // ── Target block behind player ─────────────────────────────────────────
         Direction placeDir = p.getHorizontalFacing().getOpposite();
         BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
         BlockPos  target   = standing.offset(placeDir);
 
-        if (!mc.world.getBlockState(target).isAir()) { stepVirtualTowardReal(p); return; }
+        if (!mc.world.getBlockState(target).isAir())       { stepVirtualTowardReal(p); return; }
         if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { stepVirtualTowardReal(p); return; }
 
-        // ── Aim point on the side face of the standing block ──────────────────
+        // ── Aim point — jittered hit position on the side face ────────────────
         ThreadLocalRandom rng = ThreadLocalRandom.current();
         double faceOffX = placeDir.getOffsetX() * 0.5;
         double faceOffZ = placeDir.getOffsetZ() * 0.5;
-        double jitterH  = rng.nextDouble(-0.08, 0.08);
-        double jitterY  = rng.nextDouble(-0.08, 0.04);
+        double jitterH  = rng.nextDouble(-0.10, 0.10);
+        double jitterY  = rng.nextDouble(-0.10, 0.06);
 
         Vec3d aimPoint = Vec3d.ofCenter(standing).add(
                 faceOffX + (placeDir.getOffsetX() == 0 ? jitterH : 0),
@@ -159,36 +208,35 @@ public final class GodBridge extends Module implements TickListener {
 
         float[] needed    = calcLook(p.getEyePos(), aimPoint);
         float   needYaw   = needed[0];
-        float   needPitch = MathHelper.clamp(needed[1], 55f, 85f);
+        // Randomise pitch target range slightly each time for variety
+        float   pitchMin  = 52f + rng.nextFloat() * 6f;
+        float   pitchMax  = 80f + rng.nextFloat() * 6f;
+        float   needPitch = MathHelper.clamp(needed[1], pitchMin, pitchMax);
 
-        // ── Silent server-side rotation — camera never moves ──────────────────
-        // virtualYaw/Pitch live independently of the camera. The mixin swaps them
-        // into the movement packet before it is sent, then restores the real camera.
-        // We KEEP them alive between placements so the server never sees a snap-back.
+        // ── Virtual server-side rotation (camera stays still) ─────────────────
         if (Float.isNaN(virtualYaw)) {
             virtualYaw   = p.getYaw();
             virtualPitch = p.getPitch();
         }
 
-        float maxStep = rotSpeed.getValueInt(); // degrees per tick
+        // Vary rotation speed slightly each tick for human feel
+        float maxStep    = rotSpeed.getValueInt() + rng.nextFloat() * 2f - 1f;
         virtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(needYaw   - virtualYaw),   -maxStep, maxStep);
         virtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(needPitch - virtualPitch), -maxStep, maxStep);
         virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
 
-        RotationOverride.serverYaw   = virtualYaw;
-        RotationOverride.serverPitch = virtualPitch;
-        RotationOverride.active      = true;
-        RotationOverride.afterPacketAction = null; // clear any stale queued action
+        RotationOverride.serverYaw          = virtualYaw;
+        RotationOverride.serverPitch        = virtualPitch;
+        RotationOverride.active             = true;
+        RotationOverride.afterPacketAction  = null;
 
-        // Only place once the silent rotation is close enough to the target face
+        // Wait until aligned before placing
         float threshold = alignThreshold.getValueInt();
         if (Math.abs(MathHelper.wrapDegrees(needYaw   - virtualYaw)) > threshold) return;
         if (Math.abs(MathHelper.wrapDegrees(needPitch - virtualPitch)) > threshold) return;
 
-        // ── Queue placement to fire AFTER position packet is sent ─────────────
-        // Packet order Grim sees: PositionAndRotation(virtualYaw) → InteractBlock
-        // Without this queue, InteractBlock would arrive before the rotation → flag.
-        int useSlot  = resolveBlockSlot();
+        // ── Resolve slot ──────────────────────────────────────────────────────
+        int useSlot = resolveBlockSlot();
         if (useSlot == -1) return;
 
         final BlockHitResult bhr      = new BlockHitResult(aimPoint, placeDir, standing, false);
@@ -197,6 +245,13 @@ public final class GodBridge extends Module implements TickListener {
 
         if (fUseSlot != fPrev) p.getInventory().setSelectedSlot(fUseSlot);
 
+        // Sneak-sync: randomly press sneak this tick so next movement packet
+        // carries sneak=true, breaking the "never-sneak" bot pattern.
+        if (sneakSync.getValue() && rng.nextInt(4) == 0) {
+            mc.options.sneakKey.setPressed(true);
+            sneakReleaseNext = true;
+        }
+
         RotationOverride.afterPacketAction = () -> {
             ClientPlayerEntity pp = mc.player;
             if (pp == null || mc.interactionManager == null) return;
@@ -204,8 +259,20 @@ public final class GodBridge extends Module implements TickListener {
             try {
                 if (mc.interactionManager.interactBlock(pp, Hand.MAIN_HAND, bhr).isAccepted()) {
                     pp.swingHand(Hand.MAIN_HAND);
+                    consecutivePlacements++;
+
+                    // Base delay + random jitter
                     cooldown = placeDelay.getValueInt()
                              + (int)(Math.random() * (placeJitter.getValueInt() + 1));
+
+                    // Burst limit — force a humanisation pause after N blocks
+                    int limit = burstLimit.getValueInt();
+                    if (consecutivePlacements >= limit) {
+                        consecutivePlacements = 0;
+                        int pauseMin = burstPauseMin.getValueInt();
+                        int pauseMax = Math.max(pauseMin, burstPauseMax.getValueInt());
+                        burstPauseCooldown = pauseMin + (int)(Math.random() * (pauseMax - pauseMin + 1));
+                    }
                 }
             } finally {
                 Clutch.placing = false;
@@ -217,8 +284,7 @@ public final class GodBridge extends Module implements TickListener {
 
     /**
      * Gradually step virtualYaw/Pitch back toward the player's real camera rotation.
-     * This prevents a sudden yaw snap when the player stops bridging.
-     * Once close enough, disarm the override entirely.
+     * Prevents a sudden yaw snap when bridging pauses or stops.
      */
     private void stepVirtualTowardReal(ClientPlayerEntity p) {
         if (Float.isNaN(virtualYaw) || p == null) {
@@ -229,7 +295,6 @@ public final class GodBridge extends Module implements TickListener {
         float realPitch = p.getPitch();
         if (Math.abs(MathHelper.wrapDegrees(realYaw - virtualYaw)) < 4f
                 && Math.abs(MathHelper.wrapDegrees(realPitch - virtualPitch)) < 4f) {
-            // Close enough — fully disarm
             virtualYaw   = Float.NaN;
             virtualPitch = Float.NaN;
             disarmOverride();
@@ -239,10 +304,10 @@ public final class GodBridge extends Module implements TickListener {
         virtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(realYaw   - virtualYaw),   -maxStep, maxStep);
         virtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(realPitch - virtualPitch), -maxStep, maxStep);
         virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
-        RotationOverride.serverYaw          = virtualYaw;
-        RotationOverride.serverPitch        = virtualPitch;
-        RotationOverride.active             = true;
-        RotationOverride.afterPacketAction  = null;
+        RotationOverride.serverYaw         = virtualYaw;
+        RotationOverride.serverPitch       = virtualPitch;
+        RotationOverride.active            = true;
+        RotationOverride.afterPacketAction = null;
     }
 
     private void disarmOverride() {

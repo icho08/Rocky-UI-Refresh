@@ -53,7 +53,30 @@ A Minecraft Fabric mod for version 1.21.x with a custom in-game GUI.
 - `Timer` uses reflection on `renderTickCounter` — field candidates: `msPerTick`, `tickLength`, `timerSpeed`, `timeScale`, plus several intermediary names.
 - `NightVision` (potion-based) is now named "Night Vision" in-game to avoid clash with `Fullbright`.
 
-## Bridging module fixes (latest)
+## Bridging module fixes (latest session)
+
+### GodBridge + SmartBridge — detection bypass & forward-movement fix
+
+#### GodBridge — Grim/NCP burst-limit bypass
+- **Burst Limit** setting (default 5): after N consecutive placements, force a randomised pause (`Burst Pause Min`/`Max` ticks). Breaks the "infinite machine-perfect streak" pattern that gets flagged after ~5 blocks.
+- **Sneak Sync** setting (default ON): 25% chance per placement to press sneak for 1 tick (released next tick). This breaks the "never-sneak + god-place" bot signature on Grim.
+- **Jittered pitch range**: target pitch range is randomised each swing (`52–58°` min, `80–86°` max), not a fixed 55–85°.
+- **Variable rotation speed**: `rotSpeed` ± 1°/tick of noise each tick for human feel.
+- New settings added: `Burst Limit`, `Burst Pause Min`, `Burst Pause Max`, `Sneak Sync`.
+
+#### PlayerEntityMixin — SafeWalk no longer blocks forward movement
+- `clipAtLedge` override now only returns `true` when `mc.options.forwardKey.isPressed()` is **false**.
+- Forward movement (W key) bypasses the ledge clip entirely — player can walk freely in facing direction.
+- Backward/sideways ledge fall is still prevented when the forward key is not held.
+
+#### SmartBridge — clean mode separation
+- **GOD_ONLY** mode: uses the same god-bridge logic as the standalone GodBridge module, including burst-limit and sneak-sync detection bypass.
+- **ASSIST_ONLY** mode: uses BridgeAssist logic (edge-sneak only, no rotation, no block placement).
+- **SMART** mode: alternates God phase → Assist phase using the above two code paths.
+- Removed settings: `God Fall Mode`, `God Look-Ahead` (both replaced by the forward-key-aware mixin fix).
+- Added to god phase: `Burst Limit`, `Burst Pause Min`, `Burst Pause Max`, `Sneak Sync`, `Assist Edge Dist`, `Assist Look-Ahead`.
+
+## Bridging module fixes (previous)
 
 ### SmartBridge — fixed double-placement in GOD/SMART mode
 - Root cause: `runGodPhase` was calling `GodBridge.INSTANCE.setEnabled(true)` to get SafeWalk behaviour, which caused GodBridge's own `TickListener` to place blocks at the same time as SmartBridge → "2 blocks back" glitch.

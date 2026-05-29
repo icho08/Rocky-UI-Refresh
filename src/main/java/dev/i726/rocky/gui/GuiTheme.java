@@ -10,8 +10,26 @@ public final class GuiTheme {
 
     private static ThemeColor currentTheme = ThemeColor.PURPLE;
 
+    private static final java.io.File THEME_FILE = new java.io.File("rocky/theme.txt");
+
+    /** Called once at startup (before any rendering) to restore the saved accent color. */
+    public static void loadTheme() {
+        try {
+            if (THEME_FILE.exists()) {
+                String saved = java.nio.file.Files.readString(THEME_FILE.toPath()).trim();
+                currentTheme = ThemeColor.valueOf(saved);
+            }
+        } catch (Exception ignored) {}
+    }
+
     public static void setTheme(ThemeColor t) {
         currentTheme = t;
+        // Persist immediately so the color survives a restart without relying
+        // on the module enable/tick lifecycle being ready at that point.
+        try {
+            THEME_FILE.getParentFile().mkdirs();
+            java.nio.file.Files.writeString(THEME_FILE.toPath(), t.name());
+        } catch (Exception ignored) {}
     }
 
     public static ThemeColor getTheme() {

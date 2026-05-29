@@ -1,6 +1,7 @@
 package dev.i726.rocky;
 
 import dev.i726.rocky.event.EventManager;
+import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.managers.FriendManager;
 import dev.i726.rocky.module.ModuleManager;
 import dev.i726.rocky.managers.ProfileManager;
@@ -30,6 +31,9 @@ public final class Rocky {
 
         public Rocky() throws InterruptedException, IOException {
                 INSTANCE = this;
+                // Load saved accent color before any GUI renders — completely independent
+                // of the module/profile system so it is always correct on startup.
+                GuiTheme.loadTheme();
                 this.eventManager = new EventManager();
                 this.moduleManager = new ModuleManager();
                 this.rotatorManager = new RotatorManager();

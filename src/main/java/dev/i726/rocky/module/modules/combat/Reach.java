@@ -7,6 +7,8 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.util.hit.EntityHitResult;
 
 public final class Reach extends Module {
 
@@ -35,6 +37,9 @@ public final class Reach extends Module {
     private final BooleanSetting rerollOnHit = new BooleanSetting(EncryptedString.of("Reroll On Hit"), true)
             .setDescription(EncryptedString.of("Pick a new random reach value after each hit"));
 
+    private final BooleanSetting playersOnly = new BooleanSetting(EncryptedString.of("Players Only"), true)
+            .setDescription(EncryptedString.of("Only extend reach against player entities — skips mobs and NPCs so server plugins don't flag"));
+
     private final TimerUtils rerollTimer = new TimerUtils();
 
     private double currentReach = 3.0;
@@ -43,7 +48,7 @@ public final class Reach extends Module {
         super(EncryptedString.of("Reach"),
                 EncryptedString.of("Extends attack reach distance with anticheat bypass"),
                 -1, CategoryManager.PVP);
-        addSettings(mode, distance, randomize, randomization, rerollOnHit);
+        addSettings(mode, distance, randomize, randomization, rerollOnHit, playersOnly);
     }
 
     @Override
@@ -65,9 +70,22 @@ public final class Reach extends Module {
         currentReach = base - (randomize.getValue() ? Math.random() * jitter : 0);
     }
 
+    /**
+     * Returns true when the current crosshair target is a real player entity
+     * (or playersOnly is disabled). Used to gate reach extension so it never
+     * fires against mobs or NPCs — those are caught by server plugins.
+     */
+    private boolean targetIsPlayer() {
+        if (!playersOnly.getValue()) return true;
+        if (mc == null) return false;
+        return mc.crosshairTarget instanceof EntityHitResult ehr
+                && ehr.getEntity() instanceof PlayerEntity;
+    }
+
     /** Called by the interaction mixin every swing. */
     public double getReach() {
         if (!isEnabled()) return 3.0;
+        if (!targetIsPlayer()) return 3.0;
 
         // Re-roll after each hit (called from outside) or on a timer
         if (rerollOnHit.getValue() || rerollTimer.delay(300)) {
@@ -81,6 +99,7 @@ public final class Reach extends Module {
     /** Called by the interaction mixin to get the precise reach for THIS hit. */
     public double consumeReach() {
         if (!isEnabled()) return 3.0;
+        if (!targetIsPlayer()) return 3.0;
         double val = currentReach;
         if (rerollOnHit.getValue()) rerollReach(); // immediately pick next value for next hit
         return val;

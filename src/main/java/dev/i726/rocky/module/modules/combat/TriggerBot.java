@@ -7,7 +7,6 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.Friends;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.MinMaxSetting;
-import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
@@ -25,10 +24,6 @@ import org.lwjgl.glfw.GLFW;
 import java.util.Random;
 
 public final class TriggerBot extends Module implements TickListener {
-    public enum DelayMode { Manual, Auto }
-
-    private final ModeSetting<DelayMode> delayMode = new ModeSetting<>(EncryptedString.of("Delay Mode"), DelayMode.Auto, DelayMode.class)
-            .setDescription(EncryptedString.of("Auto uses the game's attack cooldown (recommended), Manual uses custom ms delays"));
 
     private final BooleanSetting inScreen    = new BooleanSetting(EncryptedString.of("Work In Screen"), false);
     private final BooleanSetting whileUse    = new BooleanSetting(EncryptedString.of("While Use"), false);
@@ -69,7 +64,7 @@ public final class TriggerBot extends Module implements TickListener {
         super(EncryptedString.of("Trigger Bot"),
                 EncryptedString.of("Automatically attacks when an enemy is on your crosshair"),
                 -1, CategoryManager.PVP);
-        addSettings(delayMode, inScreen, whileUse, weaponOnly,
+        addSettings(inScreen, whileUse, weaponOnly,
                 swordDelay, axeDelay, checkShield, swing, allEntities,
                 aimJitter, jitterYaw, jitterPitch,
                 maxReach, respectHurtTime, targetSwitchDelay, missChance, sticky, ignoreNpcs);
@@ -105,7 +100,13 @@ public final class TriggerBot extends Module implements TickListener {
 
         // Use eye-to-entity-centre distance, same reference point the server uses
         double dist = mc.player.getEyePos().distanceTo(target.getEyePos());
-        if (dist > maxReach.getValue()) return false;
+        // Allow Reach module to extend TBot's hit window when it is enabled
+        double reachLimit = maxReach.getValue();
+        Reach reachMod = Rocky.INSTANCE.getModuleManager().getModule(Reach.class);
+        if (reachMod != null && reachMod.isEnabled()) {
+            reachLimit = Math.max(reachLimit, reachMod.getReach() + 0.3);
+        }
+        if (dist > reachLimit) return false;
 
         if (respectHurtTime.getValue() && target instanceof LivingEntity le && le.hurtTime > 0) return false;
 
@@ -171,14 +172,7 @@ public final class TriggerBot extends Module implements TickListener {
         if (entity instanceof PlayerEntity player && checkShield.getValue()
                 && player.isBlocking() && !WorldUtils.isShieldFacingAway(player)) return;
 
-        boolean ready;
-        if (delayMode.isMode(DelayMode.Auto)) {
-            ready = mc.player.getAttackCooldownProgress(0.0f) >= 1.0f;
-        } else {
-            ready = timer.delay(currentDelay);
-        }
-
-        if (!ready) return;
+        if (!timer.delay(currentDelay)) return;
         if (!canHit(entity)) return;
 
         // ── Hit first, jitter after ──────────────────────────────────────────

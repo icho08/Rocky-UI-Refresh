@@ -131,10 +131,17 @@ public final class Clutch extends Module implements TickListener {
             if (!holdingBlock()) return;
         }
 
-        BlockPos below = mc.player.getBlockPos().down();
-        if (isSolid(below)) { tryRestoreSlot(); return; }
+        // foot = the block position AT the player's feet (same Y as player's standing block)
+        // below = one block further down
+        // We try foot-level first: when walking off a bridge the adjacent bridge block
+        // is a solid NEIGHBOUR of foot (same Y), so buildPlaceHit finds it immediately.
+        // If that fails we fall back to one block below (scaffold-style gap scenario).
+        BlockPos foot  = mc.player.getBlockPos();
+        BlockPos below = foot.down();
+        if (isSolid(foot) || isSolid(below)) { tryRestoreSlot(); return; }
 
-        BlockHitResult hit = buildPlaceHit(below);
+        BlockHitResult hit = buildPlaceHit(foot);
+        if (hit == null) hit = buildPlaceHit(below);
         if (hit == null) return;
 
         // ── Silent rotation + placement ───────────────────────────────────────

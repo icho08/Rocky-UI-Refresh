@@ -161,6 +161,9 @@ public final class HUD extends Module implements HudListener, ButtonListener {
 
     @Override
     public void onEnable() {
+        // Defensive: remove before add so a double-enable never leaves two copies registered
+        eventManager.remove(HudListener.class, this);
+        eventManager.remove(ButtonListener.class, this);
         eventManager.add(HudListener.class, this);
         eventManager.add(ButtonListener.class, this);
         loadPositions();
@@ -191,6 +194,15 @@ public final class HUD extends Module implements HudListener, ButtonListener {
     public void onRenderHud(HudEvent event) {
         if (mc.currentScreen instanceof ClickGuiScreen) return;
         if (mc.currentScreen instanceof HudEditorScreen) return;
+        try {
+            renderHudInternal(event);
+        } catch (Exception ignored) {
+            // Prevent rendering exceptions from propagating to the event system
+            // and potentially causing the listener to be dropped
+        }
+    }
+
+    private void renderHudInternal(HudEvent event) {
 
         DrawContext ctx       = event.context;
         Color       ac        = GuiTheme.accent();
@@ -307,17 +319,10 @@ public final class HUD extends Module implements HudListener, ButtonListener {
 
         // ── 4. Potion Effects ──────────────────────────────────────────────
         if (effectsHud.getValue() && mc.player != null && !mc.player.getStatusEffects().isEmpty()) {
-            List<String> lines = new ArrayList<>();
-            for (StatusEffectInstance fx : mc.player.getStatusEffects()) {
-                var id = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
-                String name = id != null ? capitalize(id.getPath().replace("_", " ")) : "?";
-                int lvl = fx.getAmplifier() + 1;
-                int dur = fx.getDuration() / 20;
-                String time = dur > 60 ? (dur / 60) + "m" + (dur % 60) + "s" : dur + "s";
-                lines.add((lvl > 1 ? name + " " + lvl : name) + "  " + time);
-            }
-            int bw = lines.stream().mapToInt(TextRenderer::getWidth).max().orElse(0) + 20;
-            int bh = lines.size() * 13 + 8;
+            List<StatusEffectInstance> effects = new ArrayList<>(mc.player.getStatusEffects());
+            final int rowH  = 18;  // px per effect row (text + bar)
+            final int bw    = 180;
+            int bh = effects.size() * rowH + 6;
             int armorOffset = armorHud.getValue() ? 4 * 14 + 8 + 4 : 0;
             int bx = px(P_POTIONS, 8), by = py(P_POTIONS, screenH - bh - 8 - armorOffset);
 
@@ -325,8 +330,44 @@ public final class HUD extends Module implements HudListener, ButtonListener {
             ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
             ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
             ctx.fill(bx, by, bx + 3, by + bh, accentInt);
-            for (int i = 0; i < lines.size(); i++)
-                TextRenderer.drawString(lines.get(i), ctx, bx + 9, by + 5 + i * 13, GuiTheme.textPrimary());
+
+            for (int i = 0; i < effects.size(); i++) {
+                StatusEffectInstance fx = effects.get(i);
+                int rowY = by + 3 + i * rowH;
+
+                // Colored dot — effect's own tint color
+                int fxColor = 0xFF000000 | fx.getEffectType().value().getColor();
+                ctx.fill(bx + 8, rowY + 3, bx + 13, rowY + 8, fxColor);
+
+                // Name + level label
+                var id2 = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
+                String efName = id2 != null ? capitalize(id2.getPath().replace("_", " ")) : "?";
+                int lvl  = fx.getAmplifier() + 1;
+                String label = lvl > 1 ? efName + " " + lvl : efName;
+                TextRenderer.drawString(label, ctx, bx + 17, rowY + 2, GuiTheme.textPrimary());
+
+                // Duration text — right-aligned
+                int durSec = fx.getDuration() / 20;
+                String time = durSec >= 60
+                        ? (durSec / 60) + "m " + (durSec % 60) + "s"
+                        : durSec + "s";
+                int timeW = TextRenderer.getWidth(time);
+                Color timeCol = durSec > 60 ? new Color(134, 239, 172)
+                             : durSec > 20  ? new Color(253, 186, 116)
+                             :                new Color(252, 165, 165);
+                TextRenderer.drawString(time, ctx, bx + bw - timeW - 6, rowY + 2, GuiTheme.rgba(timeCol.getRed(), timeCol.getGreen(), timeCol.getBlue(), 220));
+
+                // Duration bar (3 px tall, capped at 5 minutes = full bar)
+                int barX = bx + 7, barW2 = bw - 14;
+                float pct = Math.min(1f, durSec / 300f);
+                Color barCol = durSec > 60 ? new Color(34, 197, 94)
+                             : durSec > 20 ? new Color(249, 115, 22)
+                             :               new Color(239, 68, 68);
+                ctx.fill(barX, rowY + 13, barX + barW2, rowY + 16, GuiTheme.rgba(30, 28, 44, 200));
+                if (pct > 0)
+                    ctx.fill(barX, rowY + 13, barX + (int)(barW2 * pct), rowY + 16,
+                            GuiTheme.rgba(barCol.getRed(), barCol.getGreen(), barCol.getBlue(), 210));
+            }
         }
 
         // ── 5. Module Arraylist ────────────────────────────────────────────

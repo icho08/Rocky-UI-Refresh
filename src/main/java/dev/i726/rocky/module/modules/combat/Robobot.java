@@ -30,6 +30,10 @@ public final class Robobot extends Module implements AttackListener, TickListene
     private final NumberSetting maxHealth = new NumberSetting(EncryptedString.of("Max Health"), 2.0, 40.0, 20.0, 1.0)
             .setDescription(EncryptedString.of("Total HP the Robobot starts with (20 = 10 hearts)"));
 
+    private final dev.i726.rocky.module.setting.BooleanSetting infiniteHealth =
+            new dev.i726.rocky.module.setting.BooleanSetting(EncryptedString.of("Infinite Health"), false)
+            .setDescription(EncryptedString.of("Bot cannot die — health damage is ignored, useful for extended training"));
+
     private OtherClientPlayerEntity fakePlayer;
     private float health;
 
@@ -38,7 +42,7 @@ public final class Robobot extends Module implements AttackListener, TickListene
                 EncryptedString.of("Spawns a fake player entity for testing — choose PvP Version to match your target server"),
                 -1,
                 CategoryManager.AUTOMATION);
-        addSettings(version, customDamage, maxHealth);
+        addSettings(version, customDamage, maxHealth, infiniteHealth);
     }
 
     @Override
@@ -84,7 +88,7 @@ public final class Robobot extends Module implements AttackListener, TickListene
             case Custom -> customDamage.getValueFloat();
         };
 
-        health -= dmg;
+        if (!infiniteHealth.getValue()) health -= dmg;
 
         // Damage animation + sound
         fakePlayer.handleStatus((byte) 2);
@@ -98,7 +102,7 @@ public final class Robobot extends Module implements AttackListener, TickListene
             fakePlayer.setVelocity(new Vec3d(diffX / dist * 0.4, 0.3, diffZ / dist * 0.4));
         }
 
-        if (health <= 0) {
+        if (!infiniteHealth.getValue() && health <= 0) {
             mc.player.playSound(SoundEvents.ENTITY_PLAYER_DEATH, 1.0f, 1.0f);
             setEnabled(false);
         }

@@ -160,13 +160,17 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
             return;
         }
 
-        // Stop rotating once crosshair is on the target
+        // Stop rotating once crosshair is on the target.
+        // Non-sticky: hard-return (no rotation at all).
+        // Sticky: decay lerpFactor but continue — hard-return creates a start/stop
+        // oscillation that manifests as visible screen shake.
         if (stopAtTarget.getValue()) {
             EntityHitResult hitResult = WorldUtils.getHitResult(mc.player, false,
                     mc.player.getYaw(), mc.player.getPitch(), range.getValue()) instanceof EntityHitResult r ? r : null;
             if (hitResult != null && hitResult.getEntity() == target) {
-                lerpFactor = Math.max(0, lerpFactor - 0.05f);
-                return;
+                lerpFactor = Math.max(0, lerpFactor - 0.10f);
+                if (!stickyAim.getValue()) return;
+                // Sticky: fall through with reduced lerpFactor (gentle hold, no oscillation)
             }
         }
 
@@ -176,6 +180,13 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 
         // ── Rotation step (degrees per second → per frame) ──────────────────
         float maxDegreesThisFrame = currentSpeed * delta * lerpFactor;
+
+        // Sticky: when target is far outside FOV, slow rotation dramatically.
+        // Without this the camera swings rapidly toward a target that may be
+        // 90+ degrees away, which looks like severe shake.
+        if (stickyAim.getValue() && lockedTarget != null && angleToTarget > fov.getValueInt()) {
+            maxDegreesThisFrame *= 0.15f;
+        }
 
         float targetYaw   = (float) rotation.yaw()   + aimOffsetYaw;
         float targetPitch = (float) rotation.pitch() + aimOffsetPitch;

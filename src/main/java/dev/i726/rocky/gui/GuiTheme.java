@@ -23,9 +23,9 @@ public final class GuiTheme {
     }
 
     public static void setTheme(ThemeColor t) {
+        if (currentTheme == t) return; // enum identity — no change, no disk write
         currentTheme = t;
-        // Persist immediately so the color survives a restart without relying
-        // on the module enable/tick lifecycle being ready at that point.
+        // Persist so the color survives a restart independently of the module system.
         try {
             THEME_FILE.getParentFile().mkdirs();
             java.nio.file.Files.writeString(THEME_FILE.toPath(), t.name());

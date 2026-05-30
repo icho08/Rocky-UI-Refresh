@@ -27,7 +27,7 @@ public final class ClickGUI extends Module {
 
     @Override
     public void onEnable() {
-        GuiTheme.setTheme(color.getMode());
+        // Theme is managed exclusively by ThemePicker — do not call setTheme here.
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc != null) {
             mc.setScreen(new ClickGuiScreen());

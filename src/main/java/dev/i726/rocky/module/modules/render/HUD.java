@@ -192,13 +192,15 @@ public final class HUD extends Module implements HudListener, ButtonListener {
     // ── HUD Render ────────────────────────────────────────────────────────
     @Override
     public void onRenderHud(HudEvent event) {
-        if (mc.currentScreen instanceof ClickGuiScreen) return;
-        if (mc.currentScreen instanceof HudEditorScreen) return;
         try {
+            if (mc == null) return;
+            if (mc.currentScreen instanceof ClickGuiScreen) return;
+            if (mc.currentScreen instanceof HudEditorScreen) return;
             renderHudInternal(event);
         } catch (Exception ignored) {
-            // Prevent rendering exceptions from propagating to the event system
-            // and potentially causing the listener to be dropped
+            // Prevent rendering exceptions from propagating to the event system.
+            // The mc null check must live inside here — a NPE before the try-catch
+            // would escape the listener and could leave the render frame broken.
         }
     }
 
@@ -335,16 +337,12 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 StatusEffectInstance fx = effects.get(i);
                 int rowY = by + 3 + i * rowH;
 
-                // Colored dot — effect's own tint color
-                int fxColor = 0xFF000000 | fx.getEffectType().value().getColor();
-                ctx.fill(bx + 8, rowY + 3, bx + 13, rowY + 8, fxColor);
-
                 // Name + level label
                 var id2 = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
                 String efName = id2 != null ? capitalize(id2.getPath().replace("_", " ")) : "?";
                 int lvl  = fx.getAmplifier() + 1;
                 String label = lvl > 1 ? efName + " " + lvl : efName;
-                TextRenderer.drawString(label, ctx, bx + 17, rowY + 2, GuiTheme.textPrimary());
+                TextRenderer.drawString(label, ctx, bx + 9, rowY + 2, GuiTheme.textPrimary());
 
                 // Duration text — right-aligned
                 int durSec = fx.getDuration() / 20;

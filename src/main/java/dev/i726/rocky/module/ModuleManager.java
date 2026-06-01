@@ -60,6 +60,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new KillAura());
                 add(new Strafe());
                 add(new Surround());
+                add(new BedBreaker());
 
                 //Misc
                 add(new ChestStealer());

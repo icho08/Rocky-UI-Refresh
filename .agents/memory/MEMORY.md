@@ -1,0 +1,1 @@
+- [MinMaxSetting step=0 bug](minmax-step-zero.md) — passing increment=0 causes divide-by-zero in setMinValue/setMaxValue; always use ≥1 (or ≥5 for ms ranges).

@@ -14,7 +14,6 @@ import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.AxeItem;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
@@ -57,8 +56,12 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
     private final BooleanSetting jitterEnabled = new BooleanSetting(EncryptedString.of("Jitter"), false)
             .setDescription(EncryptedString.of("Adds random micro-shake to the aim path"));
     private final NumberSetting jitterAmount  = new NumberSetting(EncryptedString.of("Jitter Amount"), 0.05, 1.5, 0.3, 0.05);
-    private final BooleanSetting sendPackets  = new BooleanSetting(EncryptedString.of("Send Packets"), true)
-            .setDescription(EncryptedString.of("Sends rotation packets to the server so hits register correctly"));
+    // NOTE: explicit packet sending removed — mc.player.setYaw/setPitch() is picked
+    // up by the game's own ClientPlayerEntity.sendMovementPackets() every tick,
+    // which sends exactly one PositionAndRotation at game-tick rate (20 hz).
+    // Sending extra LookAndOnGround packets at render rate (60-144 hz) is what
+    // was causing Grim/Vulcan flags — the AC saw dozens of rotation packets per
+    // second instead of the expected ≤20.
 
     private final TimerUtils speedRerollTimer = new TimerUtils();
     private float currentSpeed;
@@ -75,7 +78,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
                 -1, CategoryManager.PVP);
         addSettings(targets, onlyWeapon, onLeftClick, aimAt, stopAtTarget, stickyAim, stickyRange,
                 gcdCorrection, randomOffset, range, fov, speed, acceleration,
-                jitterEnabled, jitterAmount, sendPackets);
+                jitterEnabled, jitterAmount);
     }
 
     @Override
@@ -217,12 +220,10 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 
         mc.player.setYaw(newYaw);
         mc.player.setPitch(newPitch);
-
-        if (sendPackets.getValue() && mc.getNetworkHandler() != null
-                && (Math.abs(yawDelta) > 0.001f || Math.abs(pitchDelta) > 0.001f)) {
-            mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    newYaw, newPitch, mc.player.isOnGround(), false));
-        }
+        // No manual packet here — setting yaw/pitch is enough.
+        // The game's sendMovementPackets() fires every tick and carries the
+        // updated rotation in a PositionAndRotation packet at exactly 20 hz,
+        // which is indistinguishable from real mouse input.
     }
 
     private LivingEntity resolveTarget() {

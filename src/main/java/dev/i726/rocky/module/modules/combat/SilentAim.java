@@ -1,125 +1,159 @@
 package dev.i726.rocky.module.modules.combat;
 
 import dev.i726.rocky.Rocky;
+import dev.i726.rocky.event.events.PostAttackListener;
 import dev.i726.rocky.event.events.TickListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
+import net.minecraft.entity.Entity;
 import net.minecraft.entity.LivingEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.Hand;
 import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
 import java.util.Random;
 
 /**
- * SilentAim — silently attacks the nearest player without moving the crosshair,
- * timed for critical hits to deal 150% bonus damage.
+ * SilentAim — sends extra silent damage hits to whoever you are currently
+ * attacking, without any visible cooldown flash or swing animation on your end.
  *
- * How it works:
- *  1. Finds the nearest enemy player in range + FOV every game tick.
- *  2. When the CPS timer fires (and optionally the cooldown is full):
- *       a. Checks for a crit frame (falling, not on ground, not in fluid).
- *       b. Sends ONE silent LookAndOnGround packet toward the target with
- *          Gaussian yaw/pitch jitter — the server validates the hit against this.
- *       c. Calls attackEntity — hit registers because the server saw the rotation.
- *       d. The game's own next PositionAndRotation packet restores the real
- *          yaw/pitch naturally — no "snap-back" visible to the AC.
+ * Behaviour:
+ *  - Locks on to the player you just hit (via PostAttackListener).
+ *  - Every CPS tick it sends ONE silent LookAndOnGround packet (so the server
+ *    validates the hit direction) followed by a raw PlayerInteractEntityC2SPacket
+ *    attack — the server registers the damage, but your client never sees a
+ *    cooldown reset or arm swing.
+ *  - Lock clears automatically when the target dies, walks out of range, or
+ *    you stop clicking (On Click Only = on).
  *
- * Anti-cheat profile:
- *  - ONE rotation packet per attack, not a continuous stream → avoids the
- *    "always-tracking" signature that Grim/Vulcan flag.
- *  - Gaussian jitter (±0.5° yaw, ±0.4° pitch) — no dead-centre machine lock.
- *  - Randomised CPS → attack interval is never constant.
- *  - "Require Crit" naturally limits attack rate to ~jump cycle (~9 ticks),
- *    which is completely indistinguishable from a skilled human player.
- *  - No PacketSendListener, no packet interception, no continuous spoofing.
+ * Why this avoids bans:
+ *  - No continuous rotation stream; one rotation packet per extra hit only.
+ *  - Gaussian jitter on yaw/pitch — never a machine-perfect angle.
+ *  - Randomised CPS so the interval is never constant.
+ *  - No interactionManager.attackEntity() call — the client cooldown bar never
+ *    resets, so there is no visual or packet anomaly on your own side.
+ *  - Crit hits (optional): only fires on a natural falling frame → looks like
+ *    a skilled player hitting crits in a combo.
  */
-public final class SilentAim extends Module implements TickListener {
+public final class SilentAim extends Module implements TickListener, PostAttackListener {
 
     private final NumberSetting range = new NumberSetting(
-            EncryptedString.of("Range"), 1.0, 6.0, 3.8, 0.1)
-            .setDescription(EncryptedString.of("Max attack distance (blocks)"));
-
-    private final NumberSetting fov = new NumberSetting(
-            EncryptedString.of("FOV"), 5, 360, 180, 1)
-            .setDescription(EncryptedString.of("Total angle cone (degrees) in which targets are considered"));
+            EncryptedString.of("Range"), 1.0, 6.0, 4.0, 0.1)
+            .setDescription(EncryptedString.of("Max distance at which the locked target is kept (blocks)"));
 
     private final MinMaxSetting cps = new MinMaxSetting(
             EncryptedString.of("CPS"), 1, 20, 1, 8, 12)
-            .setDescription(EncryptedString.of("Clicks per second — randomised every attack"));
-
-    private final BooleanSetting fullCooldown = new BooleanSetting(
-            EncryptedString.of("Full Cooldown"), true)
-            .setDescription(EncryptedString.of("Only attack when the sword cooldown meter is full (much less detectable)"));
+            .setDescription(EncryptedString.of("Extra silent hits per second — randomised every hit"));
 
     private final BooleanSetting requireCrit = new BooleanSetting(
             EncryptedString.of("Require Crit"), true)
-            .setDescription(EncryptedString.of("Wait for a falling frame — every hit deals 150%% bonus crit damage"));
+            .setDescription(EncryptedString.of("Only send extra hits on a falling frame for 150%% crit bonus damage"));
 
     private final BooleanSetting forceCrit = new BooleanSetting(
             EncryptedString.of("Force Crit"), false)
-            .setDescription(EncryptedString.of("Auto-jumps to guarantee crits when not naturally falling (slightly more detectable)"));
+            .setDescription(EncryptedString.of("Auto-jumps to guarantee a crit frame when standing (slightly more detectable)"));
+
+    private final BooleanSetting onClickOnly = new BooleanSetting(
+            EncryptedString.of("On Click Only"), true)
+            .setDescription(EncryptedString.of("Only send extra hits while left mouse button is held"));
 
     private final BooleanSetting friendCheck = new BooleanSetting(
             EncryptedString.of("Friend Check"), true)
             .setDescription(EncryptedString.of("Skip players on your friends list"));
 
-    private final TimerUtils attackTimer = new TimerUtils();
-    private final Random rng = new Random();
+    private final TimerUtils hitTimer   = new TimerUtils();
+    private final Random     rng        = new Random();
+    private int              currentDelay;
 
-    private int currentDelay;
+    // The player that was last manually hit — we silently extend damage to them
+    private LivingEntity lockedTarget = null;
 
-    // Force-crit state machine: 0=idle, 1=jumped-waiting-to-fall, 2=falling-ready
+    // Force-crit state: 0=idle, 1=jumped-ascending, 2=falling-ready
     private int forceCritState = 0;
 
     public SilentAim() {
         super(EncryptedString.of("Silent Aim"),
-                EncryptedString.of("Silently attacks the nearest player and deals crit bonus damage"),
+                EncryptedString.of("Sends silent extra damage hits to whoever you are attacking"),
                 -1, CategoryManager.PVP);
-        addSettings(range, fov, cps, fullCooldown, requireCrit, forceCrit, friendCheck);
+        addSettings(range, cps, requireCrit, forceCrit, onClickOnly, friendCheck);
     }
+
+    // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     @Override
     public void onEnable() {
         eventManager.add(TickListener.class, this);
-        rollDelay();
+        eventManager.add(PostAttackListener.class, this);
+        lockedTarget   = null;
         forceCritState = 0;
+        rollDelay();
         super.onEnable();
     }
 
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
+        eventManager.remove(PostAttackListener.class, this);
+        lockedTarget   = null;
         forceCritState = 0;
         super.onDisable();
     }
+
+    // ── PostAttackListener — lock onto whoever the player just hit ────────────
+
+    @Override
+    public void onPostAttack(PostAttackEvent event) {
+        if (mc.player == null) return;
+        Entity e = event.getTarget();
+        if (!(e instanceof PlayerEntity pe)) return;
+        if (pe == mc.player) return;
+        if (friendCheck.getValue()
+                && Rocky.INSTANCE.getFriendManager().isFriend(pe.getUuidAsString())) return;
+
+        // Update the lock every time the user manually hits someone
+        lockedTarget = pe;
+        forceCritState = 0;
+    }
+
+    // ── TickListener — send silent extra hits to the locked target ────────────
 
     @Override
     public void onTick() {
         if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
 
-        // ── Target selection ──────────────────────────────────────────────────
-        LivingEntity target = findTarget();
-        if (target == null) {
-            forceCritState = 0;
-            return;
+        // Validate the lock each tick
+        if (lockedTarget == null) return;
+        if (!lockedTarget.isAlive() || lockedTarget.isRemoved()) {
+            clearLock(); return;
+        }
+        if (mc.player.distanceTo(lockedTarget) > range.getValue()) {
+            clearLock(); return;
         }
 
-        // ── Gates ─────────────────────────────────────────────────────────────
-        if (fullCooldown.getValue() && mc.player.getAttackCooldownProgress(0f) < 1f) return;
-        if (!attackTimer.delay(currentDelay)) return;
+        // On-click gate — clear lock when the player lifts the mouse button
+        if (onClickOnly.getValue()) {
+            boolean clicking = org.lwjgl.glfw.GLFW.glfwGetMouseButton(
+                    mc.getWindow().getHandle(),
+                    org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT)
+                    == org.lwjgl.glfw.GLFW.GLFW_PRESS;
+            if (!clicking) {
+                clearLock(); return;
+            }
+        }
+
+        // CPS timer gate
+        if (!hitTimer.delay(currentDelay)) return;
 
         // ── Critical hit logic ────────────────────────────────────────────────
         if (requireCrit.getValue() || forceCrit.getValue()) {
             if (forceCrit.getValue()) {
                 switch (forceCritState) {
                     case 0 -> {
-                        // Idle — jump only when on ground
                         if (mc.player.isOnGround()) {
                             mc.player.jump();
                             forceCritState = 1;
@@ -127,30 +161,24 @@ public final class SilentAim extends Module implements TickListener {
                         return;
                     }
                     case 1 -> {
-                        // Waiting to start falling
                         if (!mc.player.isOnGround() && mc.player.getVelocity().y <= 0) {
-                            forceCritState = 2; // now descending — crit frame
+                            forceCritState = 2;
                         } else {
                             return;
                         }
                     }
-                    // case 2: falling — fall through to attack below
+                    // case 2: descending — fall through
                 }
             }
-
-            // Require Crit gate (applies whether forceCrit is on or off)
             if (requireCrit.getValue() && !isCritFrame()) return;
         }
-
         forceCritState = 0;
 
-        // ── Silent rotation — ONE packet per attack ───────────────────────────
-        // Aim at the target's eye position with slight Gaussian jitter so the
-        // angle is never machine-perfect. The server sees this and validates the
-        // hit. The game's own next PositionAndRotation packet restores the real
-        // yaw/pitch — the AC sees a brief natural look toward the target, then
-        // smooth return. No snap-back, no continuous stream.
-        float[] rot = calcRotation(target);
+        // ── Silent rotation — ONE packet, aimed with jitter ───────────────────
+        // Server needs to see us looking at the target for the hit to register.
+        // We send exactly one LookAndOnGround per extra hit; the game's own next
+        // PositionAndRotation packet carries our real yaw/pitch back naturally.
+        float[] rot = calcRotation(lockedTarget);
         rot[0] += (float) (rng.nextGaussian() * 0.5);
         rot[1] += (float) (rng.nextGaussian() * 0.4);
         mc.getNetworkHandler().sendPacket(
@@ -159,61 +187,27 @@ public final class SilentAim extends Module implements TickListener {
                         mc.player.isOnGround(),
                         mc.player.horizontalCollision));
 
-        // ── Attack ────────────────────────────────────────────────────────────
-        mc.interactionManager.attackEntity(mc.player, target);
-        mc.player.swingHand(Hand.MAIN_HAND);
+        // ── Silent attack packet ──────────────────────────────────────────────
+        // PlayerInteractEntityC2SPacket.attack() sends the damage to the server
+        // WITHOUT resetting the client-side attack cooldown and WITHOUT playing
+        // the swing arm animation — entirely invisible on your screen.
+        mc.getNetworkHandler().sendPacket(
+                PlayerInteractEntityC2SPacket.attack(lockedTarget, mc.player.isSneaking()));
 
         rollDelay();
-        attackTimer.reset();
+        hitTimer.reset();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Finds the closest alive enemy player within range and FOV cone.
-     * The FOV cone is measured from the CLIENT yaw/pitch (what the player
-     * is actually looking at), so target selection feels natural.
-     */
-    private LivingEntity findTarget() {
-        double r = range.getValue();
-        float halfFov = (float) fov.getValue() / 2f;
-
-        LivingEntity best = null;
-        double bestDist = Double.MAX_VALUE;
-
-        for (net.minecraft.entity.Entity e : mc.world.getEntities()) {
-            if (!(e instanceof PlayerEntity le)) continue;
-            if (le == mc.player || !le.isAlive() || le.isRemoved()) continue;
-
-            double dist = mc.player.distanceTo(le);
-            if (dist > r) continue;
-
-            if (friendCheck.getValue()
-                    && Rocky.INSTANCE.getFriendManager().isFriend(le.getUuidAsString())) continue;
-
-            // FOV check against client-visible rotation
-            float[] rot = calcRotation(le);
-            float yawDiff   = Math.abs(MathHelper.wrapDegrees(rot[0] - mc.player.getYaw()));
-            float pitchDiff = Math.abs(rot[1] - mc.player.getPitch());
-            if (yawDiff + pitchDiff > halfFov) continue;
-
-            if (dist < bestDist) {
-                bestDist = dist;
-                best = le;
-            }
-        }
-        return best;
+    private void clearLock() {
+        lockedTarget   = null;
+        forceCritState = 0;
     }
 
     /**
-     * True when the player is in a valid Minecraft crit frame:
-     *  - falling (velocity.y < 0)
-     *  - not on ground
-     *  - not in water / lava
-     *  - not climbing
-     *  - not riding a vehicle
-     * This is identical to vanilla's own crit check so every attack here
-     * produces a legitimate critical hit with full 150% damage.
+     * True when the player is in a natural Minecraft crit frame:
+     * falling, not on ground, not in fluid, not climbing, not riding.
      */
     private boolean isCritFrame() {
         return mc.player.getVelocity().y < 0
@@ -224,10 +218,7 @@ public final class SilentAim extends Module implements TickListener {
                 && mc.player.getVehicle() == null;
     }
 
-    /**
-     * Calculates [yaw, pitch] from the player's eye position to the target's
-     * eye position.
-     */
+    /** Yaw/pitch from player eye to target eye. */
     private float[] calcRotation(LivingEntity target) {
         Vec3d eyes = mc.player.getEyePos();
         Vec3d tgt  = target.getEyePos();
@@ -240,18 +231,11 @@ public final class SilentAim extends Module implements TickListener {
         return new float[]{yaw, pitch};
     }
 
-    /**
-     * Picks a fresh random delay so the attack interval is never constant.
-     */
+    /** Randomises attack interval so the timing is never constant. */
     private void rollDelay() {
         int lo = Math.max(1, cps.getMinInt());
         int hi = Math.max(lo, cps.getMaxInt());
         int thisCps = lo + (int) (rng.nextDouble() * (hi - lo + 1));
         currentDelay = 1000 / Math.max(1, thisCps);
-    }
-
-    /** Used by KillAura / Strafe to share target info. */
-    public LivingEntity getTarget() {
-        return isEnabled() ? null : null; // SilentAim targets are per-tick; expose if needed
     }
 }

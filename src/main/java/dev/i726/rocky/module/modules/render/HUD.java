@@ -43,8 +43,8 @@ public final class HUD extends Module implements HudListener, ButtonListener {
     };
 
     /** Approximate panel sizes used by the HUD editor drag handles. */
-    public static final int[] APPROX_W = { 220, 200, 132, 160, 150 };
-    public static final int[] APPROX_H = { 24,  24,  72,  52,  200 };
+    public static final int[] APPROX_W = { 220, 200, 155, 180, 150 };
+    public static final int[] APPROX_H = { 24,  24,  108, 110, 200 };
 
     // ── Stored positions (NaN = use default layout) ───────────────────────
     public static float[] storedX = new float[NUM_PANELS];
@@ -286,65 +286,118 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                     mc.player.getInventory().getStack(37),
                     mc.player.getInventory().getStack(36)
             };
-            int bw = 120, bh = 4 * 14 + 8;
+            final int rowH  = 22;
+            final int bw    = 155;
+            final int headH = 14;
+            int bh = headH + 4 * rowH + 6;
             int bx = px(P_ARMOR, 8), by = py(P_ARMOR, screenH - bh - 8);
 
-            ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 40));
+            ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 50));
             ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
             ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
             ctx.fill(bx, by, bx + 3, by + bh, accentInt);
 
+            // Header
+            ctx.fill(bx + 3, by, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 18));
+            ctx.fill(bx + 3, by + headH - 1, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 60));
+            TextRenderer.drawString("ARMOR", ctx, bx + 9, by + 3, accentInt);
+
             for (int i = 0; i < 4; i++) {
                 ItemStack stack = display[i];
-                int rowY = by + 5 + i * 14;
+                int rowY = by + headH + 3 + i * rowH;
+
+                // Item icon
+                if (!stack.isEmpty()) {
+                    ctx.drawItem(stack, bx + 5, rowY + 1);
+                }
+
+                // Label
+                int labelColor = stack.isEmpty() ? GuiTheme.textSecondary() : GuiTheme.textPrimary();
+                TextRenderer.drawString(labels[i], ctx, bx + 24, rowY + 3, labelColor);
+
                 if (stack.isEmpty()) {
-                    TextRenderer.drawString(labels[i] + "  --", ctx, bx + 9, rowY, GuiTheme.textSecondary());
+                    TextRenderer.drawString("--", ctx, bx + bw - 18, rowY + 3, GuiTheme.textSecondary());
                     continue;
                 }
+
                 int maxDmg = stack.getMaxDamage();
                 int curDmg = stack.getDamage();
                 float pct  = maxDmg > 0 ? (float)(maxDmg - curDmg) / maxDmg : 1f;
                 Color barC = pct > 0.5f ? new Color(34, 197, 94)
                            : pct > 0.25f ? new Color(249, 115, 22)
                            : new Color(239, 68, 68);
-                TextRenderer.drawString(labels[i], ctx, bx + 9, rowY, GuiTheme.textSecondary());
-                int barX    = bx + 9 + TextRenderer.getWidth(labels[i]) + 4;
-                int barMaxW = bx + bw - barX - 4;
+
+                // Percentage text right-aligned
+                String pctStr = (int)(pct * 100) + "%";
+                int pctW = TextRenderer.getWidth(pctStr);
+                TextRenderer.drawString(pctStr, ctx, bx + bw - pctW - 5, rowY + 3,
+                        GuiTheme.rgba(barC.getRed(), barC.getGreen(), barC.getBlue(), 220));
+
+                // Bar
+                int barX    = bx + 24;
+                int barMaxW = bx + bw - barX - pctW - 10;
                 int barW    = (int)(barMaxW * pct);
-                int barY    = rowY + 3;
-                ctx.fill(barX, barY, barX + barMaxW, barY + 4, GuiTheme.rgba(30, 28, 44, 255));
-                if (barW > 0)
-                    ctx.fill(barX, barY, barX + barW, barY + 4,
-                            GuiTheme.rgba(barC.getRed(), barC.getGreen(), barC.getBlue(), 220));
+                int barY    = rowY + 14;
+                ctx.fill(barX, barY, barX + barMaxW, barY + 5, GuiTheme.rgba(20, 18, 30, 230));
+                if (barW > 0) {
+                    ctx.fillGradient(barX, barY, barX + barW, barY + 5,
+                            GuiTheme.rgba(barC.getRed(), barC.getGreen(), barC.getBlue(), 230),
+                            GuiTheme.rgba(Math.max(0, barC.getRed() - 40), Math.max(0, barC.getGreen() - 40), Math.max(0, barC.getBlue() - 40), 200));
+                }
+                // Bar highlight line
+                if (barW > 1)
+                    ctx.fill(barX, barY, barX + barW, barY + 1, GuiTheme.rgba(255, 255, 255, 35));
             }
         }
 
         // ── 4. Potion Effects ──────────────────────────────────────────────
         if (effectsHud.getValue() && mc.player != null && !mc.player.getStatusEffects().isEmpty()) {
             List<StatusEffectInstance> effects = new ArrayList<>(mc.player.getStatusEffects());
-            final int rowH  = 18;  // px per effect row (text + bar)
+            final int rowH  = 22;
             final int bw    = 180;
-            int bh = effects.size() * rowH + 6;
-            int armorOffset = armorHud.getValue() ? 4 * 14 + 8 + 4 : 0;
+            final int headH = 14;
+            int bh = headH + effects.size() * rowH + 6;
+            int armorOffset = armorHud.getValue()
+                    ? (14 + 4 * 22 + 6) + 6   // headH + 4*rowH + padding + gap
+                    : 0;
             int bx = px(P_POTIONS, 8), by = py(P_POTIONS, screenH - bh - 8 - armorOffset);
 
-            ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 40));
+            ctx.fill(bx + 2, by + 2, bx + bw + 2, by + bh + 2, GuiTheme.rgba(0, 0, 0, 50));
             ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GuiTheme.border());
             ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
             ctx.fill(bx, by, bx + 3, by + bh, accentInt);
 
+            // Header
+            ctx.fill(bx + 3, by, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 18));
+            ctx.fill(bx + 3, by + headH - 1, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 60));
+            TextRenderer.drawString("EFFECTS", ctx, bx + 9, by + 3, accentInt);
+
             for (int i = 0; i < effects.size(); i++) {
                 StatusEffectInstance fx = effects.get(i);
-                int rowY = by + 3 + i * rowH;
+                int rowY = by + headH + 3 + i * rowH;
 
-                // Name + level label
+                // Determine effect color based on type (beneficial vs harmful)
+                boolean isBeneficial = fx.getEffectType().value().isBeneficial();
+                Color nameCol = isBeneficial ? new Color(134, 239, 172) : new Color(252, 165, 165);
+
+                // Name
                 var id2 = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
                 String efName = id2 != null ? capitalize(id2.getPath().replace("_", " ")) : "?";
-                int lvl  = fx.getAmplifier() + 1;
-                String label = lvl > 1 ? efName + " " + lvl : efName;
-                TextRenderer.drawString(label, ctx, bx + 9, rowY + 2, GuiTheme.textPrimary());
+                TextRenderer.drawString(efName, ctx, bx + 9, rowY + 2,
+                        GuiTheme.rgba(nameCol.getRed(), nameCol.getGreen(), nameCol.getBlue(), 230));
 
-                // Duration text — right-aligned
+                // Level badge (only if > 1)
+                int lvl = fx.getAmplifier() + 1;
+                if (lvl > 1) {
+                    String lvlStr = toRoman(lvl);
+                    int lvlW = TextRenderer.getWidth(lvlStr);
+                    int badgeX = bx + 9 + TextRenderer.getWidth(efName) + 3;
+                    ctx.fill(badgeX - 1, rowY + 1, badgeX + lvlW + 2, rowY + 10,
+                            GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 40));
+                    TextRenderer.drawString(lvlStr, ctx, badgeX, rowY + 2, accentInt);
+                }
+
+                // Duration — right-aligned
                 int durSec = fx.getDuration() / 20;
                 String time = durSec >= 60
                         ? (durSec / 60) + "m " + (durSec % 60) + "s"
@@ -353,18 +406,26 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 Color timeCol = durSec > 60 ? new Color(134, 239, 172)
                              : durSec > 20  ? new Color(253, 186, 116)
                              :                new Color(252, 165, 165);
-                TextRenderer.drawString(time, ctx, bx + bw - timeW - 6, rowY + 2, GuiTheme.rgba(timeCol.getRed(), timeCol.getGreen(), timeCol.getBlue(), 220));
+                TextRenderer.drawString(time, ctx, bx + bw - timeW - 6, rowY + 2,
+                        GuiTheme.rgba(timeCol.getRed(), timeCol.getGreen(), timeCol.getBlue(), 220));
 
-                // Duration bar (3 px tall, capped at 5 minutes = full bar)
-                int barX = bx + 7, barW2 = bw - 14;
+                // Duration bar — full width, 5 px tall, gradient
+                int barX  = bx + 7;
+                int barTW = bw - 14;
                 float pct = Math.min(1f, durSec / 300f);
                 Color barCol = durSec > 60 ? new Color(34, 197, 94)
                              : durSec > 20 ? new Color(249, 115, 22)
                              :               new Color(239, 68, 68);
-                ctx.fill(barX, rowY + 13, barX + barW2, rowY + 16, GuiTheme.rgba(30, 28, 44, 200));
-                if (pct > 0)
-                    ctx.fill(barX, rowY + 13, barX + (int)(barW2 * pct), rowY + 16,
-                            GuiTheme.rgba(barCol.getRed(), barCol.getGreen(), barCol.getBlue(), 210));
+                int barY = rowY + 14;
+                ctx.fill(barX, barY, barX + barTW, barY + 5, GuiTheme.rgba(20, 18, 30, 230));
+                if (pct > 0) {
+                    int fw = (int)(barTW * pct);
+                    ctx.fillGradient(barX, barY, barX + fw, barY + 5,
+                            GuiTheme.rgba(barCol.getRed(), barCol.getGreen(), barCol.getBlue(), 230),
+                            GuiTheme.rgba(Math.max(0, barCol.getRed() - 40), Math.max(0, barCol.getGreen() - 40), Math.max(0, barCol.getBlue() - 40), 200));
+                    // Highlight line on top of bar
+                    ctx.fill(barX, barY, barX + fw, barY + 1, GuiTheme.rgba(255, 255, 255, 35));
+                }
             }
         }
 
@@ -440,6 +501,21 @@ public final class HUD extends Module implements HudListener, ButtonListener {
         if (yaw < 247.5) return "NE";
         if (yaw < 292.5) return "E";
         return "SE";
+    }
+
+    private static String toRoman(int n) {
+        if (n <= 0)  return String.valueOf(n);
+        if (n == 1)  return "I";
+        if (n == 2)  return "II";
+        if (n == 3)  return "III";
+        if (n == 4)  return "IV";
+        if (n == 5)  return "V";
+        if (n == 6)  return "VI";
+        if (n == 7)  return "VII";
+        if (n == 8)  return "VIII";
+        if (n == 9)  return "IX";
+        if (n == 10) return "X";
+        return String.valueOf(n);
     }
 
     private static String capitalize(String s) {

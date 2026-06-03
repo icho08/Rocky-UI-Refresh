@@ -15,8 +15,6 @@ import dev.i726.rocky.utils.NotificationManager;
 import dev.i726.rocky.utils.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.render.RenderLayer;
-import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -361,13 +359,16 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                             : durSec > 20 ? new Color(249, 115, 22)
                             :               new Color(239, 68, 68);
 
-                // Effect icon (10×10)
-                try {
-                    Sprite sprite = mc.getStatusEffectSpriteManager().getSprite(fx.getEffectType());
-                    ctx.drawSpriteStretched(RenderLayer::getGuiTextured, sprite, bx + 6, rowY + 1, 10, 10);
-                } catch (Exception ignored) {}
+                // Effect dot — filled square in urgency color
+                boolean beneficial = fx.getEffectType().value().isBeneficial();
+                Color dotC = beneficial ? new Color(timeC.getRed(), timeC.getGreen(), timeC.getBlue(), 200)
+                                        : new Color(239, 68, 68, 200);
+                ctx.fill(bx + 7, rowY + 2, bx + 14, rowY + 9,
+                        GuiTheme.rgba(dotC.getRed(), dotC.getGreen(), dotC.getBlue(), 200));
+                ctx.fill(bx + 7, rowY + 2, bx + 14, rowY + 3,
+                        GuiTheme.rgba(255, 255, 255, 30));
 
-                // Effect name (left, after icon)
+                // Effect name (left, after dot)
                 var id2 = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
                 String efName = id2 != null ? capitalize(id2.getPath().replace("_", " ")) : "?";
                 int lvl = fx.getAmplifier() + 1;

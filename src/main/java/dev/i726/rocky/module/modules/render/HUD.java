@@ -18,6 +18,7 @@ import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
@@ -359,18 +360,17 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                             : durSec > 20 ? new Color(249, 115, 22)
                             :               new Color(239, 68, 68);
 
-                // Effect dot — filled square in urgency color
-                boolean beneficial = fx.getEffectType().value().isBeneficial();
-                Color dotC = beneficial ? new Color(timeC.getRed(), timeC.getGreen(), timeC.getBlue(), 200)
-                                        : new Color(239, 68, 68, 200);
-                ctx.fill(bx + 7, rowY + 2, bx + 14, rowY + 9,
-                        GuiTheme.rgba(dotC.getRed(), dotC.getGreen(), dotC.getBlue(), 200));
-                ctx.fill(bx + 7, rowY + 2, bx + 14, rowY + 3,
-                        GuiTheme.rgba(255, 255, 255, 30));
+                // Effect icon from GUI atlas (mob_effect/<name>)
+                var iconId = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
+                if (iconId != null) {
+                    try {
+                        Identifier spriteId = Identifier.of(iconId.getNamespace(), "mob_effect/" + iconId.getPath());
+                        ctx.drawGuiTexture(spriteId, bx + 5, rowY + 1, 10, 10);
+                    } catch (Exception ignored) {}
+                }
 
-                // Effect name (left, after dot)
-                var id2 = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
-                String efName = id2 != null ? capitalize(id2.getPath().replace("_", " ")) : "?";
+                // Effect name (left, after icon)
+                String efName = iconId != null ? capitalize(iconId.getPath().replace("_", " ")) : "?";
                 int lvl = fx.getAmplifier() + 1;
                 String label = lvl > 1 ? efName + " " + toRoman(lvl) : efName;
                 TextRenderer.drawString(label, ctx, bx + 19, rowY + 2, GuiTheme.textSecondary());

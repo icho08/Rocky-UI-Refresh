@@ -15,6 +15,8 @@ import dev.i726.rocky.utils.NotificationManager;
 import dev.i726.rocky.utils.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.network.PlayerListEntry;
+import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.texture.Sprite;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -359,19 +361,25 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                             : durSec > 20 ? new Color(249, 115, 22)
                             :               new Color(239, 68, 68);
 
-                // Effect name (white, left)
+                // Effect icon (10×10)
+                try {
+                    Sprite sprite = mc.getStatusEffectSpriteManager().getSprite(fx.getEffectType());
+                    ctx.drawSpriteStretched(RenderLayer::getGuiTextured, sprite, bx + 6, rowY + 1, 10, 10);
+                } catch (Exception ignored) {}
+
+                // Effect name (left, after icon)
                 var id2 = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
                 String efName = id2 != null ? capitalize(id2.getPath().replace("_", " ")) : "?";
                 int lvl = fx.getAmplifier() + 1;
                 String label = lvl > 1 ? efName + " " + toRoman(lvl) : efName;
-                TextRenderer.drawString(label, ctx, bx + 9, rowY + 5, GuiTheme.textSecondary());
+                TextRenderer.drawString(label, ctx, bx + 19, rowY + 2, GuiTheme.textSecondary());
 
                 // Time remaining (colored, right)
                 String time = durSec >= 60
                         ? (durSec / 60) + "m " + (durSec % 60) + "s"
                         : durSec + "s";
                 int timeW = TextRenderer.getWidth(time);
-                TextRenderer.drawString(time, ctx, bx + bw - timeW - 6, rowY + 5,
+                TextRenderer.drawString(time, ctx, bx + bw - timeW - 6, rowY + 2,
                         GuiTheme.rgba(timeC.getRed(), timeC.getGreen(), timeC.getBlue(), 230));
             }
         }

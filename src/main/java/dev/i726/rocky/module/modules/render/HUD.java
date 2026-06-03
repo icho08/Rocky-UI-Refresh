@@ -43,8 +43,8 @@ public final class HUD extends Module implements HudListener, ButtonListener {
     };
 
     /** Approximate panel sizes used by the HUD editor drag handles. */
-    public static final int[] APPROX_W = { 220, 200, 155, 180, 150 };
-    public static final int[] APPROX_H = { 24,  24,  108, 110, 200 };
+    public static final int[] APPROX_W = { 220, 200, 140, 170, 150 };
+    public static final int[] APPROX_H = { 24,  24,   74,  80, 200 };
 
     // ── Stored positions (NaN = use default layout) ───────────────────────
     public static float[] storedX = new float[NUM_PANELS];
@@ -286,8 +286,8 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                     mc.player.getInventory().getStack(37),
                     mc.player.getInventory().getStack(36)
             };
-            final int rowH  = 22;
-            final int bw    = 155;
+            final int rowH  = 13;
+            final int bw    = 140;
             final int headH = 14;
             int bh = headH + 4 * rowH + 6;
             int bx = px(P_ARMOR, 8), by = py(P_ARMOR, screenH - bh - 8);
@@ -315,43 +315,28 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 int maxDmg = stack.getMaxDamage();
                 int curDmg = stack.getDamage();
                 float pct  = maxDmg > 0 ? (float)(maxDmg - curDmg) / maxDmg : 1f;
-                Color barC = pct > 0.5f ? new Color(34, 197, 94)
+                Color valC = pct > 0.5f ? new Color(34, 197, 94)
                            : pct > 0.25f ? new Color(249, 115, 22)
                            : new Color(239, 68, 68);
 
-                // Label (left) in bar color so it feels integrated
-                TextRenderer.drawString(labels[i], ctx, bx + 9, rowY + 5,
-                        GuiTheme.rgba(barC.getRed(), barC.getGreen(), barC.getBlue(), 200));
-
-                // Percentage (right)
+                // Label left, value right — no bar
+                TextRenderer.drawString(labels[i], ctx, bx + 9, rowY + 5, GuiTheme.textSecondary());
                 String pctStr = (int)(pct * 100) + "%";
                 int pctW = TextRenderer.getWidth(pctStr);
                 TextRenderer.drawString(pctStr, ctx, bx + bw - pctW - 6, rowY + 5,
-                        GuiTheme.rgba(barC.getRed(), barC.getGreen(), barC.getBlue(), 160));
-
-                // Bar — slim (3 px), sits between label and percentage
-                int labelEnd = bx + 9 + TextRenderer.getWidth(labels[i]) + 5;
-                int barMaxX  = bx + bw - pctW - 12;
-                int barAvail = barMaxX - labelEnd;
-                int barFill  = (int)(barAvail * pct);
-                int barY     = rowY + 8;
-                ctx.fill(labelEnd, barY, barMaxX, barY + 3, GuiTheme.rgba(20, 18, 30, 200));
-                if (barFill > 0)
-                    ctx.fillGradient(labelEnd, barY, labelEnd + barFill, barY + 3,
-                            GuiTheme.rgba(barC.getRed(), barC.getGreen(), barC.getBlue(), 230),
-                            GuiTheme.rgba(Math.max(0, barC.getRed() - 50), Math.max(0, barC.getGreen() - 50), Math.max(0, barC.getBlue() - 50), 190));
+                        GuiTheme.rgba(valC.getRed(), valC.getGreen(), valC.getBlue(), 230));
             }
         }
 
         // ── 4. Potion Effects ──────────────────────────────────────────────
         if (effectsHud.getValue() && mc.player != null && !mc.player.getStatusEffects().isEmpty()) {
             List<StatusEffectInstance> effects = new ArrayList<>(mc.player.getStatusEffects());
-            final int rowH  = 22;
-            final int bw    = 180;
+            final int rowH  = 13;
+            final int bw    = 170;
             final int headH = 14;
             int bh = headH + effects.size() * rowH + 6;
             int armorOffset = armorHud.getValue()
-                    ? (14 + 4 * 22 + 6) + 6   // headH + 4*rowH + padding + gap
+                    ? (14 + 4 * 13 + 6) + 4   // headH + 4*rowH + padding + gap
                     : 0;
             int bx = px(P_POTIONS, 8), by = py(P_POTIONS, screenH - bh - 8 - armorOffset);
 
@@ -369,39 +354,25 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 StatusEffectInstance fx = effects.get(i);
                 int rowY = by + headH + 2 + i * rowH;
 
-                // Duration values
                 int durSec = fx.getDuration() / 20;
-                Color barCol = durSec > 60 ? new Color(34, 197, 94)
-                             : durSec > 20 ? new Color(249, 115, 22)
-                             :               new Color(239, 68, 68);
+                Color timeC = durSec > 60 ? new Color(34, 197, 94)
+                            : durSec > 20 ? new Color(249, 115, 22)
+                            :               new Color(239, 68, 68);
 
-                // Effect name in white
+                // Effect name (white, left)
                 var id2 = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
                 String efName = id2 != null ? capitalize(id2.getPath().replace("_", " ")) : "?";
                 int lvl = fx.getAmplifier() + 1;
                 String label = lvl > 1 ? efName + " " + toRoman(lvl) : efName;
-                TextRenderer.drawString(label, ctx, bx + 9, rowY + 5, GuiTheme.textPrimary());
+                TextRenderer.drawString(label, ctx, bx + 9, rowY + 5, GuiTheme.textSecondary());
 
-                // Time right-aligned, colored by urgency
+                // Time remaining (colored, right)
                 String time = durSec >= 60
                         ? (durSec / 60) + "m " + (durSec % 60) + "s"
                         : durSec + "s";
                 int timeW = TextRenderer.getWidth(time);
                 TextRenderer.drawString(time, ctx, bx + bw - timeW - 6, rowY + 5,
-                        GuiTheme.rgba(barCol.getRed(), barCol.getGreen(), barCol.getBlue(), 210));
-
-                // Slim 3 px bar between name and time
-                float pct = Math.min(1f, durSec / 300f);
-                int nameEnd  = bx + 9 + TextRenderer.getWidth(label) + 5;
-                int barMaxX  = bx + bw - timeW - 12;
-                int barAvail = barMaxX - nameEnd;
-                int barFill  = (int)(barAvail * pct);
-                int barY     = rowY + 8;
-                ctx.fill(nameEnd, barY, barMaxX, barY + 3, GuiTheme.rgba(20, 18, 30, 200));
-                if (barFill > 0)
-                    ctx.fillGradient(nameEnd, barY, nameEnd + barFill, barY + 3,
-                            GuiTheme.rgba(barCol.getRed(), barCol.getGreen(), barCol.getBlue(), 230),
-                            GuiTheme.rgba(Math.max(0, barCol.getRed() - 50), Math.max(0, barCol.getGreen() - 50), Math.max(0, barCol.getBlue() - 50), 190));
+                        GuiTheme.rgba(timeC.getRed(), timeC.getGreen(), timeC.getBlue(), 230));
             }
         }
 

@@ -14,6 +14,7 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.NotificationManager;
 import dev.i726.rocky.utils.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.render.Pipelines;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.item.ItemStack;
@@ -365,7 +366,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 if (iconId != null) {
                     try {
                         Identifier spriteId = Identifier.of(iconId.getNamespace(), "mob_effect/" + iconId.getPath());
-                        ctx.drawGuiTexture(spriteId, bx + 5, rowY + 1, 10, 10);
+                        ctx.drawGuiTexture(Pipelines.GUI_TEXTURED, spriteId, bx + 5, rowY + 1, 10, 10);
                     } catch (Exception ignored) {}
                 }
 

@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "fyyMJRQRO3LglmC6DPmcH"
+uri = "file://attached_assets/reyan_faith_1.21.zip"
+type = "unspecified"
+title = "reyan_faith — converted for 1.21"

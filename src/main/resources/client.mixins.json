@@ -18,6 +18,8 @@
   ],
   "client": [
     "EntityRendererMixin",
+    "PlayerEntityRenderStateMixin",
+    "PlayerEntityRendererMixin",
     "ModMenuHideMixin",
     "CameraMixin",
     "ClientPlayerEntityMixin",

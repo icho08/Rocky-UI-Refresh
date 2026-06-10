@@ -2,9 +2,14 @@ package dev.i726.rocky.module.modules.render;
 
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
+import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.utils.EncryptedString;
 
 public final class HidePlayers extends Module {
+
+    private final BooleanSetting showCombatTarget = new BooleanSetting(
+            EncryptedString.of("Show Combat Target"), true)
+            .setDescription(EncryptedString.of("Still render the player KillAura is currently targeting"));
 
     public HidePlayers() {
         super(
@@ -13,6 +18,11 @@ public final class HidePlayers extends Module {
                 -1,
                 CategoryManager.ESP
         );
+        addSettings(showCombatTarget);
+    }
+
+    public boolean isShowCombatTarget() {
+        return showCombatTarget.getValue();
     }
 
     @Override

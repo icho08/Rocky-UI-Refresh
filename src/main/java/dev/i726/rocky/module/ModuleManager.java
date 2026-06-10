@@ -114,6 +114,9 @@ public final class ModuleManager implements ButtonListener {
                 add(new HidePlayers());
                 add(new Fullbright());
                 add(new NameTags());
+                add(new NoParticles());
+                add(new EntityCulling());
+                add(new AntiFog());
 
                 //Blatant
                 add(new Fly());

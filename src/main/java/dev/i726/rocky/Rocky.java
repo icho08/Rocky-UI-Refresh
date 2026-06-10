@@ -2,6 +2,7 @@ package dev.i726.rocky;
 
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.gui.GuiTheme;
+import dev.i726.rocky.managers.CombatManager;
 import dev.i726.rocky.managers.FriendManager;
 import dev.i726.rocky.module.ModuleManager;
 import dev.i726.rocky.managers.ProfileManager;
@@ -20,6 +21,7 @@ public final class Rocky {
         public ModuleManager moduleManager;
         public EventManager eventManager;
         public FriendManager friendManager;
+        public CombatManager combatManager;
         public static MinecraftClient mc;
         public String version = " v1.0";
         public static boolean BETA;
@@ -36,6 +38,7 @@ public final class Rocky {
                 GuiTheme.loadTheme();
                 this.eventManager = new EventManager();
                 this.moduleManager = new ModuleManager();
+                this.combatManager = new CombatManager();
                 this.rotatorManager = new RotatorManager();
                 this.profileManager = new ProfileManager();
                 this.friendManager = new FriendManager();
@@ -61,6 +64,10 @@ public final class Rocky {
 
         public EventManager getEventManager() {
                 return eventManager;
+        }
+
+        public CombatManager getCombatManager() {
+                return combatManager;
         }
 
         public void resetModifiedDate() {

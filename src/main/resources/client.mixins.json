@@ -20,6 +20,8 @@
     "EntityRendererMixin",
     "PlayerEntityRenderStateMixin",
     "PlayerEntityRendererMixin",
+    "ParticleManagerMixin",
+    "BackgroundRendererMixin",
     "ModMenuHideMixin",
     "CameraMixin",
     "ClientPlayerEntityMixin",

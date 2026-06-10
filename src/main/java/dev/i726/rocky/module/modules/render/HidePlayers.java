@@ -9,7 +9,7 @@ public final class HidePlayers extends Module {
 
     private final BooleanSetting showCombatTarget = new BooleanSetting(
             EncryptedString.of("Show Combat Target"), true)
-            .setDescription(EncryptedString.of("Still render the player KillAura is currently targeting"));
+            .setDescription(EncryptedString.of("Still render any player you are currently in combat with"));
 
     public HidePlayers() {
         super(

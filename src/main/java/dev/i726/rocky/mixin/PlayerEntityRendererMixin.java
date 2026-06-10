@@ -1,5 +1,6 @@
 package dev.i726.rocky.mixin;
 
+import dev.i726.rocky.imixin.IPlayerRenderState;
 import net.minecraft.entity.Entity;
 import net.minecraft.client.render.entity.PlayerEntityRenderer;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;

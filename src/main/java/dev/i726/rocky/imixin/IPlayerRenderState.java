@@ -1,4 +1,4 @@
-package dev.i726.rocky.mixin;
+package dev.i726.rocky.imixin;
 
 import java.util.UUID;
 

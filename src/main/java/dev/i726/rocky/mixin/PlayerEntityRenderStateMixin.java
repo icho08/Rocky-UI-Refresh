@@ -1,5 +1,6 @@
 package dev.i726.rocky.mixin;
 
+import dev.i726.rocky.imixin.IPlayerRenderState;
 import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;

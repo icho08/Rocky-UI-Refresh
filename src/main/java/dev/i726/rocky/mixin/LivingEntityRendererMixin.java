@@ -1,6 +1,7 @@
 package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.Rocky;
+import dev.i726.rocky.imixin.IPlayerRenderState;
 import dev.i726.rocky.module.modules.render.EntityCulling;
 import dev.i726.rocky.module.modules.render.HidePlayers;
 import net.minecraft.client.render.command.OrderedRenderCommandQueue;

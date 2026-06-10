@@ -307,11 +307,14 @@ public final class SmartBridge extends Module implements TickListener {
         int useSlot = resolveBlockSlot();
         if (useSlot == -1) return;
 
+        // -2 means the block is in the offhand; use OFF_HAND and skip slot swap
+        final Hand placeHand = (useSlot == -2) ? Hand.OFF_HAND : Hand.MAIN_HAND;
         final BlockHitResult bhr      = new BlockHitResult(aimPoint, placeDir, standing, false);
         final int            fUseSlot = useSlot;
         final int            fPrev    = p.getInventory().getSelectedSlot();
 
-        if (fUseSlot != fPrev) p.getInventory().setSelectedSlot(fUseSlot);
+        if (placeHand == Hand.MAIN_HAND && fUseSlot != fPrev)
+            p.getInventory().setSelectedSlot(fUseSlot);
 
         // Edge sneak: fire on every tick where player is within 0.35 of the ledge.
         // Released immediately in afterPacketAction on success so sprint resumes
@@ -327,8 +330,8 @@ public final class SmartBridge extends Module implements TickListener {
             if (pp == null || mc.interactionManager == null) return;
             Clutch.placing = true;
             try {
-                if (mc.interactionManager.interactBlock(pp, Hand.MAIN_HAND, bhr).isAccepted()) {
-                    pp.swingHand(Hand.MAIN_HAND);
+                if (mc.interactionManager.interactBlock(pp, placeHand, bhr).isAccepted()) {
+                    pp.swingHand(placeHand);
                     // Release sneak immediately — sprint resumes next tick
                     mc.options.sneakKey.setPressed(false);
                     sneakReleaseNext = false;
@@ -352,7 +355,7 @@ public final class SmartBridge extends Module implements TickListener {
                 }
             } finally {
                 Clutch.placing = false;
-                if (fUseSlot != fPrev && mc.player != null)
+                if (placeHand == Hand.MAIN_HAND && fUseSlot != fPrev && mc.player != null)
                     mc.player.getInventory().setSelectedSlot(fPrev);
             }
         };
@@ -463,18 +466,27 @@ public final class SmartBridge extends Module implements TickListener {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
+    /**
+     * Returns the hotbar slot index (0-8) to use for block placement,
+     * -2 if the block is only in the offhand, or -1 if no blocks available.
+     */
     private int resolveBlockSlot() {
         if (mc.player == null) return -1;
         int setting = blockSlot.getValueInt();
         if (setting >= 1 && setting <= 9) {
             int idx = setting - 1;
             ItemStack stack = mc.player.getInventory().getStack(idx);
-            return (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) ? idx : -1;
+            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) return idx;
+            // Fixed slot has no blocks — fall through to offhand check
+        } else {
+            for (int i = 0; i < 9; i++) {
+                ItemStack stack = mc.player.getInventory().getStack(i);
+                if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) return i;
+            }
         }
-        for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
-            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) return i;
-        }
+        // Offhand fallback
+        ItemStack off = mc.player.getOffHandStack();
+        if (!off.isEmpty() && off.getItem() instanceof BlockItem && off.getCount() > 0) return -2;
         return -1;
     }
 
@@ -488,7 +500,8 @@ public final class SmartBridge extends Module implements TickListener {
 
     private boolean isHoldingBlock() {
         if (mc.player == null) return false;
-        return mc.player.getMainHandStack().getItem() instanceof BlockItem;
+        return mc.player.getMainHandStack().getItem() instanceof BlockItem
+            || mc.player.getOffHandStack().getItem() instanceof BlockItem;
     }
 
     /**

@@ -36,7 +36,6 @@ public class ParticleManagerMixin {
 
     private boolean isCombatParticle(ParticleEffect effect) {
         return effect.getType() == ParticleTypes.CRIT
-                || effect.getType() == ParticleTypes.ENHANCED_CRIT
                 || effect.getType() == ParticleTypes.SWEEP_ATTACK
                 || effect.getType() == ParticleTypes.DAMAGE_INDICATOR
                 || effect.getType() == ParticleTypes.EXPLOSION

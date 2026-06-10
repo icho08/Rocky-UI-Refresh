@@ -8,6 +8,8 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 
+import java.lang.reflect.Field;
+
 public final class TimeChanger extends Module implements TickListener {
 
     public enum WeatherMode { NORMAL, CLEAR, RAIN, THUNDER }
@@ -23,6 +25,8 @@ public final class TimeChanger extends Module implements TickListener {
     private final ModeSetting<WeatherMode> weather = new ModeSetting<>(
             EncryptedString.of("Weather"), WeatherMode.NORMAL, WeatherMode.class)
             .setDescription(EncryptedString.of("Override client-side weather: NORMAL = server weather"));
+
+    private Field cachedTimeField = null;
 
     public TimeChanger() {
         super(EncryptedString.of("Time Changer"),
@@ -50,8 +54,39 @@ public final class TimeChanger extends Module implements TickListener {
     @Override
     public void onTick() {
         if (mc.world == null) return;
-        if (lockTime.getValue()) {
-            mc.world.setTimeOfDay(getTargetTime());
+        if (!lockTime.getValue()) return;
+        setWorldTime(getTargetTime());
+    }
+
+    private void setWorldTime(long targetTime) {
+        try {
+            Object props = mc.world.getLevelProperties();
+            if (props == null) return;
+
+            if (cachedTimeField == null) {
+                cachedTimeField = findTimeField(props.getClass());
+            }
+            if (cachedTimeField != null) {
+                cachedTimeField.setLong(props, targetTime);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private Field findTimeField(Class<?> clazz) {
+        String[] candidates = { "timeOfDay", "time", "dayTime", "worldTime" };
+        Class<?> c = clazz;
+        while (c != null && c != Object.class) {
+            for (String name : candidates) {
+                try {
+                    Field f = c.getDeclaredField(name);
+                    if (f.getType() == long.class || f.getType() == Long.class) {
+                        f.setAccessible(true);
+                        return f;
+                    }
+                } catch (NoSuchFieldException ignored) {}
+            }
+            c = c.getSuperclass();
         }
+        return null;
     }
 }

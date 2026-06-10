@@ -46,6 +46,8 @@ public class MinMaxComponent extends SettingComponent {
 
         ctx.fill(fillStart - 2, ty - 2, fillStart + 2, ty + 6, GuiTheme.toggleThumb());
         ctx.fill(fillEnd - 2,   ty - 2, fillEnd + 2,   ty + 6, GuiTheme.toggleThumb());
+
+        queueTooltipIfHovered(setting, x, y, width, 22, mouseX, mouseY);
     }
 
     private String formatVal(double v) {

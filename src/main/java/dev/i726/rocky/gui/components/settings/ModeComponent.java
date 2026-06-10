@@ -29,6 +29,8 @@ public class ModeComponent extends SettingComponent {
         int modeW = MinecraftClient.getInstance().textRenderer.getWidth(modeName);
         ctx.drawText(MinecraftClient.getInstance().textRenderer,
                 modeName, x + width - modeW - 6, y + 3, GuiTheme.textAccent(), false);
+
+        queueTooltipIfHovered(setting, x, y, width, 14, mouseX, mouseY);
     }
 
     private String formatName(String name) {

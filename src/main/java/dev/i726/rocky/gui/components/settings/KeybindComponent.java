@@ -31,6 +31,8 @@ public class KeybindComponent extends SettingComponent {
         int kw = MinecraftClient.getInstance().textRenderer.getWidth(keyLabel);
         int color = setting.isListening() ? GuiTheme.textPrimary() : GuiTheme.textAccent();
         ctx.drawText(MinecraftClient.getInstance().textRenderer, keyLabel, x + width - kw - 6, y + 3, color, false);
+
+        queueTooltipIfHovered(setting, x, y, width, 14, mouseX, mouseY);
     }
 
     private String keyName(int key) {

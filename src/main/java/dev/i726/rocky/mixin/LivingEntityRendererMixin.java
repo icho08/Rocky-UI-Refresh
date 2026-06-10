@@ -33,6 +33,5 @@ public abstract class LivingEntityRendererMixin {
 
     @Inject(method = "render", at = @At("RETURN"))
     private void onRenderPost(LivingEntityRenderState state, MatrixStack matrices, OrderedRenderCommandQueue commandQueue, CameraRenderState cameraRenderState, CallbackInfo ci) {
-        // Cleanup not needed as we didn't modify state here
     }
 }

@@ -6,370 +6,130 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import dev.i726.rocky.utils.RotationOverride;
 import net.minecraft.client.network.ClientPlayerEntity;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
 import net.minecraft.util.math.Vec3d;
 
-import java.util.concurrent.ThreadLocalRandom;
-
 /**
- * GodBridge — Grim/NCP bypass for 1.21.x
- *
- * Fall protection strategy: suppress the backward (S) key entirely while
- * bridging is active. This produces completely normal movement packets —
- * no clipAtLedge velocity clamping, no invisible-sneak signature, nothing
- * for Grim to flag. If the player holds S they just don't move backward;
- * the server sees unmodified forward motion the whole time.
- *
- * Burst detection bypass: after N consecutive placements, force a
- * randomised multi-tick pause so the server never sees a machine-perfect
- * infinite streak (the #1 cause of god-bridge bans).
- *
- * Sneak sync: 25 % chance per placement to fire a 1-tick sneak, breaking
- * the "never-sneak + ledge-place" bot pattern Grim tracks.
+ * God Bridge - Edge-safe backward bridging for 1.21.10
+ * - Prevents falling off edges while building backward
+ * - Stops movement when near edge + looking down + moving backward
+ * - Manual block placement (user right-clicks)
  */
-public final class GodBridge extends Module implements TickListener {
+public class GodBridge extends Module implements TickListener {
 
     public static GodBridge INSTANCE;
 
+    private final NumberSetting edgeThreshold = new NumberSetting(
+            EncryptedString.of("Edge Threshold"), 10, 40, 25, 1)
+            .setDescription(EncryptedString.of("How close to edge (in 100ths) before stopping"));
+
+    private final NumberSetting downPitch = new NumberSetting(
+            EncryptedString.of("Down Pitch"), 30, 80, 60, 1)
+            .setDescription(EncryptedString.of("Pitch angle to consider looking down"));
+
     private final BooleanSetting autoSprint = new BooleanSetting(
             EncryptedString.of("Auto Sprint"), true)
-            .setDescription(EncryptedString.of("Force-sprint while god bridging"));
+            .setDescription(EncryptedString.of("Enable sprint while bridging"));
 
-    private final NumberSetting placeDelay = new NumberSetting(
-            EncryptedString.of("Place Delay"), 0, 10, 2, 1)
-            .setDescription(EncryptedString.of("Base ticks between block placements"));
-
-    private final NumberSetting placeJitter = new NumberSetting(
-            EncryptedString.of("Place Jitter"), 0, 6, 2, 1)
-            .setDescription(EncryptedString.of("Random extra ticks per placement (humanisation)"));
-
-    private final NumberSetting burstLimit = new NumberSetting(
-            EncryptedString.of("Burst Limit"), 2, 12, 5, 1)
-            .setDescription(EncryptedString.of("Max consecutive placements before a forced humanisation pause"));
-
-    private final NumberSetting burstPauseMin = new NumberSetting(
-            EncryptedString.of("Burst Pause Min"), 2, 15, 4, 1)
-            .setDescription(EncryptedString.of("Min ticks to pause after a burst"));
-
-    private final NumberSetting burstPauseMax = new NumberSetting(
-            EncryptedString.of("Burst Pause Max"), 2, 20, 9, 1)
-            .setDescription(EncryptedString.of("Max ticks to pause after a burst"));
-
-    private final BooleanSetting sneakSync = new BooleanSetting(
-            EncryptedString.of("Sneak Sync"), true)
-            .setDescription(EncryptedString.of("Occasionally send a 1-tick sneak to break the never-sneak bot pattern"));
-
-    private final NumberSetting rotSpeed = new NumberSetting(
-            EncryptedString.of("Rot Speed"), 5, 20, 12, 1)
-            .setDescription(EncryptedString.of("Server-side rotation speed toward block face (deg/tick)"));
-
-    private final NumberSetting alignThreshold = new NumberSetting(
-            EncryptedString.of("Align Threshold"), 3, 25, 12, 1)
-            .setDescription(EncryptedString.of("Degrees within which virtual rotation must align before placing"));
-
-    private final NumberSetting blockSlot = new NumberSetting(
-            EncryptedString.of("Block Slot"), 0, 9, 0, 1)
-            .setDescription(EncryptedString.of("Hotbar slot for blocks (0 = auto-find, 1-9 = fixed slot)"));
-
-    private final BooleanSetting requireBlocks = new BooleanSetting(
-            EncryptedString.of("Require Blocks"), true)
-            .setDescription(EncryptedString.of("Key suppression and sprint only activate when holding blocks"));
-
-    // ── State ─────────────────────────────────────────────────────────────────
-    private int   cooldown              = 0;
-    private int   consecutivePlacements = 0;
-    private int   burstPauseCooldown    = 0;
-    private boolean sneakReleaseNext    = false;
-
-    private float virtualYaw   = Float.NaN;
-    private float virtualPitch = Float.NaN;
+    private final NumberSetting decelRate = new NumberSetting(
+            EncryptedString.of("Decel Rate"), 1, 10, 3, 1)
+            .setDescription(EncryptedString.of("How fast to slow down (lower = slower, less detectable)"));
 
     public GodBridge() {
         super(EncryptedString.of("God Bridge"),
-                EncryptedString.of("Automated god bridging with Grim/NCP bypass"),
+                EncryptedString.of("Stops movement near edges while looking down"),
                 -1, CategoryManager.BRIDGING);
         INSTANCE = this;
-        addSettings(autoSprint, placeDelay, placeJitter,
-                burstLimit, burstPauseMin, burstPauseMax,
-                sneakSync, rotSpeed, alignThreshold,
-                blockSlot, requireBlocks);
-    }
-
-    /** No longer uses clipAtLedge — kept for compatibility; always returns false. */
-    public static boolean shouldSafeWalk() {
-        return false;
-    }
-
-    private boolean isHoldingBlock() {
-        if (mc.player == null) return false;
-        return mc.player.getMainHandStack().getItem() instanceof BlockItem;
+        addSettings(edgeThreshold, downPitch, autoSprint, decelRate);
     }
 
     @Override
     public void onEnable() {
-        cooldown              = 0;
-        consecutivePlacements = 0;
-        burstPauseCooldown    = 0;
-        sneakReleaseNext      = false;
-        virtualYaw            = Float.NaN;
-        virtualPitch          = Float.NaN;
-        Clutch.placing        = false;
         eventManager.add(TickListener.class, this);
         super.onEnable();
     }
 
     @Override
     public void onDisable() {
-        Clutch.placing   = false;
-        virtualYaw       = Float.NaN;
-        virtualPitch     = Float.NaN;
-        sneakReleaseNext = false;
-        disarmOverride();
-        // Release any keys we may have suppressed
-        if (mc.options != null) {
-            mc.options.sneakKey.setPressed(false);
-            // backKey is released naturally — we only ever force it to false,
-            // so when we stop calling setPressed(false) the binding reads the
-            // real physical key state again on the next tick.
-        }
+        mc.options.sprintKey.setPressed(false);
         eventManager.remove(TickListener.class, this);
         super.onDisable();
     }
 
     @Override
     public void onTick() {
-        ClientPlayerEntity p = mc.player;
-        if (p == null || mc.world == null || mc.interactionManager == null) {
-            disarmOverride();
-            return;
+        ClientPlayerEntity player = mc.player;
+        if (player == null || mc.world == null) return;
+
+        if (!player.isOnGround()) return;
+
+        // Check if looking down and moving backward
+        boolean lookingDown = player.getPitch() > downPitch.getValueInt();
+        if (!lookingDown) return;
+
+        boolean movingBackward = player.input.playerInput.backward();
+        if (!movingBackward) return;
+
+        if (autoSprint.getValue() && !player.isSprinting()) {
+            mc.options.sprintKey.setPressed(true);
         }
 
-        // Release sneak pressed by sneak-sync last tick
-        if (sneakReleaseNext) {
-            mc.options.sneakKey.setPressed(false);
-            sneakReleaseNext = false;
-        }
+        // Get the actual movement direction (opposite of where looking)
+        Direction facing = player.getHorizontalFacing();
+        Direction moveDir = facing.getOpposite(); // Backward movement direction
+        
+        BlockPos standing = BlockPos.ofFloored(player.getX(), player.getY() - 1, player.getZ());
+        
+        double edgeThresholdValue = edgeThreshold.getValueInt() / 100.0;
 
-        boolean hasBlocks = resolveBlockSlot() != -1;
-        boolean protect   = !requireBlocks.getValue() || hasBlocks;
+        // Check edge distance in movement direction
+        double edgeDist = getEdgeDistance(player, moveDir);
+        
+        boolean nearEdge = edgeDist < edgeThresholdValue && mc.world.getBlockState(standing.offset(moveDir)).isAir();
 
-        // ── Emergency brake — extreme edge only (0.12 blocks) ────────────────
-        // Key suppression is only a last-resort safety net, not the main
-        // bypass mechanism. Player can move backward freely everywhere else.
-        if (p.isOnGround() && protect) {
-            Direction backDir = p.getHorizontalFacing().getOpposite();
-            if (isNearBackEdge(p, backDir, 0.12)) {
-                mc.options.backKey.setPressed(false);
+        // Also check perpendicular directions if moving diagonally
+        boolean movingLeft = player.input.playerInput.left();
+        boolean movingRight = player.input.playerInput.right();
+        
+        if (movingLeft || movingRight) {
+            Direction perpDir = getPerpendicularDir(moveDir, movingLeft);
+            double perpEdgeDist = getEdgeDistance(player, perpDir);
+            if (perpEdgeDist < edgeThresholdValue && mc.world.getBlockState(standing.offset(perpDir)).isAir()) {
+                nearEdge = true;
             }
         }
 
-        if (!hasBlocks || !p.isOnGround()) {
-            consecutivePlacements = 0;
-            stepVirtualTowardReal(p);
-            return;
+        if (nearEdge) {
+            // GRADUAL deceleration instead of instant stop (less detectable by anticheat)
+            Vec3d vel = player.getVelocity();
+            double decelFactor = 1.0 - (decelRate.getValueInt() * 0.05); // 0.05 per level
+            player.setVelocity(vel.x * decelFactor, vel.y, vel.z * decelFactor);
         }
+    }
 
-        Vec3d v = p.getVelocity();
-        if (Math.abs(v.x) + Math.abs(v.z) < 0.005) {
-            consecutivePlacements = 0;
-            stepVirtualTowardReal(p);
-            return;
-        }
+    private double getEdgeDistance(ClientPlayerEntity player, Direction dir) {
+        double px = player.getX();
+        double pz = player.getZ();
 
-        if (autoSprint.getValue() && !p.isSprinting()) mc.options.sprintKey.setPressed(true);
-
-        // Burst pause
-        if (burstPauseCooldown > 0) {
-            burstPauseCooldown--;
-            stepVirtualTowardReal(p);
-            return;
-        }
-
-        if (cooldown > 0) { cooldown--; stepVirtualTowardReal(p); return; }
-
-        // ── Target block behind player + predictive check ─────────────────────
-        // Compute both current and next-tick standing block. If the player will
-        // step onto air NEXT tick, trigger placement NOW (predictive) so the
-        // block is already there when they arrive — Grim never sees them airborne.
-        Direction placeDir  = p.getHorizontalFacing().getOpposite();
-        BlockPos  standing  = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
-        BlockPos  target    = standing.offset(placeDir);
-
-        BlockPos  nextStand = BlockPos.ofFloored(p.getX() + v.x, p.getY() - 1, p.getZ() + v.z);
-        boolean   targetAir = mc.world.getBlockState(target).isAir();
-        // Predictive: player will land on a different (air) block next tick
-        boolean   nextAir   = !nextStand.equals(standing)
-                           && mc.world.getBlockState(nextStand).isAir();
-
-        if (!targetAir && !nextAir) { stepVirtualTowardReal(p); return; }
-        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) { stepVirtualTowardReal(p); return; }
-
-        // ── Jittered aim point on block face ──────────────────────────────────
-        ThreadLocalRandom rng = ThreadLocalRandom.current();
-        double faceOffX = placeDir.getOffsetX() * 0.5;
-        double faceOffZ = placeDir.getOffsetZ() * 0.5;
-        double jitterH  = rng.nextDouble(-0.10, 0.10);
-        double jitterY  = rng.nextDouble(-0.10, 0.06);
-
-        Vec3d aimPoint = Vec3d.ofCenter(standing).add(
-                faceOffX + (placeDir.getOffsetX() == 0 ? jitterH : 0),
-                -0.2 + jitterY,
-                faceOffZ + (placeDir.getOffsetZ() == 0 ? jitterH : 0));
-
-        float[] needed    = calcLook(p.getEyePos(), aimPoint);
-        float   needYaw   = needed[0];
-        float   pitchMin  = 52f + rng.nextFloat() * 6f;
-        float   pitchMax  = 80f + rng.nextFloat() * 6f;
-        float   needPitch = MathHelper.clamp(needed[1], pitchMin, pitchMax);
-
-        // ── Silent server-side rotation (camera stays still) ──────────────────
-        if (Float.isNaN(virtualYaw)) {
-            virtualYaw   = p.getYaw();
-            virtualPitch = p.getPitch();
-        }
-
-        float maxStep = rotSpeed.getValueInt() + rng.nextFloat() * 2f - 1f;
-        virtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(needYaw   - virtualYaw),   -maxStep, maxStep);
-        virtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(needPitch - virtualPitch), -maxStep, maxStep);
-        virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
-
-        RotationOverride.serverYaw         = virtualYaw;
-        RotationOverride.serverPitch       = virtualPitch;
-        RotationOverride.active            = true;
-        RotationOverride.afterPacketAction = null;
-
-        float threshold = alignThreshold.getValueInt();
-        if (Math.abs(MathHelper.wrapDegrees(needYaw   - virtualYaw)) > threshold) return;
-        if (Math.abs(MathHelper.wrapDegrees(needPitch - virtualPitch)) > threshold) return;
-
-        int useSlot = resolveBlockSlot();
-        if (useSlot == -1) return;
-
-        final BlockHitResult bhr      = new BlockHitResult(aimPoint, placeDir, standing, false);
-        final int            fUseSlot = useSlot;
-        final int            fPrev    = p.getInventory().getSelectedSlot();
-
-        if (fUseSlot != fPrev) p.getInventory().setSelectedSlot(fUseSlot);
-
-        // ── Edge sneak — fires on EVERY ledge tick, not randomly ─────────────
-        // When the player is within 0.35 blocks of the back edge (about to step
-        // off), press sneak for this tick only. The movement packet that Grim
-        // receives will carry sneak=true, which is the only legitimate vanilla
-        // reason to not fall off the ledge → no flag. Sneak is released in
-        // afterPacketAction immediately after a successful placement, or next
-        // tick if placement didn't fire, so sprint resumes as fast as possible.
-        boolean edgeSneak = sneakSync.getValue() && isNearBackEdge(p, placeDir, 0.35);
-        if (edgeSneak) {
-            mc.options.sneakKey.setPressed(true);
-            sneakReleaseNext = true;
-        }
-
-        RotationOverride.afterPacketAction = () -> {
-            ClientPlayerEntity pp = mc.player;
-            if (pp == null || mc.interactionManager == null) return;
-            Clutch.placing = true;
-            try {
-                if (mc.interactionManager.interactBlock(pp, Hand.MAIN_HAND, bhr).isAccepted()) {
-                    pp.swingHand(Hand.MAIN_HAND);
-                    // Release sneak immediately — sprint resumes next tick
-                    mc.options.sneakKey.setPressed(false);
-                    sneakReleaseNext = false;
-
-                    consecutivePlacements++;
-                    cooldown = placeDelay.getValueInt()
-                             + (int)(Math.random() * (placeJitter.getValueInt() + 1));
-
-                    int limit = burstLimit.getValueInt();
-                    if (consecutivePlacements >= limit) {
-                        consecutivePlacements = 0;
-                        int pMin = burstPauseMin.getValueInt();
-                        int pMax = Math.max(pMin, burstPauseMax.getValueInt());
-                        burstPauseCooldown = pMin + (int)(Math.random() * (pMax - pMin + 1));
-                    }
-                }
-            } finally {
-                Clutch.placing = false;
-                if (fUseSlot != fPrev && mc.player != null)
-                    mc.player.getInventory().setSelectedSlot(fPrev);
-            }
+        return switch (dir) {
+            case NORTH -> pz - Math.floor(pz);
+            case SOUTH -> Math.ceil(pz) - pz;
+            case WEST -> px - Math.floor(px);
+            case EAST -> Math.ceil(px) - px;
+            default -> 1.0;
         };
     }
 
-    private void stepVirtualTowardReal(ClientPlayerEntity p) {
-        if (Float.isNaN(virtualYaw) || p == null) { disarmOverride(); return; }
-        float realYaw   = p.getYaw();
-        float realPitch = p.getPitch();
-        if (Math.abs(MathHelper.wrapDegrees(realYaw - virtualYaw)) < 4f
-                && Math.abs(MathHelper.wrapDegrees(realPitch - virtualPitch)) < 4f) {
-            virtualYaw = Float.NaN; virtualPitch = Float.NaN;
-            disarmOverride();
-            return;
-        }
-        float maxStep = rotSpeed.getValueInt();
-        virtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(realYaw   - virtualYaw),   -maxStep, maxStep);
-        virtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(realPitch - virtualPitch), -maxStep, maxStep);
-        virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
-        RotationOverride.serverYaw         = virtualYaw;
-        RotationOverride.serverPitch       = virtualPitch;
-        RotationOverride.active            = true;
-        RotationOverride.afterPacketAction = null;
-    }
-
-    private void disarmOverride() {
-        RotationOverride.active            = false;
-        RotationOverride.afterPacketAction = null;
-    }
-
-    private int resolveBlockSlot() {
-        if (mc.player == null) return -1;
-        int setting = blockSlot.getValueInt();
-        if (setting >= 1 && setting <= 9) {
-            int idx = setting - 1;
-            ItemStack stack = mc.player.getInventory().getStack(idx);
-            return (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) ? idx : -1;
-        }
-        for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
-            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0) return i;
-        }
-        return -1;
-    }
-
-    /**
-     * Returns true when the player's centre is within {@code threshold} blocks
-     * of the edge in {@code dir} AND the block beyond that edge is air.
-     *
-     * @param threshold  0.12 for emergency key-brake; 0.35 for edge-sneak trigger.
-     */
-    private boolean isNearBackEdge(ClientPlayerEntity p, Direction dir, double threshold) {
-        if (mc.world == null) return false;
-        BlockPos standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
-        if (!mc.world.getBlockState(standing.offset(dir)).isAir()) return false;
-
-        double px = p.getX(), pz = p.getZ();
-        double dist = switch (dir) {
-            case NORTH -> pz - Math.floor(pz);       // distance to north (−Z) edge
-            case SOUTH -> Math.ceil(pz) - pz;         // distance to south (+Z) edge
-            case WEST  -> px - Math.floor(px);        // distance to west  (−X) edge
-            default    -> Math.ceil(px) - px;          // distance to east  (+X) edge
-        };
-        return dist < threshold;
-    }
-
-    private static float[] calcLook(Vec3d from, Vec3d to) {
-        double dx = to.x - from.x, dy = to.y - from.y, dz = to.z - from.z;
-        double hDist = Math.sqrt(dx * dx + dz * dz);
-        return new float[]{
-            (float) Math.toDegrees(Math.atan2(-dx, dz)),
-            MathHelper.clamp((float) Math.toDegrees(-Math.atan2(dy, hDist)), -90f, 90f)
+    private Direction getPerpendicularDir(Direction dir, boolean left) {
+        return switch (dir) {
+            case NORTH -> left ? Direction.WEST : Direction.EAST;
+            case SOUTH -> left ? Direction.EAST : Direction.WEST;
+            case WEST -> left ? Direction.SOUTH : Direction.NORTH;
+            case EAST -> left ? Direction.NORTH : Direction.SOUTH;
+            default -> Direction.NORTH;
         };
     }
 }
+

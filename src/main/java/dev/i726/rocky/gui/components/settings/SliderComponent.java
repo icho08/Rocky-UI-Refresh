@@ -41,6 +41,8 @@ public class SliderComponent extends SettingComponent {
 
         int thumbX = tx + fillW - 2;
         ctx.fill(thumbX, ty - 2, thumbX + 4, ty + 6, GuiTheme.toggleThumb());
+
+        queueTooltipIfHovered(setting, x, y, width, 20, mouseX, mouseY);
     }
 
     private String formatValue(double v) {

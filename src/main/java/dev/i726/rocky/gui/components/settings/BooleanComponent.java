@@ -34,6 +34,8 @@ public class BooleanComponent extends SettingComponent {
         } else {
             ctx.fill(cbx + 1, cby + 1, cbx + 9, cby + 9, GuiTheme.toggleOff());
         }
+
+        queueTooltipIfHovered(setting, x, y, width, 14, mouseX, mouseY);
     }
 
     @Override

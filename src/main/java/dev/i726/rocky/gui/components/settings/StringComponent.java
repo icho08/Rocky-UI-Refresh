@@ -73,6 +73,8 @@ public class StringComponent extends SettingComponent {
                         GuiTheme.textPrimary());
             }
         }
+
+        queueTooltipIfHovered(setting, x, y, width, 28, mouseX, mouseY);
     }
 
     @Override

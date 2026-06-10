@@ -13,8 +13,8 @@ import dev.i726.rocky.module.setting.KeybindSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.NotificationManager;
 import dev.i726.rocky.utils.TextRenderer;
+import net.minecraft.client.gl.RenderPipelines;
 import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.Pipelines;
 import net.minecraft.client.network.PlayerListEntry;
 import net.minecraft.entity.effect.StatusEffectInstance;
 import net.minecraft.item.ItemStack;
@@ -289,7 +289,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                     mc.player.getInventory().getStack(36)
             };
             final int rowH  = 13;
-            final int bw    = 140;
+            final int bw    = 115;
             final int headH = 14;
             int bh = headH + 4 * rowH + 6;
             int bx = px(P_ARMOR, 8), by = py(P_ARMOR, screenH - bh - 8);
@@ -309,10 +309,12 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 int rowY = by + headH + 2 + i * rowH;
 
                 if (stack.isEmpty()) {
-                    TextRenderer.drawString(labels[i], ctx, bx + 9, rowY + 5, GuiTheme.textSecondary());
+                    TextRenderer.drawString(labels[i], ctx, bx + 24, rowY + 5, GuiTheme.textSecondary());
                     TextRenderer.drawString("--", ctx, bx + bw - 18, rowY + 5, GuiTheme.textSecondary());
                     continue;
                 }
+
+                ctx.drawItemWithoutEntity(stack, bx + 5, rowY + 1);
 
                 int maxDmg = stack.getMaxDamage();
                 int curDmg = stack.getDamage();
@@ -322,7 +324,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                            : new Color(239, 68, 68);
 
                 // Label left, value right — no bar
-                TextRenderer.drawString(labels[i], ctx, bx + 9, rowY + 5, GuiTheme.textSecondary());
+                TextRenderer.drawString(labels[i], ctx, bx + 24, rowY + 5, GuiTheme.textSecondary());
                 String pctStr = (int)(pct * 100) + "%";
                 int pctW = TextRenderer.getWidth(pctStr);
                 TextRenderer.drawString(pctStr, ctx, bx + bw - pctW - 6, rowY + 5,
@@ -334,7 +336,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
         if (effectsHud.getValue() && mc.player != null && !mc.player.getStatusEffects().isEmpty()) {
             List<StatusEffectInstance> effects = new ArrayList<>(mc.player.getStatusEffects());
             final int rowH  = 13;
-            final int bw    = 170;
+            final int bw    = 145;
             final int headH = 14;
             int bh = headH + effects.size() * rowH + 6;
             int armorOffset = armorHud.getValue()
@@ -362,16 +364,17 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                             :               new Color(239, 68, 68);
 
                 // Effect icon from GUI atlas (mob_effect/<name>)
-                var iconId = Registries.STATUS_EFFECT.getId(fx.getEffectType().value());
+                var effect = fx.getEffectType().value();
+                var iconId = Registries.STATUS_EFFECT.getId(effect);
                 if (iconId != null) {
                     try {
                         Identifier spriteId = Identifier.of(iconId.getNamespace(), "mob_effect/" + iconId.getPath());
-                        ctx.drawGuiTexture(Pipelines.GUI_TEXTURED, spriteId, bx + 5, rowY + 1, 10, 10);
+                        ctx.drawGuiTexture(RenderPipelines.GUI_TEXTURED, spriteId, bx + 5, rowY + 1, 10, 10);
                     } catch (Exception ignored) {}
                 }
 
                 // Effect name (left, after icon)
-                String efName = iconId != null ? capitalize(iconId.getPath().replace("_", " ")) : "?";
+                String efName = effect.getName().getString();
                 int lvl = fx.getAmplifier() + 1;
                 String label = lvl > 1 ? efName + " " + toRoman(lvl) : efName;
                 TextRenderer.drawString(label, ctx, bx + 19, rowY + 2, GuiTheme.textSecondary());

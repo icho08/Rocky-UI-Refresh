@@ -1,5 +1,6 @@
 package dev.i726.rocky.gui.components.settings;
 
+import dev.i726.rocky.module.setting.Setting;
 import net.minecraft.client.gui.DrawContext;
 
 public abstract class SettingComponent {
@@ -7,6 +8,15 @@ public abstract class SettingComponent {
     public abstract int getHeight();
 
     public abstract void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta);
+
+    protected void queueTooltipIfHovered(Setting<?> setting, int x, int y, int width, int height, int mouseX, int mouseY) {
+        if (mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height) {
+            CharSequence desc = setting.getDescription();
+            if (desc != null && !desc.toString().isBlank()) {
+                dev.i726.rocky.gui.ClickGuiScreen.queueTooltip(desc.toString(), mouseX, mouseY);
+            }
+        }
+    }
 
     public boolean mouseClicked(double mx, double my, int button, int x, int y, int width) {
         return false;

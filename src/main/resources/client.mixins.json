@@ -22,6 +22,8 @@
     "PlayerEntityRendererMixin",
     "ParticleManagerMixin",
     "BackgroundRendererMixin",
+    "NoRenderMixin",
+    "ClientWorldMixin",
     "ModMenuHideMixin",
     "CameraMixin",
     "ClientPlayerEntityMixin",

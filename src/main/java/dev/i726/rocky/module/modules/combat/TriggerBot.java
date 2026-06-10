@@ -164,9 +164,9 @@ public final class TriggerBot extends Module implements TickListener {
         if (sticky.getValue() && (mc.player.getAttacking() == null || entity != mc.player.getAttacking())) return;
         if (!(entity instanceof PlayerEntity || allEntities.getValue())) return;
 
-        if (ignoreNpcs.getValue() && entity instanceof PlayerEntity pt) {
-            if (pt.getId() != -1337 && mc.getNetworkHandler() != null
-                    && mc.getNetworkHandler().getPlayerListEntry(pt.getUuid()) == null) return;
+        if (ignoreNpcs.getValue() && entity instanceof PlayerEntity pt && mc.getNetworkHandler() != null) {
+            var entry = mc.getNetworkHandler().getPlayerListEntry(pt.getUuid());
+            if (entry == null || entry.getLatency() <= 0) return;
         }
 
         if (entity instanceof PlayerEntity player && checkShield.getValue()

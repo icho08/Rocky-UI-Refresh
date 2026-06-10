@@ -3,7 +3,6 @@ package dev.i726.rocky.mixin;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.module.modules.combat.Hitboxes;
 import dev.i726.rocky.module.modules.render.PlayerESP;
-import dev.i726.rocky.module.modules.render.Chams;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.entity.Entity;
@@ -43,12 +42,5 @@ public abstract class EntityMixin {
             }
         }
 
-        // Check Chams Glow (if user wants Chams to also have the glow effect)
-        Chams chams = Rocky.INSTANCE.getModuleManager().getModule(Chams.class);
-        if (chams != null && chams.isEnabled()) {
-            if ((Object)this instanceof PlayerEntity && (Object)this != MinecraftClient.getInstance().player) {
-                cir.setReturnValue(true);
-            }
-        }
     }
 }

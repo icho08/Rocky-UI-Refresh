@@ -16,7 +16,7 @@ public final class NoParticles extends Module {
     public NoParticles() {
         super(EncryptedString.of("No Particles"),
                 EncryptedString.of("Reduces or removes particle effects for better FPS"),
-                -1, CategoryManager.ESP);
+                -1, CategoryManager.FPS);
         addSettings(mode);
     }
 

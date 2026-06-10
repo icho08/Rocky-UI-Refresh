@@ -134,6 +134,7 @@ public final class ModuleManager implements ButtonListener {
                 add(new ClickGUI());
                 add(new Friends());
                 add(new SelfDestruct());
+                add(new FpsModules());
                 add(new BlatantModules());
                 add(new ThemePicker());
         }

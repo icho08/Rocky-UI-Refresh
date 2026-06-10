@@ -9,7 +9,7 @@ public final class AntiFog extends Module {
     public AntiFog() {
         super(EncryptedString.of("Anti Fog"),
                 EncryptedString.of("Removes terrain fog for a cleaner view and slight FPS gain"),
-                -1, CategoryManager.ESP);
+                -1, CategoryManager.FPS);
     }
 
     @Override

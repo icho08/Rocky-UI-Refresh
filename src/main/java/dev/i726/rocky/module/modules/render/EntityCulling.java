@@ -18,7 +18,7 @@ public final class EntityCulling extends Module {
     public EntityCulling() {
         super(EncryptedString.of("Entity Culling"),
                 EncryptedString.of("Skips rendering non-player entities to boost FPS"),
-                -1, CategoryManager.ESP);
+                -1, CategoryManager.FPS);
         addSettings(cullMobs, cullArmorStands);
     }
 

@@ -36,6 +36,9 @@ public class CategoryManager {
 
     // Blatant category — only works on servers without anti-cheat
     public static final Category BLATANT = new Category("Blatant", false);
+
+    // FPS category — hidden until FPS Modules toggle is on
+    public static final Category FPS = new Category("FPS", false);
     
     static {
         registerCategory(COMBAT);
@@ -52,6 +55,7 @@ public class CategoryManager {
         registerCategory(NETWORK);
         registerCategory(GUI);
         registerCategory(BLATANT);
+        registerCategory(FPS);
         loadCategories();
     }
     
@@ -114,7 +118,7 @@ public class CategoryManager {
                name.equals("Misc") || name.equals("PvP") || name.equals("Crystal") || 
                name.equals("Inventory") || name.equals("Movement") || name.equals("Bridging") ||
                name.equals("Automation") || name.equals("ESP") || name.equals("Network") || 
-               name.equals("GUI") || name.equals("Blatant");
+               name.equals("GUI") || name.equals("Blatant") || name.equals("FPS");
     }
     
     private static void saveCategories() {

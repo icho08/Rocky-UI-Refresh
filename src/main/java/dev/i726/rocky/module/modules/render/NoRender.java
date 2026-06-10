@@ -22,7 +22,7 @@ public final class NoRender extends Module {
     public NoRender() {
         super(EncryptedString.of("No Render"),
                 EncryptedString.of("Disables unnecessary visual elements for a significant FPS boost"),
-                -1, CategoryManager.ESP);
+                -1, CategoryManager.FPS);
         addSettings(noWeather, noClouds, noSky);
     }
 

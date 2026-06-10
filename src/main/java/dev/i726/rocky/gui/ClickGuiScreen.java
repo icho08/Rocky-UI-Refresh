@@ -7,6 +7,7 @@ import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.BlatantModules;
+import dev.i726.rocky.module.modules.client.FpsModules;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.Click;
 import net.minecraft.client.gui.DrawContext;
@@ -84,6 +85,29 @@ public class ClickGuiScreen extends Screen {
         panels.removeIf(p -> p.getName().equals(CategoryManager.BLATANT.getName()));
     }
 
+    /** Adds the FPS panel without destroying any other panels. */
+    public static void addFpsPanel() {
+        initialized = false;
+        if (currentInstance == null) return;
+        boolean exists = panels.stream()
+                .anyMatch(p -> p.getName().equals(CategoryManager.FPS.getName()));
+        if (exists) return;
+        List<Module> mods = currentInstance.getModulesForCategory(CategoryManager.FPS);
+        if (mods.isEmpty()) return;
+        float px = 8 + panels.size() * (CategoryPanel.WIDTH + 5);
+        float py = 42;
+        ProfileManager pm = Rocky.INSTANCE.getProfileManager();
+        double[] saved = pm.getPanelPosition(CategoryManager.FPS.getName());
+        if (saved != null) { px = (float) saved[0]; py = (float) saved[1]; }
+        panels.add(new CategoryPanel(CategoryManager.FPS.getName(), mods, px, py));
+    }
+
+    /** Removes the FPS panel without touching the rest. */
+    public static void removeFpsPanel() {
+        initialized = false;
+        panels.removeIf(p -> p.getName().equals(CategoryManager.FPS.getName()));
+    }
+
     @Override
     protected void init() {
         currentInstance = this;
@@ -101,6 +125,8 @@ public class ClickGuiScreen extends Screen {
 
         boolean showBlatant = Rocky.INSTANCE.moduleManager.getModule(BlatantModules.class) != null
                 && Rocky.INSTANCE.moduleManager.getModule(BlatantModules.class).isEnabled();
+        boolean showFps = Rocky.INSTANCE.moduleManager.getModule(FpsModules.class) != null
+                && Rocky.INSTANCE.moduleManager.getModule(FpsModules.class).isEnabled();
 
         List<Category> topLevel = new ArrayList<>(Arrays.asList(
                 CategoryManager.COMBAT,
@@ -108,6 +134,7 @@ public class ClickGuiScreen extends Screen {
                 CategoryManager.VISUAL,
                 CategoryManager.MISC
         ));
+        if (showFps) topLevel.add(CategoryManager.FPS);
         if (showBlatant) topLevel.add(CategoryManager.BLATANT);
 
         ProfileManager pm = Rocky.INSTANCE.getProfileManager();

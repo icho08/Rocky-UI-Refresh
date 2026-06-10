@@ -4,8 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import dev.i726.rocky.Rocky;
-import dev.i726.rocky.module.Category;
-import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 
@@ -81,16 +79,6 @@ public final class ProfileManager {
                                         // Always start from a clean disabled state before applying saved config
                                         module.setEnabledStatus(false);
 
-                                        // Load category
-                                        JsonElement categoryJson = moduleConfig.get("category");
-                                        if (categoryJson != null) {
-                                                String catName = categoryJson.getAsString();
-                                                Category cat = CategoryManager.getCategories().stream()
-                                                        .filter(c -> c.getName().equals(catName))
-                                                        .findFirst().orElse(null);
-                                                if (cat != null) module.setCategory(cat);
-                                        }
-
                                         for (Setting<?> setting : module.getSettings()) {
                                                 String settingKey = setting.getName().toString();
                                                 JsonElement settingJson = moduleConfig.get(settingKey);
@@ -146,7 +134,6 @@ public final class ProfileManager {
                         for (Module module : Rocky.INSTANCE.getModuleManager().getModules()) {
                                 JsonObject moduleConfig = new JsonObject();
                                 moduleConfig.addProperty("enabled", module.isEnabled());
-                                moduleConfig.addProperty("category", module.getCategory().getName());
 
                                 for (Setting<?> setting : module.getSettings()) {
                                         String settingKey = setting.getName().toString();

@@ -14,7 +14,8 @@
     "WorldAccessor",
     "PlayerEntityMixin",
     "EntityMixin",
-    "LivingEntityRendererMixin"
+    "LivingEntityRendererMixin",
+    "WorldTimeMixin"
   ],
   "client": [
     "EntityRendererMixin",

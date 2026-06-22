@@ -220,97 +220,84 @@ public final class GodBridge extends Module implements TickListener {
         if (protect && autoSprint.getValue() && p.isOnGround() && !p.isSprinting())
             mc.options.sprintKey.setPressed(true);
 
-        // ── Early exits ───────────────────────────────────────────────────────
+        // ── Airborne / no blocks: hold last rotation, don't drift ────────────
+        // A human god-bridger looks down the WHOLE TIME. We must never send
+        // the real (upright) rotation mid-bridge or Grim will see the arc
+        // aim-at-block → snap-to-normal → aim-at-block and flag it.
         if (!p.isOnGround()) {
-            // Airborne — let the virtual rotation drift back to real
-            driftToReal(p);
+            holdRotation();
             return;
         }
         if (!hasBlocks && requireBlocks.getValue()) {
-            driftToReal(p);
+            holdRotation();
             return;
         }
 
-        // Player must be moving
-        Vec3d vel   = p.getVelocity();
-        double spd  = Math.abs(vel.x) + Math.abs(vel.z);
+        // Stopped: only time we actually drift back to the real camera angle
+        Vec3d vel = p.getVelocity();
+        double spd = Math.abs(vel.x) + Math.abs(vel.z);
         if (spd < 0.005) {
-            placed = false; // reset placed guard when stopped
-            driftToReal(p);
-            return;
-        }
-
-        // ── Determine bridge direction & blocks ───────────────────────────────
-        Direction backDir  = p.getHorizontalFacing().getOpposite();
-        BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
-        BlockPos  target   = standing.offset(backDir);
-
-        // Target must be air and standing must be solid
-        boolean needsBlock = mc.world.getBlockState(target).isAir();
-        boolean hasSolid   = mc.world.getBlockState(standing).isSolidBlock(mc.world, standing);
-
-        if (!needsBlock || !hasSolid) {
-            // No placement needed — drift rotation back, reset edge-visit guard
-            placed = false;
-            driftToReal(p);
-            return;
-        }
-
-        // ── EDGE TRIGGER ──────────────────────────────────────────────────────
-        //
-        // THIS is the core undetection mechanism.
-        //
-        // We only attempt a placement when the player is within `currentEdgeTrigger`
-        // blocks of the trailing edge of their current block. This means the block
-        // is placed at the EXACT moment a human would place it — right as they're
-        // about to step off. Natural sprint-backward speed gives ~1 placement per
-        // block traversal, ~5-8 ticks apart, indistinguishable from human timing.
-        //
-        // `currentEdgeTrigger` is re-randomised per placement (within EDGE_MIN..MAX)
-        // to avoid a perfectly consistent edge-distance that looks machine-generated.
-
-        double edgeDist = trailingEdgeDist(p, backDir);
-
-        // Sneak at the edge regardless of placement (human-like anti-fall)
-        if (sneakAtEdge.getValue() && edgeDist < 0.10) {
-            mc.options.sneakKey.setPressed(true);
-            sneakReleaseNext = true;
-        }
-
-        // ── Pre-rotation zone (< 0.20 blocks from edge) ──────────────────────
-        //
-        // Lock in ONE hit point the moment we enter this zone and keep it fixed
-        // until the block is placed or we leave the zone. armRotation, the
-        // validity check, AND the BlockHitResult must all reference this exact
-        // same Vec3d — Grim ray-traces from (serverYaw, serverPitch) and checks
-        // it hits the face within the BlockHitResult's stated position.
-        if (edgeDist < 0.20) {
-            if (lockedHitPoint == null) {
-                // First tick in zone — choose and lock the aim point
-                lockedHitPoint = hitPoint(backDir, standing);
-            }
-            armRotation(p, lockedHitPoint);
-        } else {
-            // Far from edge — clear lock, drift rotation back to real camera
             placed         = false;
             lockedHitPoint = null;
             driftToReal(p);
             return;
         }
 
-        // Not yet in the trigger zone — rotation is arming, don't place yet
+        // ── Resolve bridge geometry ───────────────────────────────────────────
+        Direction backDir  = p.getHorizontalFacing().getOpposite();
+        BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
+        BlockPos  target   = standing.offset(backDir);
+
+        boolean needsBlock = mc.world.getBlockState(target).isAir();
+        boolean hasSolid   = mc.world.getBlockState(standing).isSolidBlock(mc.world, standing);
+
+        // ── No block needed (just placed, or already solid ahead) ─────────────
+        // KEY FIX: do NOT drift. Hold the "looking down-backward" rotation so
+        // Grim sees a continuous steady angle across the whole bridge, not
+        // aim → drift-to-normal → re-aim on every block.
+        if (!needsBlock || !hasSolid) {
+            placed         = false;   // ready to place the next block
+            lockedHitPoint = null;
+            holdRotation();
+            return;
+        }
+
+        // ── Edge distance ─────────────────────────────────────────────────────
+        double edgeDist = trailingEdgeDist(p, backDir);
+
+        // Sneak near the trailing edge — looks human, prevents accidental fall
+        if (sneakAtEdge.getValue() && edgeDist < 0.10) {
+            mc.options.sneakKey.setPressed(true);
+            sneakReleaseNext = true;
+        }
+
+        // ── Pre-rotation zone (within 0.22 blocks of the edge) ───────────────
+        // Start rotating before the trigger zone so we're aligned when we arrive.
+        // Lock ONE hit point on entry and reuse it everywhere — armRotation,
+        // the validity check, and BlockHitResult must all match exactly.
+        if (edgeDist < 0.22) {
+            if (lockedHitPoint == null) {
+                lockedHitPoint = hitPoint(backDir, standing);
+            }
+            armRotation(p, lockedHitPoint);
+        } else {
+            // Far from edge: hold current rotation steady (don't drift to real)
+            lockedHitPoint = null;
+            holdRotation();
+            return;
+        }
+
+        // Rotation arming but not in trigger zone yet, or already placed this visit
         if (edgeDist >= currentEdgeTrigger || placed) {
             return;
         }
 
-        // ── Trigger zone: attempt placement ───────────────────────────────────
-        //
-        // Validate that the virtual rotation (what Grim received this tick) actually
-        // points at lockedHitPoint within 12°. If we're still rotating toward it,
-        // wait another tick rather than send a mismatched interact.
+        // ── Trigger zone: fire placement ──────────────────────────────────────
+        // Grim ray-traces from (serverYaw, serverPitch). Our rotation must point
+        // within 12° of lockedHitPoint for the interact to validate.
         float[] needed = calcLook(p.getEyePos(), lockedHitPoint);
-        if (Math.abs(MathHelper.wrapDegrees(needed[0] - vYaw))   > 12f) return;
-        if (Math.abs(MathHelper.wrapDegrees(needed[1] - vPitch))  > 12f) return;
+        if (Math.abs(MathHelper.wrapDegrees(needed[0] - vYaw))  > 12f) return;
+        if (Math.abs(MathHelper.wrapDegrees(needed[1] - vPitch)) > 12f) return;
 
         int useSlot = resolveBlockSlot(p);
         if (useSlot == -1) return;
@@ -323,10 +310,9 @@ public final class GodBridge extends Module implements TickListener {
         if (placeHand == Hand.MAIN_HAND && fSlot != fPrev)
             p.getInventory().setSelectedSlot(fSlot);
 
-        // Guard: one placement per edge-visit
-        placed = true;
+        placed = true; // one placement per edge-visit
 
-        // ── Schedule placement AFTER the rotation packet ──────────────────────
+        // Schedule interact AFTER the position packet (rotation arrives first on wire)
         RotationOverride.afterPacketAction = () -> {
             ClientPlayerEntity pp = mc.player;
             if (pp == null || mc.interactionManager == null) return;
@@ -334,15 +320,10 @@ public final class GodBridge extends Module implements TickListener {
             try {
                 if (mc.interactionManager.interactBlock(pp, placeHand, bhr).isAccepted()) {
                     pp.swingHand(placeHand);
-
-                    // Release sneak immediately — sprint resumes next tick
                     mc.options.sneakKey.setPressed(false);
-                    sneakReleaseNext = false;
-
-                    // Randomise edge threshold for the next block (no fixed fingerprint)
+                    sneakReleaseNext   = false;
                     currentEdgeTrigger = randomEdgeTrigger();
-                    // Clear the locked hit point so the next block gets a fresh one
-                    lockedHitPoint = null;
+                    lockedHitPoint     = null; // fresh point for next block
                 }
             } finally {
                 Clutch.placing = false;
@@ -431,6 +412,25 @@ public final class GodBridge extends Module implements TickListener {
         vYaw   += MathHelper.clamp(MathHelper.wrapDegrees(ry - vYaw),   -step, step);
         vPitch += MathHelper.clamp(MathHelper.wrapDegrees(rp - vPitch), -step, step);
         vPitch  = MathHelper.clamp(vPitch, -90f, 90f);
+        RotationOverride.serverYaw         = vYaw;
+        RotationOverride.serverPitch       = vPitch;
+        RotationOverride.active            = true;
+        RotationOverride.afterPacketAction = null;
+    }
+
+    /**
+     * Freeze the server-side rotation at the current vYaw/vPitch.
+     * Called between blocks so Grim always sees the player looking
+     * consistently downward-backward — never the real upright camera.
+     * If no virtual rotation has been set yet, does nothing.
+     */
+    private void holdRotation() {
+        if (Float.isNaN(vYaw)) {
+            // No override active — nothing to hold
+            RotationOverride.active            = false;
+            RotationOverride.afterPacketAction = null;
+            return;
+        }
         RotationOverride.serverYaw         = vYaw;
         RotationOverride.serverPitch       = vPitch;
         RotationOverride.active            = true;

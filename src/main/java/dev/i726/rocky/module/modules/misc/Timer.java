@@ -1,15 +1,12 @@
 package dev.i726.rocky.module.modules.misc;
 
-import dev.i726.rocky.event.events.TickListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 
-import java.lang.reflect.Field;
-
-public final class Timer extends Module implements TickListener {
+public final class Timer extends Module {
 
     private final NumberSetting speed = new NumberSetting(
             EncryptedString.of("Speed"), 0.1, 10.0, 2.0, 0.1)
@@ -19,10 +16,9 @@ public final class Timer extends Module implements TickListener {
             EncryptedString.of("Reset on Disable"), true)
             .setDescription(EncryptedString.of("Restores normal speed when the module turns off"));
 
-    // Cached reflection field for the timer ms-per-tick value
-    private Field timerField;
-    private float originalMsPerTick = 50f;
-    private boolean fieldFound = false;
+    // State for transformTime() — accessed from MinecraftClientMixin via @ModifyArg
+    private long lastRawTime  = -1L;
+    private long lastScaledTime = -1L;
 
     public Timer() {
         super(EncryptedString.of("Timer"),
@@ -32,66 +28,46 @@ public final class Timer extends Module implements TickListener {
     }
 
     @Override
-    public void onEnable() {
-        eventManager.add(TickListener.class, this);
-        findTimerField();
-        originalMsPerTick = getMs();
-        super.onEnable();
-    }
-
-    @Override
     public void onDisable() {
-        eventManager.remove(TickListener.class, this);
-        if (resetOnDisable.getValue()) setMs(originalMsPerTick);
+        // Reset state so the next enable starts fresh
+        lastRawTime    = -1L;
+        lastScaledTime = -1L;
         super.onDisable();
     }
 
-    @Override
-    public void onTick() {
-        if (!fieldFound) return;
-        setMs(50f / (float) speed.getValue());
-    }
-
-    // ── Reflection helpers ────────────────────────────────────────────────────
-
-    private static final String[] CANDIDATE_FIELDS = {
-            "msPerTick", "tickLength", "timerSpeed", "timeScale",
-            "field_1724", "field_2012"
-    };
-
-    private void findTimerField() {
-        Object counter = mc.getRenderTickCounter();
-        if (counter == null) return;
-        for (String name : CANDIDATE_FIELDS) {
-            for (Class<?> c = counter.getClass(); c != null; c = c.getSuperclass()) {
-                try {
-                    Field f = c.getDeclaredField(name);
-                    if (f.getType() == float.class || f.getType() == double.class) {
-                        f.setAccessible(true);
-                        timerField = f;
-                        fieldFound = true;
-                        return;
-                    }
-                } catch (NoSuchFieldException ignored) {}
-            }
+    /**
+     * Called from MinecraftClientMixin to scale the {@code timeMillis} argument
+     * that is passed to {@code RenderTickCounter.beginRenderTick}.
+     *
+     * <p>Instead of passing the raw wall-clock time, we return a "synthetic" time
+     * where each real millisecond is counted as {@code speed} milliseconds.
+     * At speed 2.0 the tick counter thinks twice as much time has passed → 2× tick rate.
+     *
+     * @param rawTime the real wall-clock value from {@code Util.getMeasuringTimeMs()}
+     * @return the scaled time to feed into the tick counter
+     */
+    public long transformTime(long rawTime) {
+        if (lastRawTime < 0L) {
+            lastRawTime    = rawTime;
+            lastScaledTime = rawTime;
+            return rawTime;
         }
+        long elapsed       = rawTime - lastRawTime;
+        long scaledElapsed = (long) (elapsed * speed.getValue());
+        lastRawTime    = rawTime;
+        lastScaledTime += scaledElapsed;
+        return lastScaledTime;
     }
 
-    private float getMs() {
-        Object counter = mc.getRenderTickCounter();
-        if (!fieldFound || counter == null) return 50f;
-        try {
-            return timerField.getFloat(counter);
-        } catch (Exception e) {
-            return 50f;
-        }
+    /**
+     * Whether the timer should reset to normal on disable.
+     * Exposed so MinecraftClientMixin can pass 1.0× after disable.
+     */
+    public boolean shouldResetOnDisable() {
+        return resetOnDisable.getValue();
     }
 
-    private void setMs(float ms) {
-        Object counter = mc.getRenderTickCounter();
-        if (!fieldFound || counter == null) return;
-        try {
-            timerField.setFloat(counter, ms);
-        } catch (Exception ignored) {}
+    public double getSpeedValue() {
+        return speed.getValue();
     }
 }

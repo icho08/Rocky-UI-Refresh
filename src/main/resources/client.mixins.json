@@ -32,7 +32,6 @@
     "FrustumAccessor",
     "GameRendererMixin",
     "HandledScreenMixin",
-
     "InGameHudMixin",
     "KeyBindingAccessor",
     "KeyBindingMixin",

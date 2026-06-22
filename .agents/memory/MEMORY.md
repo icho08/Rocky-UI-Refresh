@@ -1,1 +1,4 @@
 - [MinMaxSetting step=0 bug](minmax-step-zero.md) — passing increment=0 causes divide-by-zero in setMinValue/setMaxValue; always use ≥1 (or ≥5 for ms ranges).
+- [Timer mixin approach MC 1.21.10](timer-mixin.md) — RenderTickCounter$Dynamic has no msPerTick/ticksPerSecond; use @ModifyArg on render→beginRenderTick to scale elapsed time.
+- [Clutch isSolid guard bug](clutch-guard-bug.md) — original isSolid(below) guard prevented clutch from firing when ground was 1 block under player; remove that check.
+- [BedBreaker direct packet](bedbreaker-packet.md) — use PlayerActionC2SPacket.START_DESTROY_BLOCK directly instead of interactionManager.attackBlock to bypass client-side validation.

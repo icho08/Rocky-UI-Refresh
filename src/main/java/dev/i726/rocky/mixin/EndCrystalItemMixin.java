@@ -1,7 +1,5 @@
 package dev.i726.rocky.mixin;
 
-import dev.i726.rocky.Rocky;
-import dev.i726.rocky.module.modules.render.NoBounce;
 import dev.i726.rocky.utils.CrystalUtils;
 import dev.i726.rocky.utils.RenderUtils;
 import net.minecraft.block.Block;
@@ -14,7 +12,6 @@ import net.minecraft.item.ItemUsageContext;
 import net.minecraft.item.Items;
 import net.minecraft.util.ActionResult;
 import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Vec3d;
 import net.minecraft.world.RaycastContext;
@@ -60,25 +57,5 @@ public class EndCrystalItemMixin {
 
     @Inject(method = "useOnBlock", at = @At("HEAD"))
     private void onUse(ItemUsageContext context, CallbackInfoReturnable<ActionResult> cir) {
-        if (mc == null || Rocky.INSTANCE == null || mc.player == null) return;
-
-        NoBounce noBounce = Rocky.INSTANCE.getModuleManager().getModule(NoBounce.class);
-        if (noBounce != null && noBounce.isEnabled()) {
-            ItemStack mainHandStack = mc.player.getMainHandStack();
-
-            if (mainHandStack.isOf(Items.END_CRYSTAL)) {
-                Vec3d e = mc.player.getEyePos();
-                BlockHitResult blockHit = mc.world.raycast(new RaycastContext(e, e.add(getClientLookVec().multiply(4.5)), RaycastContext.ShapeType.OUTLINE, RaycastContext.FluidHandling.NONE, mc.player));
-                if (isBlock(Blocks.OBSIDIAN, blockHit.getBlockPos()) || isBlock(Blocks.BEDROCK, blockHit.getBlockPos())) {
-                    HitResult hitResult = mc.crosshairTarget;
-                    if (hitResult instanceof BlockHitResult blockHit2) {
-                        BlockPos pos = blockHit2.getBlockPos();
-                        if (canPlaceCrystalServer(pos)) {
-                            context.getStack().decrement(-1);
-                        }
-                    }
-                }
-            }
-        }
     }
 }

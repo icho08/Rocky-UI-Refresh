@@ -8,6 +8,7 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
 import net.minecraft.block.BedBlock;
 import net.minecraft.block.BlockState;
+import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
 import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
 import net.minecraft.util.Hand;
 import net.minecraft.util.math.*;
@@ -20,16 +21,12 @@ import java.util.*;
  * Anti-cheat bypass strategy:
  *  1. Silent server-side packet rotation (LookAndOnGround) — client yaw/pitch
  *     never changes, so inventory-movement checks stay clean.
- *  2. Per-tick Gaussian yaw/pitch jitter (+/-0.5°) to avoid a fixed-angle
- *     machine-perfect signature.
- *  3. Randomised inter-tick delay (Break Delay ± 20 ms uniform noise) so the
- *     break interval is never constant.
- *  4. Cover Break: mines blocking blocks one at a time, preferring the face
- *     closest to the player to keep the hit-vector natural.
- *  5. Auto Tool: equips the best hotbar tool before each break tick, restores
- *     the previous slot when the module disables or the bed is gone.
- *  6. One LookAndOnGround per tick (not a snap-and-restore pair) — the server
- *     sees a gradual return via subsequent PositionAndRotation packets.
+ *  2. Per-tick Gaussian yaw/pitch jitter (+/-0.5°) to avoid machine-perfect signature.
+ *  3. Randomised inter-tick delay (Break Delay ± jitter) — break interval is never constant.
+ *  4. Cover Break: mines blocking blocks one at a time before the bed.
+ *  5. Auto Tool: equips the best hotbar tool before each break tick.
+ *  6. Direct PlayerActionC2SPacket (START_DESTROY_BLOCK) each tick — bypasses
+ *     client-side interaction-manager state checks for reliable mining on all server types.
  */
 public final class BedBreaker extends Module implements TickListener {
 
@@ -56,8 +53,6 @@ public final class BedBreaker extends Module implements TickListener {
     private final TimerUtils breakTimer = new TimerUtils();
     private final Random rng = new Random();
 
-    private BlockPos currentTarget;
-    private Direction currentFace;
     private int prevSlot = -1;
     private int nextDelay = 0;
 
@@ -73,8 +68,6 @@ public final class BedBreaker extends Module implements TickListener {
     @Override
     public void onEnable() {
         eventManager.add(TickListener.class, this);
-        currentTarget = null;
-        currentFace = null;
         prevSlot = -1;
         rollDelay();
         super.onEnable();
@@ -84,8 +77,6 @@ public final class BedBreaker extends Module implements TickListener {
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
         restoreSlot();
-        currentTarget = null;
-        currentFace = null;
         super.onDisable();
     }
 
@@ -132,8 +123,8 @@ public final class BedBreaker extends Module implements TickListener {
             }
         }
 
-        // 4. Silent rotation (one packet, no snap-back — natural return via
-        //    the game's own subsequent PositionAndRotation packets)
+        // 4. Silent rotation — one LookAndOnGround per tick; natural return via
+        //    subsequent PositionAndRotation packets from Minecraft's movement code.
         if (rotate.getValue()) {
             float[] rot = calcRotation(Vec3d.ofCenter(targetPos)
                     .add(face.getOffsetX() * 0.4, face.getOffsetY() * 0.4, face.getOffsetZ() * 0.4));
@@ -146,14 +137,12 @@ public final class BedBreaker extends Module implements TickListener {
                             mc.player.horizontalCollision));
         }
 
-        // 5. Mine the block
-        if (!targetPos.equals(currentTarget) || face != currentFace) {
-            mc.interactionManager.attackBlock(targetPos, face);
-            currentTarget = targetPos;
-            currentFace = face;
-        } else {
-            mc.interactionManager.updateBlockBreakingProgress(targetPos, face);
-        }
+        // 5. Send START_DESTROY_BLOCK directly — bypasses client-side interaction-manager
+        //    state machine and works reliably for both instant-break and multi-tick beds.
+        mc.getNetworkHandler().sendPacket(
+                new PlayerActionC2SPacket(
+                        PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
+                        targetPos, face));
 
         mc.player.swingHand(Hand.MAIN_HAND);
 
@@ -163,9 +152,6 @@ public final class BedBreaker extends Module implements TickListener {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    /**
-     * Find the nearest bed block (any part) within range.
-     */
     private BlockPos findBed() {
         double r = range.getValue();
         BlockPos playerPos = mc.player.getBlockPos();
@@ -191,15 +177,6 @@ public final class BedBreaker extends Module implements TickListener {
         return nearest;
     }
 
-    /**
-     * Returns the best exposed Direction on this block pos, or null if all
-     * six faces are blocked by solid blocks.
-     *
-     * "Exposed" means the neighbouring block in that direction is either air
-     * or non-solid, AND the face centre is within reach from the player's eyes.
-     * We prefer the face whose centre is closest to the player (most natural
-     * hit point).
-     */
     private Direction findAccessibleFace(BlockPos pos) {
         Vec3d eyes = mc.player.getEyePos();
         double r = range.getValue() + 0.5;
@@ -210,7 +187,6 @@ public final class BedBreaker extends Module implements TickListener {
         for (Direction dir : Direction.values()) {
             BlockPos neighbour = pos.offset(dir);
             BlockState nState = mc.world.getBlockState(neighbour);
-            // Face must open to air or a non-solid block
             if (!nState.isAir() && nState.isSolidBlock(mc.world, neighbour)) continue;
 
             Vec3d faceCentre = Vec3d.ofCenter(pos)
@@ -228,13 +204,6 @@ public final class BedBreaker extends Module implements TickListener {
         return bestFace;
     }
 
-    /**
-     * Finds the best cover block to mine in order to expose the bed.
-     * Checks a 3x4x3 volume around the bed and returns the reachable block
-     * whose accessible face is closest to the player.
-     *
-     * Returns [BlockPos, Direction] or null if nothing is reachable.
-     */
     private BreakTarget findCover(BlockPos bedPos) {
         Vec3d eyes = mc.player.getEyePos();
         double r = range.getValue() + 0.5;
@@ -256,7 +225,6 @@ public final class BedBreaker extends Module implements TickListener {
                     double blockDist = eyes.distanceTo(Vec3d.ofCenter(check));
                     if (blockDist > r) continue;
 
-                    // Try to find an accessible face
                     for (Direction dir : Direction.values()) {
                         BlockPos neighbour = check.offset(dir);
                         BlockState nState = mc.world.getBlockState(neighbour);
@@ -283,10 +251,6 @@ public final class BedBreaker extends Module implements TickListener {
         return new BreakTarget(bestPos, bestFace);
     }
 
-    /**
-     * Finds the hotbar slot (0-8) with the highest mining speed multiplier
-     * for the given block state.
-     */
     private int findBestToolSlot(BlockState state) {
         int best = -1;
         float bestSpeed = 1.0f;
@@ -302,23 +266,17 @@ public final class BedBreaker extends Module implements TickListener {
         return best;
     }
 
-    /**
-     * Calculates yaw/pitch from the player's eye position to a world position.
-     */
     private float[] calcRotation(Vec3d target) {
         Vec3d eyes = mc.player.getEyePos();
         double dx = target.x - eyes.x;
         double dy = target.y - eyes.y;
         double dz = target.z - eyes.z;
         double dist2d = Math.sqrt(dx * dx + dz * dz);
-        float yaw   = (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0);
+        float yaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float pitch = (float) (-Math.toDegrees(Math.atan2(dy, dist2d)));
-        return new float[]{yaw, pitch};
+        return new float[]{ yaw, pitch };
     }
 
-    /**
-     * Restores the previously held hotbar slot (called on disable / no target).
-     */
     private void restoreSlot() {
         if (prevSlot != -1 && mc.player != null) {
             mc.player.getInventory().setSelectedSlot(prevSlot);
@@ -326,11 +284,6 @@ public final class BedBreaker extends Module implements TickListener {
         }
     }
 
-    /**
-     * Picks a new random break delay within the configured min-max range.
-     * The slight randomisation prevents a constant-interval pattern that ACs
-     * use to distinguish automation from human mining.
-     */
     private void rollDelay() {
         int lo = breakDelayRange.getMinInt();
         int hi = breakDelayRange.getMaxInt();

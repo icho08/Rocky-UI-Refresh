@@ -67,7 +67,7 @@ public final class ChestStealer extends Module implements TickListener {
     public ChestStealer() {
         super(EncryptedString.of("Chest Stealer"),
                 EncryptedString.of("Automatically steals items from open chests"),
-                -1, CategoryManager.INVENTORY);
+                -1, CategoryManager.BLATANT);
         addSettings(delay, delayJitter, closeWhenDone, ignoreTools, stackFirst, autoOpen, autoOpenRange);
     }
 

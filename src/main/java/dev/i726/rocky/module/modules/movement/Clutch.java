@@ -26,26 +26,20 @@ import org.lwjgl.glfw.GLFW;
 import java.lang.reflect.Field;
 
 /**
- * Clutch — saves you from falling by silently rotating to face the block below,
- * placing it, then restoring your original rotation. The server sees:
+ * Clutch — saves you from falling by silently rotating toward the nearest
+ * placeable solid surface below (scanning up to 4 levels down), placing a
+ * block there, then letting Minecraft's next natural PositionAndRotation
+ * packet restore the original rotation.
  *
- *   1. LookAndOnGround  (yaw/pitch aimed at the block face)
- *   2. PlayerInteractBlockC2SPacket  (the actual block placement)
- *   3. LookAndOnGround  (original yaw/pitch restored)
+ * The server sees:
+ *   1. LookAndOnGround  (aimed at the solid surface below)
+ *   2. PlayerInteractBlockC2SPacket  (block placement)
  *
- * All three are delivered in the same server tick so there is no visible
- * camera snap and Grim's "interact with what you look at" check passes.
- *
- * A public {@link #placing} flag is exposed so that SilentAim knows to
- * skip its own rotation injection during this window.
+ * A public {@link #placing} flag is exposed so SilentAim skips its own
+ * rotation injection during this window.
  */
 public final class Clutch extends Module implements TickListener {
 
-    /**
-     * Set to true for the duration of a clutch placement so that other
-     * packet-level modules (e.g. SilentAim) skip their own injection and
-     * don't clobber our carefully crafted block-look rotation.
-     */
     public static volatile boolean placing = false;
 
     private final NumberSetting fallSpeed = new NumberSetting(
@@ -131,27 +125,28 @@ public final class Clutch extends Module implements TickListener {
             if (!holdingBlock()) return;
         }
 
-        // foot = the block position AT the player's feet (same Y as player's standing block)
-        // below = one block further down
-        // We try foot-level first: when walking off a bridge the adjacent bridge block
-        // is a solid NEIGHBOUR of foot (same Y), so buildPlaceHit finds it immediately.
-        // If that fails we fall back to one block below (scaffold-style gap scenario).
-        BlockPos foot  = mc.player.getBlockPos();
-        BlockPos below = foot.down();
-        if (isSolid(foot) || isSolid(below)) { tryRestoreSlot(); return; }
+        // foot = the block position AT the player's feet
+        // Only bail if the player is already INSIDE a solid block (shouldn't happen normally).
+        // We intentionally do NOT bail when foot.down() is solid — that's exactly when we
+        // want to clutch (ground is one block below and the player is still falling).
+        BlockPos foot = mc.player.getBlockPos();
+        if (isSolid(foot)) { tryRestoreSlot(); return; }
 
-        BlockHitResult hit = buildPlaceHit(foot);
-        if (hit == null) hit = buildPlaceHit(below);
+        // Scan downward up to 4 levels for the first solid surface we can click.
+        // Priority: directly below foot, then one further, etc.
+        BlockHitResult hit = null;
+        for (int dy = 0; dy <= 3; dy++) {
+            hit = buildPlaceHit(foot.down(dy));
+            if (hit != null) break;
+        }
         if (hit == null) return;
 
         // ── Silent rotation + placement ───────────────────────────────────────
-        Vec3d   hitVec = hit.getPos();
-        Vec3d   eye    = mc.player.getEyePos();
-        float[] look   = calcLook(eye, hitVec);
+        Vec3d   hitVec     = hit.getPos();
+        Vec3d   eye        = mc.player.getEyePos();
+        float[] look       = calcLook(eye, hitVec);
         float   blockYaw   = look[0];
         float   blockPitch = look[1];
-        float   origYaw    = mc.player.getYaw();
-        float   origPitch  = mc.player.getPitch();
         boolean onGround   = mc.player.isOnGround();
         boolean hCol       = mc.player.horizontalCollision;
 
@@ -160,23 +155,14 @@ public final class Clutch extends Module implements TickListener {
 
         placing = true;
         try {
-            // 1. Tell the server we are looking at the block face (single packet — no snap-and-restore)
             conn.send(new PlayerMoveC2SPacket.LookAndOnGround(blockYaw, blockPitch, onGround, hCol));
 
-            // 2. Place the block
             if (clickSimulation.getValue()) MouseSimulation.mouseClick(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
             mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
             mc.player.swingHand(Hand.MAIN_HAND);
-
-            // No restore packet — the next normal PositionAndRotation from Minecraft's
-            // own movement code carries the original yaw/pitch back to the server,
-            // which looks like a natural 1-tick mouse correction rather than an
-            // instant bot-signature snap-and-restore within the same tick.
         } finally {
             placing = false;
         }
-        // Do NOT restore slot here — we might still be in the air.
-        // tryRestoreSlot() is called by the on-ground check at the top of onTick().
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -222,7 +208,8 @@ public final class Clutch extends Module implements TickListener {
 
     /**
      * Builds a BlockHitResult that places a block at {@code pos} by hitting
-     * the nearest solid neighbour face. Priority: down, N/S/W/E, up.
+     * the nearest solid neighbour face.
+     * Priority: down (place on top of ground below), then N/S/W/E, then up.
      */
     private BlockHitResult buildPlaceHit(BlockPos pos) {
         Direction[] priority = {
@@ -242,10 +229,6 @@ public final class Clutch extends Module implements TickListener {
         return null;
     }
 
-    /**
-     * Calculates yaw and pitch from {@code from} to {@code to}.
-     * Returns float[]{yaw, pitch} in degrees.
-     */
     private static float[] calcLook(Vec3d from, Vec3d to) {
         double dx = to.x - from.x;
         double dy = to.y - from.y;
@@ -256,11 +239,6 @@ public final class Clutch extends Module implements TickListener {
         return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
     }
 
-    /**
-     * Gets the underlying {@link ClientConnection} via reflection so we can
-     * send packets directly (fires PacketSendListener, which SilentAim respects
-     * via the {@link #placing} flag).
-     */
     private ClientConnection getConnection() {
         try {
             Class<?> cls = ClientCommonNetworkHandler.class;

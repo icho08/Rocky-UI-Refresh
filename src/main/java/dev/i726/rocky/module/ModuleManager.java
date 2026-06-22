@@ -70,7 +70,6 @@ public final class ModuleManager implements ButtonListener {
                 add(new AntiAFK());
                 add(new AutoXP());
                 add(new NoJumpDelay());
-                add(new PacketLogger());
                 add(new PingSpoof());
                 add(new FakeLag());
                 add(new AutoClicker());
@@ -80,8 +79,6 @@ public final class ModuleManager implements ButtonListener {
                 add(new PackSpoof());
                 add(new Sprint());
                 add(new BridgeAssist());
-                add(new GodBridge());
-                add(new SmartBridge());
                 add(new Scaffold());
                 add(new NoFall());
                 add(new Clutch());
@@ -101,7 +98,6 @@ public final class ModuleManager implements ButtonListener {
                 //Render
                 add(new HUD());
                 add(new NightVision());
-                add(new NoBounce());
                 add(new PlayerESP());
                 add(new StorageEsp());
                 add(new OreESP());

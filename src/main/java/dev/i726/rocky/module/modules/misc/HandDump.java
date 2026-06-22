@@ -78,7 +78,7 @@ public final class HandDump extends Module implements TickListener {
     public HandDump() {
         super(EncryptedString.of("Hand Dump"),
                 EncryptedString.of("Deposits hand/hotbar items into a chest without manual dragging"),
-                -1, CategoryManager.INVENTORY);
+                -1, CategoryManager.BLATANT);
         addSettings(mode, autoOpen, autoOpenRange, closeWhenDone, delay, delayJitter);
     }
 

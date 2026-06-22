@@ -232,6 +232,14 @@ public final class GodBridge extends Module implements TickListener {
             return;
         }
 
+        // Only active while the player is holding the backward key
+        if (!mc.options.backKey.isPressed()) {
+            placed         = false;
+            lockedHitPoint = null;
+            driftToReal(p);
+            return;
+        }
+
         // Stopped → safely return to real camera
         Vec3d vel = p.getVelocity();
         double spd = Math.abs(vel.x) + Math.abs(vel.z);

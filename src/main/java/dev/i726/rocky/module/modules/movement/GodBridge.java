@@ -128,6 +128,14 @@ public final class GodBridge extends Module implements TickListener {
     private float vYaw   = Float.NaN;
     private float vPitch = Float.NaN;
 
+    /**
+     * Hit point locked in when we enter the 0.20-block pre-rotation zone.
+     * Held constant until the block is placed (or the zone is exited) so that
+     * armRotation, the validity check, and the BlockHitResult all use
+     * the SAME point — Grim cross-validates these three values.
+     */
+    private Vec3d lockedHitPoint = null;
+
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     public GodBridge() {
@@ -155,6 +163,7 @@ public final class GodBridge extends Module implements TickListener {
         RotationOverride.afterPacketAction = null;
         vYaw                               = Float.NaN;
         vPitch                             = Float.NaN;
+        lockedHitPoint                     = null;
         if (mc != null && mc.options != null) {
             mc.options.sneakKey.setPressed(false);
             mc.options.sprintKey.setPressed(false);
@@ -169,6 +178,7 @@ public final class GodBridge extends Module implements TickListener {
         healthInited       = false;
         vYaw               = Float.NaN;
         vPitch             = Float.NaN;
+        lockedHitPoint     = null;
         safeWalkActive     = false;
         currentEdgeTrigger = randomEdgeTrigger();
     }
@@ -267,45 +277,53 @@ public final class GodBridge extends Module implements TickListener {
             sneakReleaseNext = true;
         }
 
-        // Arm the virtual rotation while we're close to the target face so the
-        // movement packet on this tick already carries the correct rotation.
-        // We start rotating earlier than the trigger to be ready when we arrive.
+        // ── Pre-rotation zone (< 0.20 blocks from edge) ──────────────────────
+        //
+        // Lock in ONE hit point the moment we enter this zone and keep it fixed
+        // until the block is placed or we leave the zone. armRotation, the
+        // validity check, AND the BlockHitResult must all reference this exact
+        // same Vec3d — Grim ray-traces from (serverYaw, serverPitch) and checks
+        // it hits the face within the BlockHitResult's stated position.
         if (edgeDist < 0.20) {
-            armRotation(p, backDir, standing);
+            if (lockedHitPoint == null) {
+                // First tick in zone — choose and lock the aim point
+                lockedHitPoint = hitPoint(backDir, standing);
+            }
+            armRotation(p, lockedHitPoint);
         } else {
-            // Far from the edge — drift back to real camera
-            placed = false;
+            // Far from edge — clear lock, drift rotation back to real camera
+            placed         = false;
+            lockedHitPoint = null;
             driftToReal(p);
             return;
         }
 
-        // Not yet in the trigger zone — rotation is armed but don't place yet
+        // Not yet in the trigger zone — rotation is arming, don't place yet
         if (edgeDist >= currentEdgeTrigger || placed) {
             return;
         }
 
-        // ── We're at the trigger zone — attempt placement ─────────────────────
-
-        // Rotation must be close enough to the target for the hit to be valid
-        // (< 12° tolerance; Grim's ray from serverYaw/serverPitch must hit the face)
-        float[] needed = calcLook(p.getEyePos(), hitPoint(backDir, standing, p));
+        // ── Trigger zone: attempt placement ───────────────────────────────────
+        //
+        // Validate that the virtual rotation (what Grim received this tick) actually
+        // points at lockedHitPoint within 12°. If we're still rotating toward it,
+        // wait another tick rather than send a mismatched interact.
+        float[] needed = calcLook(p.getEyePos(), lockedHitPoint);
         if (Math.abs(MathHelper.wrapDegrees(needed[0] - vYaw))   > 12f) return;
         if (Math.abs(MathHelper.wrapDegrees(needed[1] - vPitch))  > 12f) return;
 
-        // Resolve block slot
         int useSlot = resolveBlockSlot(p);
         if (useSlot == -1) return;
 
-        final Hand placeHand = (useSlot == -2) ? Hand.OFF_HAND : Hand.MAIN_HAND;
-        final Vec3d hp2      = hitPoint(backDir, standing, p);
-        final BlockHitResult bhr   = new BlockHitResult(hp2, backDir, standing, false);
-        final int            fSlot = useSlot;
-        final int            fPrev = p.getInventory().getSelectedSlot();
+        final Hand           placeHand = (useSlot == -2) ? Hand.OFF_HAND : Hand.MAIN_HAND;
+        final BlockHitResult bhr       = new BlockHitResult(lockedHitPoint, backDir, standing, false);
+        final int            fSlot     = useSlot;
+        final int            fPrev     = p.getInventory().getSelectedSlot();
 
         if (placeHand == Hand.MAIN_HAND && fSlot != fPrev)
             p.getInventory().setSelectedSlot(fSlot);
 
-        // Mark placed so we don't fire again on this edge-visit
+        // Guard: one placement per edge-visit
         placed = true;
 
         // ── Schedule placement AFTER the rotation packet ──────────────────────
@@ -321,8 +339,10 @@ public final class GodBridge extends Module implements TickListener {
                     mc.options.sneakKey.setPressed(false);
                     sneakReleaseNext = false;
 
-                    // Randomise trigger for next placement (avoids fixed-distance pattern)
+                    // Randomise edge threshold for the next block (no fixed fingerprint)
                     currentEdgeTrigger = randomEdgeTrigger();
+                    // Clear the locked hit point so the next block gets a fresh one
+                    lockedHitPoint = null;
                 }
             } finally {
                 Clutch.placing = false;
@@ -335,25 +355,22 @@ public final class GodBridge extends Module implements TickListener {
     // ── Rotation helpers ──────────────────────────────────────────────────────
 
     /**
-     * Computes the exact aim point on the back face of `standing` that:
-     *   1. Lies on the face plane
-     *   2. Is at the top of the face (Y near standingBlock.top - 0.05) — this
-     *      corresponds to the ~70-80° downward look of a human god-bridger
-     *   3. Has horizontal jitter so consecutive hits never land at the same pixel
+     * Computes the aim point on the back face of `standing`.
+     * Called ONCE per edge-visit; the result is stored in lockedHitPoint and
+     * reused for armRotation, validity check, and BlockHitResult so all three
+     * always reference the same point.
+     *
+     *  • Y sampled near the top of the face (0.70–0.97) — matches ~70-80°
+     *    downward pitch that a human god-bridger naturally uses.
+     *  • Horizontal jitter along the face's free axis for per-block variance.
      */
-    private Vec3d hitPoint(Direction backDir, BlockPos standing, ClientPlayerEntity p) {
+    private Vec3d hitPoint(Direction backDir, BlockPos standing) {
         ThreadLocalRandom rng = ThreadLocalRandom.current();
 
-        // Face plane position along the back axis
         double faceX = standing.getX() + 0.5 + backDir.getOffsetX() * 0.5;
         double faceZ = standing.getZ() + 0.5 + backDir.getOffsetZ() * 0.5;
-
-        // Aim near the top of the face (top = standing.y + 1.0, bottom = standing.y)
-        // Sample between 0.7 and 0.97 of the face height — top region, looks human
-        double faceY = standing.getY() + 0.70 + rng.nextDouble(0.27);
-
-        // Horizontal jitter along the face's free axis (perpendicular to backDir)
-        double jitterH = rng.nextDouble(-0.25, 0.25);
+        double faceY = standing.getY() + 0.70 + rng.nextDouble(0.27);   // top region
+        double jitterH = rng.nextDouble(-0.25, 0.25);                    // side jitter
 
         return new Vec3d(
                 faceX + (backDir.getOffsetX() == 0 ? jitterH : 0.0),
@@ -363,12 +380,11 @@ public final class GodBridge extends Module implements TickListener {
     }
 
     /**
-     * Sets the virtual rotation to track toward the target face's hit point.
-     * Called every tick while within 0.20 blocks of the edge so the rotation
-     * is already close when we reach the trigger zone.
+     * Smoothly steps the virtual rotation toward the given (fixed) aim point.
+     * Uses the same locked aim point every tick so vYaw/vPitch converge
+     * to exactly the angle Grim will ray-trace into the BlockHitResult.
      */
-    private void armRotation(ClientPlayerEntity p, Direction backDir, BlockPos standing) {
-        Vec3d target = hitPoint(backDir, standing, p);
+    private void armRotation(ClientPlayerEntity p, Vec3d target) {
         float[] needed = calcLook(p.getEyePos(), target);
 
         if (Float.isNaN(vYaw)) {

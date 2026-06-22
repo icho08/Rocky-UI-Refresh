@@ -1,6 +1,7 @@
 package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.Rocky;
+import dev.i726.rocky.module.modules.movement.GodBridge;
 import dev.i726.rocky.module.modules.movement.SmartBridge;
 import dev.i726.rocky.module.modules.combat.Reach;
 import net.minecraft.entity.player.PlayerEntity;
@@ -13,13 +14,12 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class PlayerEntityMixin {
 
     /**
-     * SafeWalk for SmartBridge assist phase only.
-     * GodBridge no longer uses clipAtLedge — it suppresses the backward key
-     * directly, which leaves zero velocity-clamping signature for Grim to detect.
+     * SafeWalk for GodBridge and SmartBridge assist phase.
+     * Returns true (clip at ledge) whenever either module's safeWalkActive flag is set.
      */
     @Inject(method = "clipAtLedge", at = @At("HEAD"), cancellable = true)
     private void onClipAtLedge(CallbackInfoReturnable<Boolean> cir) {
-        if (SmartBridge.safeWalkActive) {
+        if (GodBridge.safeWalkActive || SmartBridge.safeWalkActive) {
             cir.setReturnValue(true);
         }
     }

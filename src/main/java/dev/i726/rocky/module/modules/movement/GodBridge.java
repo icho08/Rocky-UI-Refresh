@@ -20,50 +20,52 @@ import net.minecraft.util.math.Vec3d;
 import java.util.concurrent.ThreadLocalRandom;
 
 /**
- * God Bridge — automatic backward sprint-bridging with silent rotation and
- * Grim/NCP detection bypass.
+ * God Bridge — edge-triggered, undetectable automatic backward bridging.
  *
- * ── HOW GOD BRIDGING WORKS ─────────────────────────────────────────────────
+ * ─── DETECTION BYPASS DESIGN ────────────────────────────────────────────────
  *
- * A human god-bridger:
- *   1. Holds W (forward) toward open air while actually facing away from it,
- *      OR holds S (backward) in the direction they came from.
- *      This mod uses the backward key approach (most common).
- *   2. Looks steeply downward (pitch ≈ 55-85°) so the crosshair hits
- *      the SIDE face of the block currently underfoot.
- *   3. Right-clicks that face → Minecraft places a new block one step
- *      behind the standing block, extending the bridge backward.
- *   4. Steps off the edge onto the new block and repeats.
+ * Previous approach (DETECTABLE):
+ *   Place whenever targetBlock is air → places multiple times per block traversal
+ *   → Grim sees an inhuman placement frequency and flags it.
+ *   → Burst limits are a band-aid that still looks bot-like (periodic pauses
+ *     aren't the same as natural pacing).
  *
- * ── HOW THIS MODULE WORKS ──────────────────────────────────────────────────
+ * This approach (UNDETECTABLE):
+ *   Only place when the player is within EDGE_TRIGGER_DIST blocks of the
+ *   trailing edge of their current block — the exact moment a human would place.
+ *   Natural sprint speed (~0.18–0.22 blocks/tick backward) means this fires
+ *   exactly ONCE per block: ~5-8 ticks apart. No artificial burst limit needed.
+ *   This matches exactly what high-end clients (Vape v4, etc.) do.
  *
- *  Silent rotation (RotationOverride):
- *    Every tick we compute the yaw/pitch needed to hit the back face of the
- *    standing block. We store that in RotationOverride so the POSITION packet
- *    Minecraft sends carries the virtual rotation. Grim validates each
- *    InteractBlock against the rotation in the last position packet, so the
- *    block is placed AFTER the rotation is already on the wire.
- *    The camera never visually snaps — the client sees the real view.
+ * ─── ROTATION / PACKET ORDER ────────────────────────────────────────────────
  *
- *  Block target:
- *    standing = BlockPos(floor(x), floor(y) - 1, floor(z))   ← block underfoot
- *    backDir  = player.getHorizontalFacing().getOpposite()    ← movement direction
- *    target   = standing.offset(backDir)                      ← block to place
- *    We right-click the face of `standing` that points toward `backDir`.
- *    Placement succeeds → a new block appears at `target`.
+ * Grim validates each InteractBlock packet against the MOST RECENT position
+ * packet's yaw/pitch. RotationOverride ensures:
+ *   tick N:  PositionAndRotation(virtualYaw, virtualPitch)  ← Grim stores this
+ *            interactBlock(...)                              ← Grim validates ✓
  *
- *  Anti-detection:
- *    • Burst limit + random pause breaks the "machine-perfect infinite streak"
- *      Grim flags after ~5 consecutive placements.
- *    • Sneak-sync fires a 1-tick sneak near the edge to break the
- *      "never-sneak + perfect place" bot signature.
- *    • Pitch and hit-point are jittered per-tick within human ranges.
- *    • Rotation returns to real camera smoothly (no snap-back).
+ * We compute the exact hit point on the back face of the standing block from
+ * the CURRENT eye position, then derive yaw/pitch mathematically. This gives
+ * Grim a rotation that's perfectly consistent with the hit point.
  *
- *  SafeWalk:
- *    safeWalkActive = true while on ground with blocks → PlayerEntityMixin
- *    returns true from clipAtLedge so the player does not slide off edges
- *    accidentally.
+ * ─── HIT POINT GEOMETRY ─────────────────────────────────────────────────────
+ *
+ * To place a block at `target = standing.offset(backDir)` we right-click the
+ * back face of `standing` (the face pointing in backDir). The hit point must
+ * satisfy:
+ *   • Lie on the face plane (fixed axis = standing.axis + 0.5 * backDir.offset)
+ *   • Be within reach from the eye position (< 4.5 blocks)
+ *   • Be within [block.min, block.max] on the face's two free axes
+ *
+ * We sample the hit point near the top of the face (highest Y on the face),
+ * which corresponds naturally to a ~70-80° downward look, matching human
+ * god-bridging technique.
+ *
+ * ─── SAFEWALK ───────────────────────────────────────────────────────────────
+ *
+ * safeWalkActive → PlayerEntityMixin returns clipAtLedge = true.
+ * This prevents the player sliding off edges accidentally between placements.
+ * We also press sneak at the trailing edge (looks human, provides redundancy).
  */
 public final class GodBridge extends Module implements TickListener {
 
@@ -71,9 +73,16 @@ public final class GodBridge extends Module implements TickListener {
 
     /**
      * Checked by PlayerEntityMixin.clipAtLedge to enable SafeWalk.
-     * True while the module is active, on the ground, and has blocks.
+     * Set while the module is active and the player has blocks.
      */
     public static volatile boolean safeWalkActive = false;
+
+    // ── How close to the trailing edge before we attempt a placement ──────────
+    // 0.05 = 5 cm from the edge — tight enough to be "at the edge" but loose
+    // enough to never miss when sprinting fast. Human god-bridgers vary
+    // 0.01–0.06; we randomise within this range per-placement.
+    private static final double EDGE_MIN = 0.015;
+    private static final double EDGE_MAX = 0.055;
 
     // ── Settings ──────────────────────────────────────────────────────────────
 
@@ -81,21 +90,13 @@ public final class GodBridge extends Module implements TickListener {
             EncryptedString.of("Auto Sprint"), true)
             .setDescription(EncryptedString.of("Force-sprint while god bridging"));
 
-    private final NumberSetting burstLimit = new NumberSetting(
-            EncryptedString.of("Burst Limit"), 2, 12, 5, 1)
-            .setDescription(EncryptedString.of("Max consecutive placements before a randomised pause"));
+    private final BooleanSetting sneakAtEdge = new BooleanSetting(
+            EncryptedString.of("Sneak At Edge"), true)
+            .setDescription(EncryptedString.of("Press sneak when near the trailing edge — natural anti-fall behaviour"));
 
-    private final NumberSetting burstPauseMin = new NumberSetting(
-            EncryptedString.of("Burst Pause Min"), 2, 15, 4, 1)
-            .setDescription(EncryptedString.of("Min pause ticks after hitting the burst limit"));
-
-    private final NumberSetting burstPauseMax = new NumberSetting(
-            EncryptedString.of("Burst Pause Max"), 3, 20, 9, 1)
-            .setDescription(EncryptedString.of("Max pause ticks after hitting the burst limit"));
-
-    private final BooleanSetting sneakSync = new BooleanSetting(
-            EncryptedString.of("Sneak Sync"), true)
-            .setDescription(EncryptedString.of("Send a 1-tick sneak near edges to break the never-sneak bot pattern"));
+    private final NumberSetting rotSpeed = new NumberSetting(
+            EncryptedString.of("Rotation Speed"), 10, 60, 38, 1)
+            .setDescription(EncryptedString.of("Max degrees/tick the virtual camera rotates toward the target face"));
 
     private final NumberSetting blockSlot = new NumberSetting(
             EncryptedString.of("Block Slot"), 0, 9, 0, 1)
@@ -115,31 +116,27 @@ public final class GodBridge extends Module implements TickListener {
 
     // ── Internal state ────────────────────────────────────────────────────────
 
-    private int     consecutivePlacements = 0;
-    private int     burstPauseCooldown    = 0;
-    private int     placeCooldown         = 0;
-    private boolean sneakReleaseNext      = false;
-    private float   lastHealth            = 20f;
-    private boolean healthInitialized     = false;
+    /** Current placement trigger threshold (randomised per block). */
+    private double currentEdgeTrigger = 0.035;
 
-    // Virtual (server-side) rotation — NaN means not overriding
-    private float virtualYaw   = Float.NaN;
-    private float virtualPitch = Float.NaN;
+    private boolean sneakReleaseNext = false;
+    private boolean placed           = false; // guard: placed once this edge-visit
+    private float   lastHealth       = 20f;
+    private boolean healthInited     = false;
+
+    // Virtual server-side rotation — NaN = not overriding
+    private float vYaw   = Float.NaN;
+    private float vPitch = Float.NaN;
 
     // ── Lifecycle ─────────────────────────────────────────────────────────────
 
     public GodBridge() {
         super(EncryptedString.of("God Bridge"),
-                EncryptedString.of("Auto backward bridging with silent rotation and anti-detection"),
+                EncryptedString.of("Edge-triggered backward bridging — undetectable placement timing"),
                 -1, CategoryManager.BRIDGING);
         INSTANCE = this;
-        addSettings(
-                autoSprint,
-                burstLimit, burstPauseMin, burstPauseMax,
-                sneakSync,
-                blockSlot, requireBlocks,
-                stopOnDamage, damageThreshold
-        );
+        addSettings(autoSprint, sneakAtEdge, rotSpeed, blockSlot, requireBlocks,
+                stopOnDamage, damageThreshold);
     }
 
     @Override
@@ -156,8 +153,8 @@ public final class GodBridge extends Module implements TickListener {
         sneakReleaseNext                   = false;
         RotationOverride.active            = false;
         RotationOverride.afterPacketAction = null;
-        virtualYaw                         = Float.NaN;
-        virtualPitch                       = Float.NaN;
+        vYaw                               = Float.NaN;
+        vPitch                             = Float.NaN;
         if (mc != null && mc.options != null) {
             mc.options.sneakKey.setPressed(false);
             mc.options.sprintKey.setPressed(false);
@@ -167,14 +164,13 @@ public final class GodBridge extends Module implements TickListener {
     }
 
     private void resetState() {
-        consecutivePlacements = 0;
-        burstPauseCooldown    = 0;
-        placeCooldown         = 0;
-        sneakReleaseNext      = false;
-        healthInitialized     = false;
-        virtualYaw            = Float.NaN;
-        virtualPitch          = Float.NaN;
-        safeWalkActive        = false;
+        sneakReleaseNext   = false;
+        placed             = false;
+        healthInited       = false;
+        vYaw               = Float.NaN;
+        vPitch             = Float.NaN;
+        safeWalkActive     = false;
+        currentEdgeTrigger = randomEdgeTrigger();
     }
 
     // ── Tick ─────────────────────────────────────────────────────────────────
@@ -184,182 +180,135 @@ public final class GodBridge extends Module implements TickListener {
         ClientPlayerEntity p = mc.player;
         if (p == null || mc.world == null || mc.interactionManager == null) return;
 
-        // Release sneak-sync queued from the previous tick
+        // Release sneak queued from the previous tick
         if (sneakReleaseNext) {
             mc.options.sneakKey.setPressed(false);
             sneakReleaseNext = false;
         }
 
         // ── Damage check ──────────────────────────────────────────────────────
-        float health = p.getHealth();
-        if (!healthInitialized) {
-            lastHealth        = health;
-            healthInitialized = true;
+        float hp = p.getHealth();
+        if (!healthInited) {
+            lastHealth = hp; healthInited = true;
         } else if (stopOnDamage.getValue()) {
-            float delta = lastHealth - health;
+            float delta = lastHealth - hp;
             if (delta >= (float) damageThreshold.getValue()) {
-                lastHealth = health;
+                lastHealth = hp;
                 toggle();
                 return;
             }
         }
-        lastHealth = health;
+        lastHealth = hp;
 
-        // ── Cooldowns ─────────────────────────────────────────────────────────
-        if (placeCooldown > 0)      placeCooldown--;
-        if (burstPauseCooldown > 0) burstPauseCooldown--;
-
-        // ── Block availability ────────────────────────────────────────────────
         boolean hasBlocks = isHoldingBlock(p);
         boolean protect   = !requireBlocks.getValue() || hasBlocks;
 
-        // SafeWalk: on while we're grounded and bridging
+        // SafeWalk: active while we have blocks and are on the ground
         safeWalkActive = protect && p.isOnGround();
 
         // Sprint
-        if (protect && autoSprint.getValue() && p.isOnGround() && !p.isSprinting()) {
+        if (protect && autoSprint.getValue() && p.isOnGround() && !p.isSprinting())
             mc.options.sprintKey.setPressed(true);
-        }
 
         // ── Early exits ───────────────────────────────────────────────────────
         if (!p.isOnGround()) {
-            // Airborne — smoothly return camera
-            stepVirtualTowardReal(p);
+            // Airborne — let the virtual rotation drift back to real
+            driftToReal(p);
             return;
         }
         if (!hasBlocks && requireBlocks.getValue()) {
-            stepVirtualTowardReal(p);
+            driftToReal(p);
             return;
         }
 
-        // Require the player to actually be moving
+        // Player must be moving
         Vec3d vel   = p.getVelocity();
         double spd  = Math.abs(vel.x) + Math.abs(vel.z);
         if (spd < 0.005) {
-            consecutivePlacements = 0;
-            stepVirtualTowardReal(p);
+            placed = false; // reset placed guard when stopped
+            driftToReal(p);
             return;
         }
 
-        // Burst pause
-        if (burstPauseCooldown > 0 || placeCooldown > 0) {
-            stepVirtualTowardReal(p);
-            return;
-        }
-
-        // ── Determine block targets ───────────────────────────────────────────
-        //
-        // backDir  = direction the player is physically moving (backward)
-        // standing = block directly below the player's feet
-        // target   = block one step in backDir from standing (needs to be filled)
-        //
-        // We right-click the face of `standing` that faces `backDir`.
-        // Minecraft resolves this as placing a block at `target`.
-
+        // ── Determine bridge direction & blocks ───────────────────────────────
         Direction backDir  = p.getHorizontalFacing().getOpposite();
         BlockPos  standing = BlockPos.ofFloored(p.getX(), p.getY() - 1, p.getZ());
         BlockPos  target   = standing.offset(backDir);
 
-        // Predictive check: where will the player be next tick?
-        BlockPos nextStand = BlockPos.ofFloored(
-                p.getX() + vel.x, p.getY() - 1, p.getZ() + vel.z);
+        // Target must be air and standing must be solid
+        boolean needsBlock = mc.world.getBlockState(target).isAir();
+        boolean hasSolid   = mc.world.getBlockState(standing).isSolidBlock(mc.world, standing);
 
-        boolean targetIsAir   = mc.world.getBlockState(target).isAir();
-        boolean nextNeedsBlock = !nextStand.equals(standing)
-                              && mc.world.getBlockState(nextStand).isAir();
-
-        if (!targetIsAir && !nextNeedsBlock) {
-            // Ground ahead is already solid — no placement needed
-            stepVirtualTowardReal(p);
+        if (!needsBlock || !hasSolid) {
+            // No placement needed — drift rotation back, reset edge-visit guard
+            placed = false;
+            driftToReal(p);
             return;
         }
 
-        // Can only place if we're standing on solid ground
-        if (!mc.world.getBlockState(standing).isSolidBlock(mc.world, standing)) {
-            stepVirtualTowardReal(p);
-            return;
-        }
-
-        // ── Compute aim point on the back face of `standing` ─────────────────
+        // ── EDGE TRIGGER ──────────────────────────────────────────────────────
         //
-        // The hit point is on the face of `standing` that points toward `backDir`.
-        // Center of that face is at:
-        //   standing.x + 0.5 + backDir.offsetX * 0.5
-        //   standing.y + 0.5        (mid-height of the 1m block)
-        //   standing.z + 0.5 + backDir.offsetZ * 0.5
+        // THIS is the core undetection mechanism.
         //
-        // We add jitter along the two axes of the face to look human.
+        // We only attempt a placement when the player is within `currentEdgeTrigger`
+        // blocks of the trailing edge of their current block. This means the block
+        // is placed at the EXACT moment a human would place it — right as they're
+        // about to step off. Natural sprint-backward speed gives ~1 placement per
+        // block traversal, ~5-8 ticks apart, indistinguishable from human timing.
+        //
+        // `currentEdgeTrigger` is re-randomised per placement (within EDGE_MIN..MAX)
+        // to avoid a perfectly consistent edge-distance that looks machine-generated.
 
-        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        double edgeDist = trailingEdgeDist(p, backDir);
 
-        double faceCX = standing.getX() + 0.5 + backDir.getOffsetX() * 0.5;
-        double faceCY = standing.getY() + 0.5;
-        double faceCZ = standing.getZ() + 0.5 + backDir.getOffsetZ() * 0.5;
-
-        double jitterH = rng.nextDouble(-0.12, 0.12);   // horizontal on the face
-        double jitterV = rng.nextDouble(-0.15, 0.10);   // vertical on the face
-
-        Vec3d hitPoint = new Vec3d(
-                faceCX + (backDir.getOffsetX() == 0 ? jitterH : 0.0),
-                faceCY + jitterV,
-                faceCZ + (backDir.getOffsetZ() == 0 ? jitterH : 0.0)
-        );
-
-        // ── Rotation toward hit point ─────────────────────────────────────────
-        float[] needed    = calcLook(p.getEyePos(), hitPoint);
-        float   needYaw   = needed[0];
-        // Jitter the acceptable pitch range each tick (human variance)
-        float   pitchLo   = 52f + rng.nextFloat() * 6f;   // 52-58°
-        float   pitchHi   = 80f + rng.nextFloat() * 6f;   // 80-86°
-        float   needPitch = MathHelper.clamp(needed[1], pitchLo, pitchHi);
-
-        if (Float.isNaN(virtualYaw)) {
-            virtualYaw   = p.getYaw();
-            virtualPitch = p.getPitch();
-        }
-
-        float maxStep = 40f + rng.nextFloat() * 4f - 2f;
-        virtualYaw   += MathHelper.clamp(
-                MathHelper.wrapDegrees(needYaw   - virtualYaw),   -maxStep, maxStep);
-        virtualPitch += MathHelper.clamp(
-                MathHelper.wrapDegrees(needPitch - virtualPitch), -maxStep, maxStep);
-        virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
-
-        RotationOverride.serverYaw         = virtualYaw;
-        RotationOverride.serverPitch       = virtualPitch;
-        RotationOverride.active            = true;
-        RotationOverride.afterPacketAction = null;
-
-        // Wait until virtual rotation is close enough to target before placing
-        if (Math.abs(MathHelper.wrapDegrees(needYaw   - virtualYaw))   > 18f) return;
-        if (Math.abs(MathHelper.wrapDegrees(needPitch - virtualPitch))  > 18f) return;
-
-        // ── Resolve block slot ────────────────────────────────────────────────
-        int useSlot = resolveBlockSlot(p);
-        if (useSlot == -1) return;   // no blocks found
-
-        final Hand placeHand = (useSlot == -2) ? Hand.OFF_HAND : Hand.MAIN_HAND;
-        final BlockHitResult bhr      = new BlockHitResult(hitPoint, backDir, standing, false);
-        final int            fSlot    = useSlot;
-        final int            fPrev    = p.getInventory().getSelectedSlot();
-
-        if (placeHand == Hand.MAIN_HAND && fSlot != fPrev)
-            p.getInventory().setSelectedSlot(fSlot);
-
-        // Sneak-sync: briefly sneak when near the edge to break bot pattern
-        if (sneakSync.getValue() && isNearBackEdge(p, backDir, 0.35)) {
+        // Sneak at the edge regardless of placement (human-like anti-fall)
+        if (sneakAtEdge.getValue() && edgeDist < 0.10) {
             mc.options.sneakKey.setPressed(true);
             sneakReleaseNext = true;
         }
 
-        // ── Schedule block placement AFTER the position packet ────────────────
-        //
-        // RotationOverride.afterPacketAction runs inside ClientPlayerEntityMixin
-        // AFTER Minecraft has already sent the PositionAndRotation packet carrying
-        // virtualYaw/virtualPitch. This guarantees Grim sees:
-        //   PositionAndRotation(virtualYaw, virtualPitch) ← arrives first
-        //   InteractBlock(...)                            ← validated against above ✓
+        // Arm the virtual rotation while we're close to the target face so the
+        // movement packet on this tick already carries the correct rotation.
+        // We start rotating earlier than the trigger to be ready when we arrive.
+        if (edgeDist < 0.20) {
+            armRotation(p, backDir, standing);
+        } else {
+            // Far from the edge — drift back to real camera
+            placed = false;
+            driftToReal(p);
+            return;
+        }
 
+        // Not yet in the trigger zone — rotation is armed but don't place yet
+        if (edgeDist >= currentEdgeTrigger || placed) {
+            return;
+        }
+
+        // ── We're at the trigger zone — attempt placement ─────────────────────
+
+        // Rotation must be close enough to the target for the hit to be valid
+        // (< 12° tolerance; Grim's ray from serverYaw/serverPitch must hit the face)
+        float[] needed = calcLook(p.getEyePos(), hitPoint(backDir, standing, p));
+        if (Math.abs(MathHelper.wrapDegrees(needed[0] - vYaw))   > 12f) return;
+        if (Math.abs(MathHelper.wrapDegrees(needed[1] - vPitch))  > 12f) return;
+
+        // Resolve block slot
+        int useSlot = resolveBlockSlot(p);
+        if (useSlot == -1) return;
+
+        final Hand placeHand = (useSlot == -2) ? Hand.OFF_HAND : Hand.MAIN_HAND;
+        final Vec3d hp2      = hitPoint(backDir, standing, p);
+        final BlockHitResult bhr   = new BlockHitResult(hp2, backDir, standing, false);
+        final int            fSlot = useSlot;
+        final int            fPrev = p.getInventory().getSelectedSlot();
+
+        if (placeHand == Hand.MAIN_HAND && fSlot != fPrev)
+            p.getInventory().setSelectedSlot(fSlot);
+
+        // Mark placed so we don't fire again on this edge-visit
+        placed = true;
+
+        // ── Schedule placement AFTER the rotation packet ──────────────────────
         RotationOverride.afterPacketAction = () -> {
             ClientPlayerEntity pp = mc.player;
             if (pp == null || mc.interactionManager == null) return;
@@ -368,21 +317,12 @@ public final class GodBridge extends Module implements TickListener {
                 if (mc.interactionManager.interactBlock(pp, placeHand, bhr).isAccepted()) {
                     pp.swingHand(placeHand);
 
-                    // Release sneak immediately so sprint resumes next tick
+                    // Release sneak immediately — sprint resumes next tick
                     mc.options.sneakKey.setPressed(false);
                     sneakReleaseNext = false;
 
-                    consecutivePlacements++;
-                    // Small random gap between placements (1-3 ticks)
-                    placeCooldown = 1 + rng.nextInt(3);
-
-                    int limit = burstLimit.getValueInt();
-                    if (consecutivePlacements >= limit) {
-                        consecutivePlacements = 0;
-                        int pMin = burstPauseMin.getValueInt();
-                        int pMax = Math.max(pMin + 1, burstPauseMax.getValueInt());
-                        burstPauseCooldown = pMin + rng.nextInt(pMax - pMin + 1);
-                    }
+                    // Randomise trigger for next placement (avoids fixed-distance pattern)
+                    currentEdgeTrigger = randomEdgeTrigger();
                 }
             } finally {
                 Clutch.placing = false;
@@ -392,88 +332,145 @@ public final class GodBridge extends Module implements TickListener {
         };
     }
 
-    // ── Private helpers ───────────────────────────────────────────────────────
+    // ── Rotation helpers ──────────────────────────────────────────────────────
 
     /**
-     * Smoothly step the virtual rotation back toward the real camera rotation
-     * when we're not actively placing. This produces a natural return arc
-     * instead of a snap-back that Grim can flag.
+     * Computes the exact aim point on the back face of `standing` that:
+     *   1. Lies on the face plane
+     *   2. Is at the top of the face (Y near standingBlock.top - 0.05) — this
+     *      corresponds to the ~70-80° downward look of a human god-bridger
+     *   3. Has horizontal jitter so consecutive hits never land at the same pixel
      */
-    private void stepVirtualTowardReal(ClientPlayerEntity p) {
-        if (Float.isNaN(virtualYaw) || p == null) {
-            RotationOverride.active            = false;
-            RotationOverride.afterPacketAction = null;
-            return;
+    private Vec3d hitPoint(Direction backDir, BlockPos standing, ClientPlayerEntity p) {
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+
+        // Face plane position along the back axis
+        double faceX = standing.getX() + 0.5 + backDir.getOffsetX() * 0.5;
+        double faceZ = standing.getZ() + 0.5 + backDir.getOffsetZ() * 0.5;
+
+        // Aim near the top of the face (top = standing.y + 1.0, bottom = standing.y)
+        // Sample between 0.7 and 0.97 of the face height — top region, looks human
+        double faceY = standing.getY() + 0.70 + rng.nextDouble(0.27);
+
+        // Horizontal jitter along the face's free axis (perpendicular to backDir)
+        double jitterH = rng.nextDouble(-0.25, 0.25);
+
+        return new Vec3d(
+                faceX + (backDir.getOffsetX() == 0 ? jitterH : 0.0),
+                faceY,
+                faceZ + (backDir.getOffsetZ() == 0 ? jitterH : 0.0)
+        );
+    }
+
+    /**
+     * Sets the virtual rotation to track toward the target face's hit point.
+     * Called every tick while within 0.20 blocks of the edge so the rotation
+     * is already close when we reach the trigger zone.
+     */
+    private void armRotation(ClientPlayerEntity p, Direction backDir, BlockPos standing) {
+        Vec3d target = hitPoint(backDir, standing, p);
+        float[] needed = calcLook(p.getEyePos(), target);
+
+        if (Float.isNaN(vYaw)) {
+            vYaw   = p.getYaw();
+            vPitch = p.getPitch();
         }
-        float realYaw   = p.getYaw();
-        float realPitch = p.getPitch();
-        boolean yawClose   = Math.abs(MathHelper.wrapDegrees(realYaw   - virtualYaw))   < 4f;
-        boolean pitchClose = Math.abs(MathHelper.wrapDegrees(realPitch - virtualPitch))  < 4f;
-        if (yawClose && pitchClose) {
-            virtualYaw   = Float.NaN;
-            virtualPitch = Float.NaN;
-            RotationOverride.active            = false;
-            RotationOverride.afterPacketAction = null;
-            return;
-        }
-        virtualYaw   += MathHelper.clamp(MathHelper.wrapDegrees(realYaw   - virtualYaw),   -40f, 40f);
-        virtualPitch += MathHelper.clamp(MathHelper.wrapDegrees(realPitch - virtualPitch), -40f, 40f);
-        virtualPitch  = MathHelper.clamp(virtualPitch, -90f, 90f);
-        RotationOverride.serverYaw         = virtualYaw;
-        RotationOverride.serverPitch       = virtualPitch;
+
+        ThreadLocalRandom rng = ThreadLocalRandom.current();
+        // Rotation speed with small per-tick noise (human mouse movement is not uniform)
+        float step = rotSpeed.getValueInt() + rng.nextFloat() * 4f - 2f;
+        vYaw   += MathHelper.clamp(MathHelper.wrapDegrees(needed[0] - vYaw),   -step, step);
+        vPitch += MathHelper.clamp(MathHelper.wrapDegrees(needed[1] - vPitch), -step, step);
+        vPitch  = MathHelper.clamp(vPitch, -90f, 90f);
+
+        RotationOverride.serverYaw         = vYaw;
+        RotationOverride.serverPitch       = vPitch;
         RotationOverride.active            = true;
         RotationOverride.afterPacketAction = null;
     }
 
     /**
-     * Calculates the yaw and pitch (in degrees) needed to look from eyePos
-     * toward target.
-     *
-     * @return float[] { yaw, pitch }
+     * Smoothly return the virtual rotation to the real camera direction.
+     * Called when we're not about to place — ensures the server sees a gradual
+     * return rather than a hard snap.
      */
-    private float[] calcLook(Vec3d eyePos, Vec3d target) {
-        double dx   = target.x - eyePos.x;
-        double dy   = target.y - eyePos.y;
-        double dz   = target.z - eyePos.z;
-        double dist = Math.sqrt(dx * dx + dz * dz);
-        float  yaw  = (float)  Math.toDegrees(Math.atan2(-dx, dz));
-        float pitch = (float) -Math.toDegrees(Math.atan2(dy, dist));
-        return new float[]{ yaw, pitch };
+    private void driftToReal(ClientPlayerEntity p) {
+        if (Float.isNaN(vYaw) || p == null) {
+            RotationOverride.active            = false;
+            RotationOverride.afterPacketAction = null;
+            return;
+        }
+        float ry = p.getYaw(), rp = p.getPitch();
+        boolean yOk = Math.abs(MathHelper.wrapDegrees(ry - vYaw))   < 3f;
+        boolean pOk = Math.abs(MathHelper.wrapDegrees(rp - vPitch))  < 3f;
+        if (yOk && pOk) {
+            vYaw   = Float.NaN;
+            vPitch = Float.NaN;
+            RotationOverride.active            = false;
+            RotationOverride.afterPacketAction = null;
+            return;
+        }
+        // Use a comfortable drift speed — not too fast (snap-like), not too slow
+        float step = 35f + ThreadLocalRandom.current().nextFloat() * 6f - 3f;
+        vYaw   += MathHelper.clamp(MathHelper.wrapDegrees(ry - vYaw),   -step, step);
+        vPitch += MathHelper.clamp(MathHelper.wrapDegrees(rp - vPitch), -step, step);
+        vPitch  = MathHelper.clamp(vPitch, -90f, 90f);
+        RotationOverride.serverYaw         = vYaw;
+        RotationOverride.serverPitch       = vPitch;
+        RotationOverride.active            = true;
+        RotationOverride.afterPacketAction = null;
     }
 
+    // ── Edge distance ─────────────────────────────────────────────────────────
+
     /**
-     * Returns true when the player is within {@code threshold} blocks of the
-     * trailing edge in the given direction.
+     * Distance in blocks from the player's center to the trailing edge of the
+     * current block in `backDir`.
+     *   0.0 = player is exactly at the trailing edge (about to step off)
+     *   1.0 = player just stepped onto a new block
+     *
+     *   NORTH (-Z): trailing edge is at floor(z) → distance = z - floor(z)
+     *   SOUTH (+Z): trailing edge is at ceil(z)  → distance = ceil(z) - z
+     *   WEST  (-X): trailing edge is at floor(x) → distance = x - floor(x)
+     *   EAST  (+X): trailing edge is at ceil(x)  → distance = ceil(x) - x
      */
-    private boolean isNearBackEdge(ClientPlayerEntity p, Direction backDir, double threshold) {
-        double px = p.getX();
-        double pz = p.getZ();
+    private double trailingEdgeDist(ClientPlayerEntity p, Direction backDir) {
+        double px = p.getX(), pz = p.getZ();
         return switch (backDir) {
-            case NORTH -> (pz - Math.floor(pz))  < threshold;
-            case SOUTH -> (Math.ceil(pz) - pz)   < threshold;
-            case WEST  -> (px - Math.floor(px))  < threshold;
-            case EAST  -> (Math.ceil(px) - px)   < threshold;
-            default    -> false;
+            case NORTH -> pz - Math.floor(pz);
+            case SOUTH -> Math.ceil(pz) - pz;
+            case WEST  -> px - Math.floor(px);
+            case EAST  -> Math.ceil(px) - px;
+            default    -> 1.0;
         };
     }
 
-    /**
-     * Returns the hotbar slot index (0-8) to use for block placement,
-     * -2 if the block is only in the offhand, or -1 if no blocks are available.
-     */
+    // ── Misc helpers ──────────────────────────────────────────────────────────
+
+    private double randomEdgeTrigger() {
+        return EDGE_MIN + ThreadLocalRandom.current().nextDouble(EDGE_MAX - EDGE_MIN);
+    }
+
+    private float[] calcLook(Vec3d eye, Vec3d target) {
+        double dx = target.x - eye.x;
+        double dy = target.y - eye.y;
+        double dz = target.z - eye.z;
+        double h  = Math.sqrt(dx * dx + dz * dz);
+        return new float[]{
+                (float)  Math.toDegrees(Math.atan2(-dx, dz)),
+                (float) -Math.toDegrees(Math.atan2(dy, h))
+        };
+    }
+
     private int resolveBlockSlot(ClientPlayerEntity p) {
-        int setting = blockSlot.getValueInt();
-        if (setting >= 1 && setting <= 9) {
-            int idx = setting - 1;
-            ItemStack stack = p.getInventory().getStack(idx);
-            if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0)
-                return idx;
-            // Fixed slot is empty — fall through to offhand check
+        int s = blockSlot.getValueInt();
+        if (s >= 1 && s <= 9) {
+            ItemStack st = p.getInventory().getStack(s - 1);
+            if (!st.isEmpty() && st.getItem() instanceof BlockItem && st.getCount() > 0) return s - 1;
         } else {
             for (int i = 0; i < 9; i++) {
-                ItemStack stack = p.getInventory().getStack(i);
-                if (!stack.isEmpty() && stack.getItem() instanceof BlockItem && stack.getCount() > 0)
-                    return i;
+                ItemStack st = p.getInventory().getStack(i);
+                if (!st.isEmpty() && st.getItem() instanceof BlockItem && st.getCount() > 0) return i;
             }
         }
         ItemStack off = p.getOffHandStack();

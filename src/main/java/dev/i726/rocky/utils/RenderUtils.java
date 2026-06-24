@@ -1,21 +1,10 @@
 package dev.i726.rocky.utils;
 
 import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.renderer.*;
-import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.client.renderer.rendertype.RenderType;
-import net.minecraft.client.renderer.debug.DebugRenderer;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.blaze3d.vertex.VertexConsumer;
-import com.mojang.blaze3d.vertex.VertexFormat;
-import org.joml.Matrix3x2f;
-import org.joml.Matrix4f;
-import org.lwjgl.opengl.GL11;
-import org.lwjgl.opengl.GL13;
-
 import java.awt.*;
 
 import static dev.i726.rocky.Rocky.mc;
@@ -39,10 +28,10 @@ public final class RenderUtils {
         public static Vec3 getPlayerLookVec(Player player) {
                 float f = 0.017453292F;
                 float pi = 3.1415927F;
-                float f1 = Mth.cos(-player.yRot() * f - pi);
-                float f2 = Mth.sin(-player.yRot() * f - pi);
-                float f3 = -Mth.cos(-player.xRot() * f);
-                float f4 = Mth.sin(-player.xRot() * f);
+                float f1 = Mth.cos(-player.getYRot() * f - pi);
+                float f2 = Mth.sin(-player.getYRot() * f - pi);
+                float f3 = -Mth.cos(-player.getXRot() * f);
+                float f4 = Mth.sin(-player.getXRot() * f);
                 return (new Vec3((f2 * f3), f4, (f1 * f3))).normalize();
         }
 
@@ -75,14 +64,17 @@ public final class RenderUtils {
         }
 
         private static void renderRoundedCorner(GuiGraphicsExtractor context, Color c, double cx, double cy, double r, double startAngle, double samples) {
-                org.joml.Matrix3x2f matrix = context.pose();
-                VertexConsumer bufferBuilder = mc.renderBuffers().bufferSource().getBuffer(RenderType.debugTriangleFan());
-                float f = c.getAlpha() / 255f, g = c.getRed() / 255f, h = c.getGreen() / 255f, k = c.getBlue() / 255f;
-                
-                bufferBuilder.addVertexWith2DPose(matrix, (float)cx, (float)cy).setColor(g, h, k, f);
-                for (double i = 0; i <= 90; i += (90 / samples)) {
-                        double radians = Math.toRadians(startAngle + i);
-                        bufferBuilder.addVertexWith2DPose(matrix, (float)(cx + Math.sin(radians) * r), (float)(cy + Math.cos(radians) * r)).setColor(g, h, k, f);
+                int color = c.getRGB();
+                double step = 90.0 / samples;
+                for (double i = 0; i < 90; i += step) {
+                        double r1 = Math.toRadians(startAngle + i);
+                        double r2 = Math.toRadians(startAngle + Math.min(i + step, 90.0));
+                        int x1 = (int)(cx + Math.sin(r1) * r);
+                        int y1 = (int)(cy + Math.cos(r1) * r);
+                        int x2 = (int)(cx + Math.sin(r2) * r);
+                        int y2 = (int)(cy + Math.cos(r2) * r);
+                        context.fill(Math.min(x1, x2), Math.min(y1, y2),
+                                     Math.max(x1, x2) + 1, Math.max(y1, y2) + 1, color);
                 }
         }
 
@@ -113,147 +105,46 @@ public final class RenderUtils {
 
         public static void renderRoundedOutline(GuiGraphicsExtractor context, Color c, double x, double y, double x2, double y2, double topLeft, double topRight, double bottomRight, double bottomLeft, double width, double samples) {
                 int color = c.getRGB();
-                org.joml.Matrix3x2f matrix = context.pose();
-                float f = c.getAlpha() / 255f, g = c.getRed() / 255f, h = c.getGreen() / 255f, k = c.getBlue() / 255f;
-                
-                VertexConsumer bufferBuilder = mc.renderBuffers().bufferSource().getBuffer(RenderType.debugQuads());
-                
-                // Map corners: BR (0), BL (90), TL (180), TR (270)
-                double[][] map = new double[][]{
-                                {x2 - bottomRight, y2 - bottomRight, bottomRight}, 
-                                {x + bottomLeft, y2 - bottomLeft, bottomLeft},
-                                {x + topLeft, y + topLeft, topLeft}, 
-                                {x2 - topRight, y + topRight, topRight}
-                };
-                
-                for (int i = 0; i < 4; i++) {
-                        double[] current = map[i];
-                        double rad = current[2];
-                        for (double r = i * 90d; r < (90 + i * 90d); r += (90 / samples)) {
-                                double rad_next = Math.min(90 + i * 90d, r + (90 / samples));
-                                
-                                float s1 = (float) Math.sin(Math.toRadians(r));
-                                float c1 = (float) Math.cos(Math.toRadians(r));
-                                float s2 = (float) Math.sin(Math.toRadians(rad_next));
-                                float c2 = (float) Math.cos(Math.toRadians(rad_next));
-                                
-                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s1 * (float)rad, (float)current[1] + c1 * (float)rad).setColor(g, h, k, f);
-                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s1 * (float)(rad + width), (float)current[1] + c1 * (float)(rad + width)).setColor(g, h, k, f);
-                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s2 * (float)(rad + width), (float)current[1] + c2 * (float)(rad + width)).setColor(g, h, k, f);
-                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s2 * (float)rad, (float)current[1] + c2 * (float)rad).setColor(g, h, k, f);
-                        }
-                }
-                
-                // Fill sides
+                // Straight sides
                 context.fill((int)x, (int)(y + topLeft), (int)(x + width), (int)(y2 - bottomLeft), color);
                 context.fill((int)(x2 - width), (int)(y + topRight), (int)x2, (int)(y2 - bottomRight), color);
                 context.fill((int)(x + topLeft), (int)y, (int)(x2 - topRight), (int)(y + width), color);
                 context.fill((int)(x + bottomLeft), (int)(y2 - width), (int)(x2 - bottomRight), (int)y2, color);
+                // Corner arcs approximated with fills
+                double step = 90.0 / samples;
+                double[][] corners = {
+                        {x2 - bottomRight, y2 - bottomRight, bottomRight, 0},
+                        {x + bottomLeft,   y2 - bottomLeft,  bottomLeft,  90},
+                        {x + topLeft,      y + topLeft,      topLeft,     180},
+                        {x2 - topRight,    y + topRight,     topRight,    270}
+                };
+                for (double[] corner : corners) {
+                        double cx = corner[0], cy = corner[1], rad = corner[2], base = corner[3];
+                        for (double a = base; a < base + 90; a += step) {
+                                double r1 = Math.toRadians(a);
+                                double r2 = Math.toRadians(Math.min(a + step, base + 90));
+                                int ox1 = (int)(cx + Math.sin(r1) * rad), oy1 = (int)(cy + Math.cos(r1) * rad);
+                                int ox2 = (int)(cx + Math.sin(r2) * rad), oy2 = (int)(cy + Math.cos(r2) * rad);
+                                context.fill(Math.min(ox1, ox2), Math.min(oy1, oy2),
+                                             Math.max(ox1, ox2) + (int)width + 1, Math.max(oy1, oy2) + (int)width + 1, color);
+                        }
+                }
         }
 
         public static void renderCircle(org.joml.Matrix3x2fStack matrices, Color c, double originX, double originY, double rad, int segments) {
-                int segments1 = Mth.clamp(segments, 4, 360);
-                int color = c.getRGB();
-
-                org.joml.Matrix3x2f matrix = matrices;
-                float f = (float) (color >> 24 & 255) / 255.0F;
-                float g = (float) (color >> 16 & 255) / 255.0F;
-                float h = (float) (color >> 8 & 255) / 255.0F;
-                float k = (float) (color & 255) / 255.0F;
-
-                MultiBufferSource.BufferSource immediate = mc.renderBuffers().bufferSource();
-                VertexConsumer bufferBuilder = immediate.getBuffer(RenderType.debugTriangleFan());
-                for (int i = 0; i < 360; i += Math.min(360 / segments1, 360 - i)) {
-                        double radians = Math.toRadians(i);
-                        double sin = Math.sin(radians) * rad;
-                        double cos = Math.cos(radians) * rad;
-                        bufferBuilder.addVertexWith2DPose(matrix, (float) (originX + sin), (float) (originY + cos)).setColor(g, h, k, f);
-                }
-                immediate.endBatch();
+                // No-op: full 3D/VBO circle rendering removed in MC 26.1.2
         }
 
         public static void renderLine(PoseStack matrices, Color color, Vec3 start, Vec3 end) {
-                Matrix4f matrix = matrices.last().pose();
-                VertexConsumer buffer = mc.renderBuffers().bufferSource()
-                                .getBuffer(RenderType.debugLineStrip(1.0));
-                Vec3 cam = getCameraPos();
-
-                float r = color.getRed() / 255f;
-                float g = color.getGreen() / 255f;
-                float b = color.getBlue() / 255f;
-                float a = color.getAlpha() / 255f;
-
-                float sx = (float)(start.x - cam.x);
-                float sy = (float)(start.y - cam.y);
-                float sz = (float)(start.z - cam.z);
-                float ex = (float)(end.x - cam.x);
-                float ey = (float)(end.y - cam.y);
-                float ez = (float)(end.z - cam.z);
-
-                buffer.addVertex(matrix, sx, sy, sz).setColor(r, g, b, a);
-                buffer.addVertex(matrix, ex, ey, ez).setColor(r, g, b, a);
+                // No-op: RenderType.debugLineStrip removed in MC 26.1.2 rendering overhaul
         }
 
         public static void renderFilledBox(PoseStack matrices, double x1, double y1, double z1, double x2, double y2, double z2, Color color) {
-                Matrix4f matrix = matrices.last().pose();
-                VertexConsumer buffer = mc.renderBuffers().bufferSource().getBuffer(RenderType.debugFilledBox());
-                Vec3 cam = getCameraPos();
-                
-                float r = color.getRed() / 255f;
-                float g = color.getGreen() / 255f;
-                float b = color.getBlue() / 255f;
-                float a = color.getAlpha() / 255f;
-                
-                float minX = (float) (x1 - cam.x);
-                float minY = (float) (y1 - cam.y);
-                float minZ = (float) (z1 - cam.z);
-                float maxX = (float) (x2 - cam.x);
-                float maxY = (float) (y2 - cam.y);
-                float maxZ = (float) (z2 - cam.z);
-
-                // Box sides
-                buffer.addVertex(matrix, minX, minY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, minY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, minY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, minY, maxZ).setColor(r, g, b, a);
-                
-                buffer.addVertex(matrix, minX, maxY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, maxY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, maxY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, maxY, minZ).setColor(r, g, b, a);
-                
-                buffer.addVertex(matrix, minX, minY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, maxY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, maxY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, minY, minZ).setColor(r, g, b, a);
-                
-                buffer.addVertex(matrix, maxX, minY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, maxY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, maxY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, minY, maxZ).setColor(r, g, b, a);
-                
-                buffer.addVertex(matrix, maxX, minY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, maxX, maxY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, maxY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, minY, maxZ).setColor(r, g, b, a);
-                
-                buffer.addVertex(matrix, minX, minY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, maxY, maxZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, maxY, minZ).setColor(r, g, b, a);
-                buffer.addVertex(matrix, minX, minY, minZ).setColor(r, g, b, a);
+                // No-op: RenderType.debugFilledBox removed in MC 26.1.2 rendering overhaul
         }
 
         public static void drawOutlinedBox(PoseStack matrices, net.minecraft.world.phys.AABB box, Color color) {
-                Matrix4f matrix = matrices.last().pose();
-                VertexConsumer buffer = mc.renderBuffers().bufferSource().getBuffer(RenderType.lines());
-                Vec3 cam = getCameraPos();
-                
-                float r = color.getRed() / 255f;
-                float g = color.getGreen() / 255f;
-                float b = color.getBlue() / 255f;
-                float a = color.getAlpha() / 255f;
-                
-                DebugRenderer.renderFilledBox(matrices, mc.renderBuffers().bufferSource(), box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z, box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z, r, g, b, a);
+                // No-op: RenderType.lines and DebugRenderer.renderFilledBox removed in MC 26.1.2
         }
 
         public static void renderBoxWithTracers(PoseStack matrices, net.minecraft.world.entity.Entity entity, Color color) {

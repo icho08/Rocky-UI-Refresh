@@ -78,7 +78,7 @@ public final class AutoArmor extends Module implements TickListener {
                     ? betterInvIdx + 36
                     : betterInvIdx;
 
-            mc.gameMode.handleInventoryMouseClick(
+            mc.gameMode.handleContainerInput(
                     mc.player.inventoryMenu.containerId,
                     handlerSlot, 0, ContainerInput.QUICK_MOVE, mc.player);
 

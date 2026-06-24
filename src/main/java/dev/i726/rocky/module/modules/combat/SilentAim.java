@@ -189,8 +189,9 @@ public final class SilentAim extends Module implements TickListener, PostAttackL
         // PlayerInteractEntityC2SPacket.attack() sends the damage to the server
         // WITHOUT resetting the client-side attack cooldown and WITHOUT playing
         // the swing arm animation — entirely invisible on your screen.
+        // In MC 26.1.2 ServerboundInteractPacket is a Record; attack = hand null, location null
         mc.getConnection().send(
-                ServerboundInteractPacket.createAttackPacket(lockedTarget, mc.player.isShiftKeyDown()));
+                new ServerboundInteractPacket(lockedTarget.getId(), null, null, mc.player.isShiftKeyDown()));
 
         rollDelay();
         hitTimer.reset();

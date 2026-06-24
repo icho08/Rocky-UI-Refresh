@@ -136,12 +136,12 @@ public final class TriggerBot extends Module implements TickListener {
         float pitchJ = (random.nextFloat() * 2f - 1f) * jitterPitch.getRandomValueFloat();
         if (yawJ == 0f && pitchJ == 0f) return;
 
-        mc.player.setYRot(mc.player.yRot() + yawJ);
-        mc.player.setXRot(Mth.clamp(mc.player.xRot() + pitchJ, -90, 90));
+        mc.player.setYRot(mc.player.getYRot() + yawJ);
+        mc.player.setXRot(Mth.clamp(mc.player.getXRot() + pitchJ, -90, 90));
 
         if (mc.getConnection() != null) {
             mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                    mc.player.yRot(), mc.player.xRot(), mc.player.onGround(), false));
+                    mc.player.getYRot(), mc.player.getXRot(), mc.player.onGround(), false));
         }
     }
 

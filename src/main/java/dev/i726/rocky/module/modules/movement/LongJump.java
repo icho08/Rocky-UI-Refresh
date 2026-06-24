@@ -65,7 +65,7 @@ public final class LongJump extends Module implements TickListener {
                 return;
             }
 
-            double yaw = Math.toRadians(mc.player.yRot());
+            double yaw = Math.toRadians(mc.player.getYRot());
             double vx = mc.player.getDeltaMovement().x;
             double vz = mc.player.getDeltaMovement().z;
 

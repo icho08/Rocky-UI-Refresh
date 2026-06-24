@@ -186,16 +186,10 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
     @Override
     public void onPacketSend(PacketSendListener.PacketSendEvent event) {
         if (event.packet instanceof ServerboundInteractPacket packet) {
-            packet.dispatch(new ServerboundInteractPacket.Handler() {
-                @Override public void onInteraction(InteractionHand hand) {}
-                @Override public void onInteraction(InteractionHand hand, Vec3 pos) {}
-                @Override
-                public void onAttack() {
-                    if (mc.crosshairPickEntity instanceof Player) {
-                        lastAttackTime = System.currentTimeMillis();
-                    }
-                }
-            });
+            // In MC 26.1.2 ServerboundInteractPacket is a Record; attack packets have hand == null
+            if (packet.hand() == null && mc.crosshairPickEntity instanceof Player) {
+                lastAttackTime = System.currentTimeMillis();
+            }
         }
     }
 }

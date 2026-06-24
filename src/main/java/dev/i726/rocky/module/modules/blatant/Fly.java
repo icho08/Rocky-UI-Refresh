@@ -59,7 +59,7 @@ public final class Fly extends Module implements TickListener {
         mc.player.getAbilities().flying = true;
 
         if (mode.isMode(Mode.Velocity)) {
-            float yaw = mc.player.yRot() * ((float) Math.PI / 180f);
+            float yaw = mc.player.getYRot() * ((float) Math.PI / 180f);
             double velX = 0, velY = 0, velZ = 0;
             var input = mc.player.input.keyPresses;
 

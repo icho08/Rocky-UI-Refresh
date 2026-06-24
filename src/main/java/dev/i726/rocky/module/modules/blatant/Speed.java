@@ -70,7 +70,7 @@ public final class Speed extends Module implements TickListener {
             Vec3 vel = mc.player.getDeltaMovement();
             double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
             if (hSpeed > 0.01) {
-                float yaw = mc.player.yRot() * ((float) Math.PI / 180f);
+                float yaw = mc.player.getYRot() * ((float) Math.PI / 180f);
                 double boost = multiplier.getValue() * 0.05;
                 mc.player.push(-Mth.sin(yaw) * boost, 0, Mth.cos(yaw) * boost);
             }

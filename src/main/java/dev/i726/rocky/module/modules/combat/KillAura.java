@@ -132,8 +132,8 @@ public final class KillAura extends Module implements TickListener {
             case LowestHP  -> Float.compare(a.getHealth(), b.getHealth());
             case LookingAt -> {
                 float[] pa = calcRotations(a), pb = calcRotations(b);
-                float da = angleDiff(pa[0], mc.player.yRot()) + angleDiff(pa[1], mc.player.xRot());
-                float db = angleDiff(pb[0], mc.player.yRot()) + angleDiff(pb[1], mc.player.xRot());
+                float da = angleDiff(pa[0], mc.player.getYRot()) + angleDiff(pa[1], mc.player.getXRot());
+                float db = angleDiff(pb[0], mc.player.getYRot()) + angleDiff(pb[1], mc.player.getXRot());
                 yield Float.compare(da, db);
             }
             default -> Double.compare(a.distanceTo(mc.player), b.distanceTo(mc.player));

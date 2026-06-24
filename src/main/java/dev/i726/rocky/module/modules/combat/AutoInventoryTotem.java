@@ -94,7 +94,7 @@ public final class AutoInventoryTotem extends Module implements TickListener {
 		if (mc.player.getOffhandItem().getItem() != Items.TOTEM_OF_UNDYING) {
 			int totemSlot = InventoryUtils.findTotemSlot();
 			if (totemSlot != -1) {
-				mc.gameMode.handleInventoryMouseClick(
+				mc.gameMode.handleContainerInput(
 					((InventoryScreen) mc.screen).getMenu().containerId,
 					totemSlot, 40, ContainerInput.SWAP, mc.player
 				);
@@ -111,7 +111,7 @@ public final class AutoInventoryTotem extends Module implements TickListener {
 			if (shouldEquipMain) {
 				int totemSlot = InventoryUtils.findTotemSlot();
 				if (totemSlot != -1) {
-					mc.gameMode.handleInventoryMouseClick(
+					mc.gameMode.handleContainerInput(
 						((InventoryScreen) mc.screen).getMenu().containerId,
 						totemSlot, mc.player.getInventory().getSelectedSlot(), ContainerInput.SWAP, mc.player
 					);

@@ -59,9 +59,9 @@ tasks.withType(JavaCompile).configureEach {
 
 java {
     withSourcesJar()
-
-    sourceCompatibility = JavaVersion.VERSION_25
-    targetCompatibility = JavaVersion.VERSION_25
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
 }
 
 jar {
@@ -95,8 +95,16 @@ task obfuscate(type: proguard.gradle.ProGuardTask, dependsOn: jar) {
     outjars(outputJar)
 
     def javaHome = System.getProperty('java.home')
-    libraryjars("${javaHome}/jmods/java.base.jmod", filter: '!**.jar,!module-info.class')
-    libraryjars("${javaHome}/jmods/java.desktop.jmod", filter: '!**.jar,!module-info.class')
+    // Use JDK modules image (lib/modules) for Java 9+ or fall back to jmods directory
+    def modulesImg = file("${javaHome}/lib/modules")
+    def jmodsDir   = file("${javaHome}/jmods")
+    if (modulesImg.exists()) {
+        libraryjars("${javaHome}/lib/modules")
+    } else if (jmodsDir.exists()) {
+        fileTree(jmodsDir).include('*.jmod').each { File jmod ->
+            libraryjars(jmod, filter: '!**.jar,!module-info.class')
+        }
+    }
 
     configuration('proguard.pro')
 
@@ -112,7 +120,8 @@ task obfuscate(type: proguard.gradle.ProGuardTask, dependsOn: jar) {
     verbose()
 }
 
-build.dependsOn obfuscate
+// Obfuscation is a separate optional step; run ./gradlew obfuscate to produce the -obf.jar
+// build.dependsOn obfuscate
 
 publishing {
     publications {

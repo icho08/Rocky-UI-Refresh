@@ -97,29 +97,24 @@ public final class AutoWTap extends Module implements PacketSendListener, HudLis
     public void onPacketSend(PacketSendEvent event) {
         if (!(event.packet instanceof ServerboundInteractPacket packet)) return;
 
-        packet.dispatch(new ServerboundInteractPacket.Handler() {
-            @Override public void onInteraction(InteractionHand hand) {}
-            @Override public void onInteraction(InteractionHand hand, Vec3 pos) {}
+        // In MC 26.1.2 ServerboundInteractPacket is a Record; attack packets have hand == null
+        if (packet.hand() != null) return;
 
-            @Override
-            public void onAttack() {
-                if (!shouldWTap() || !mc.options.keyUp.isDown()) return;
-                if (requireSprint.getValue() && !mc.player.isSprinting()) return;
+        if (!shouldWTap() || !mc.options.keyUp.isDown()) return;
+        if (requireSprint.getValue() && !mc.player.isSprinting()) return;
 
-                int c = chance.getValueInt();
-                if (c < 100 && random.nextInt(100) >= c) return;
+        int c = chance.getValueInt();
+        if (c < 100 && random.nextInt(100) >= c) return;
 
-                currentDelay = delay.getRandomValueInt();
+        currentDelay = delay.getRandomValueInt();
 
-                // Release W and tell the server we stopped sprinting
-                mc.options.keyUp.setDown(false);
-                if (sprintPackets.getValue()) {
-                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
-                            mc.player, ServerboundPlayerCommandPacket.Action.STOP_SPRINTING));
-                }
-                wtapTimer.reset();
-                isWTapping = true;
-            }
-        });
+        // Release W and tell the server we stopped sprinting
+        mc.options.keyUp.setDown(false);
+        if (sprintPackets.getValue()) {
+            mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                    mc.player, ServerboundPlayerCommandPacket.Action.STOP_SPRINTING));
+        }
+        wtapTimer.reset();
+        isWTapping = true;
     }
 }

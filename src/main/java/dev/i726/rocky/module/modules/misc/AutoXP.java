@@ -74,8 +74,8 @@ public final class AutoXP extends Module implements TickListener {
                         // and yaw deltas are randomized per-throw via MinMaxSettings so
                         // the rotation looks human and won't trip GCD / constant-pitch
                         // heuristics.
-                        float prevPitch = mc.player.xRot();
-                        float prevYaw = mc.player.yRot();
+                        float prevPitch = mc.player.getXRot();
+                        float prevYaw = mc.player.getYRot();
                         float pitchAmp = pitchJitter.getRandomValueFloat();
                         float yawAmp = yawJitter.getRandomValueFloat();
                         float pitchSign = random.nextBoolean() ? 1f : -1f;

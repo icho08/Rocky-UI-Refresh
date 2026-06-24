@@ -260,7 +260,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 int x = (int) mc.player.getX();
                 int y = (int) mc.player.getY();
                 int z = (int) mc.player.getZ();
-                lines.add("XYZ  " + x + " / " + y + " / " + z + "  [" + getFacing(mc.player.yRot()) + "]");
+                lines.add("XYZ  " + x + " / " + y + " / " + z + "  [" + getFacing(mc.player.getYRot()) + "]");
             }
             if (bpsHud.getValue()) {
                 lines.add("BPS  " + String.format("%.1f", currentBps));

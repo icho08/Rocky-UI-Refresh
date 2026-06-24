@@ -92,11 +92,11 @@ public final class WorldUtils {
         }
 
         public static Vec3 getPlayerLookVec(Player player) {
-                return getPlayerLookVec(player.yRot(), player.xRot());
+                return getPlayerLookVec(player.getYRot(), player.getXRot());
         }
 
         public static HitResult getHitResult(double radius) {
-                return getHitResult(mc.player, false, mc.player.yRot(), mc.player.xRot(), radius);
+                return getHitResult(mc.player, false, mc.player.getYRot(), mc.player.getXRot(), radius);
         }
 
         public static HitResult getHitResult(Player entity, boolean ignoreInvisibles, float yaw, float pitch, double distance) {
@@ -147,25 +147,25 @@ public final class WorldUtils {
                 int diameter = radius * 2 + 1;
 
                 ChunkPos center = mc.player.chunkPosition();
-                ChunkPos min = new ChunkPos(center.x - radius, center.z - radius);
-                ChunkPos max = new ChunkPos(center.x + radius, center.z + radius);
+                ChunkPos min = new ChunkPos(center.x() - radius, center.z() - radius);
+                ChunkPos max = new ChunkPos(center.x() + radius, center.z() + radius);
 
                 return Stream.iterate(min, pos -> {
-                                        int x = pos.x;
-                                        int z = pos.z;
+                                        int x = pos.x();
+                                        int z = pos.z();
                                         x++;
-                                        if (x > max.x) {
-                                                x = min.x;
+                                        if (x > max.x()) {
+                                                x = min.x();
                                                 z++;
                                         }
-                                        if (z > max.z)
+                                        if (z > max.z())
                                                 throw new IllegalStateException("Stream limit didn't work.");
 
                                         return new ChunkPos(x, z);
 
                                 }).limit((long) diameter * diameter)
-                                .filter(c -> mc.level.hasChunk(c.x, c.z))
-                                .map(c -> mc.level.getChunk(c.x, c.z)).filter(Objects::nonNull);
+                                .filter(c -> mc.level.hasChunk(c.x(), c.z()))
+                                .map(c -> mc.level.getChunk(c.x(), c.z())).filter(Objects::nonNull);
         }
 
     /*
@@ -183,8 +183,8 @@ public final class WorldUtils {
 
                         Vec3 directionToPlayer = playerPos.subtract(targetPos).normalize();
 
-                        float yaw = player.yRot();
-                        float pitch = player.xRot();
+                        float yaw = player.getYRot();
+                        float pitch = player.getXRot();
                         Vec3 facingDirection = new Vec3(
                                         -Math.sin(Math.toRadians(yaw)) * Math.cos(Math.toRadians(pitch)),
                                         -Math.sin(Math.toRadians(pitch)),

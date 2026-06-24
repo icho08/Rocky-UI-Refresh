@@ -168,7 +168,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         pendingTooltip = null;
 
         ctx.fill(0, 0, this.width, this.height, GuiTheme.rgba(5, 4, 10, 175));
@@ -393,8 +393,6 @@ public class ClickGuiScreen extends Screen {
     public boolean charTyped(CharacterEvent input) {
         if (!input.isAllowedChatCharacter()) return super.charTyped(input);
         char chr = (char) input.codepoint();
-        int modifiers = input.modifiers();
-
         if (searchFocused) {
             searchQuery += chr;
             updateFilter();
@@ -402,7 +400,7 @@ public class ClickGuiScreen extends Screen {
         }
 
         for (CategoryPanel panel : panels)
-            if (panel.charTyped(chr, modifiers)) return true;
+            if (panel.charTyped(chr, 0)) return true;
         return super.charTyped(input);
     }
 

@@ -114,7 +114,7 @@ public final class AutoPotRefill extends Module implements TickListener {
             int hotbarSlot = findTargetHotbarSlot();
             if (invSlot == -1 || hotbarSlot == -1) return;
 
-            mc.gameMode.handleInventoryMouseClick(
+            mc.gameMode.handleContainerInput(
                     mc.player.inventoryMenu.containerId,  // always 0
                     invSlot,                                // handler slot 9–35
                     hotbarSlot,                             // hotbar key 0–8
@@ -134,7 +134,7 @@ public final class AutoPotRefill extends Module implements TickListener {
             int hotbarSlot = findTargetHotbarSlot();
             if (invSlot == -1 || hotbarSlot == -1) return;
 
-            mc.gameMode.handleInventoryMouseClick(
+            mc.gameMode.handleContainerInput(
                     invScreen.getMenu().containerId,
                     invSlot,
                     hotbarSlot,

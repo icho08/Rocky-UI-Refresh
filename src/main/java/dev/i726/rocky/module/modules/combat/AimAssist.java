@@ -168,7 +168,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         // oscillation that manifests as visible screen shake.
         if (stopAtTarget.getValue()) {
             EntityHitResult hitResult = WorldUtils.getHitResult(mc.player, false,
-                    mc.player.yRot(), mc.player.xRot(), range.getValue()) instanceof EntityHitResult r ? r : null;
+                    mc.player.getYRot(), mc.player.getXRot(), range.getValue()) instanceof EntityHitResult r ? r : null;
             if (hitResult != null && hitResult.getEntity() == target) {
                 lerpFactor = Math.max(0, lerpFactor - 0.10f);
                 if (!stickyAim.getValue()) return;
@@ -193,8 +193,8 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         float targetYaw   = (float) rotation.yaw()   + aimOffsetYaw;
         float targetPitch = (float) rotation.pitch() + aimOffsetPitch;
 
-        float rawYawDelta   = Mth.wrapDegrees(targetYaw   - mc.player.yRot());
-        float rawPitchDelta = Mth.wrapDegrees(targetPitch - mc.player.xRot());
+        float rawYawDelta   = Mth.wrapDegrees(targetYaw   - mc.player.getYRot());
+        float rawPitchDelta = Mth.wrapDegrees(targetPitch - mc.player.getXRot());
 
         float yawDelta   = Mth.clamp(rawYawDelta,   -maxDegreesThisFrame, maxDegreesThisFrame);
         float pitchDelta = Mth.clamp(rawPitchDelta, -maxDegreesThisFrame, maxDegreesThisFrame);
@@ -214,8 +214,8 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
             pitchDelta += (float)((Math.random() - 0.5) * jitter);
         }
 
-        float newYaw   = mc.player.yRot()   + yawDelta;
-        float newPitch = Mth.clamp(mc.player.xRot() + pitchDelta, -90, 90);
+        float newYaw   = mc.player.getYRot()   + yawDelta;
+        float newPitch = Mth.clamp(mc.player.getXRot() + pitchDelta, -90, 90);
 
         mc.player.setYRot(newYaw);
         mc.player.setXRot(newPitch);

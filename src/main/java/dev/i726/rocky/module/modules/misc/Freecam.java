@@ -71,7 +71,7 @@ public final class Freecam extends Module implements TickListener, CameraUpdateL
 		float f = (float) Math.PI / 180;
 		float f2 = (float) Math.PI;
 		LocalPlayer clientPlayerEntity = mc.player;
-		Vec3 vec3d = new Vec3(-Mth.sin(-mc.player.yRot() * f - f2), 0.0, -Mth.cos(-clientPlayerEntity.yRot() * f - f2));
+		Vec3 vec3d = new Vec3(-Mth.sin(-mc.player.getYRot() * f - f2), 0.0, -Mth.cos(-clientPlayerEntity.getYRot() * f - f2));
 		Vec3 vec3d2 = new Vec3(0.0, 1.0, 0.0);
 		Vec3 vec3d3 = vec3d2.cross(vec3d);
 		Vec3 vec3d4 = vec3d.cross(vec3d2);

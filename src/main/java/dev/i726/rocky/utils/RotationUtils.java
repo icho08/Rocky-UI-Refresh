@@ -37,7 +37,7 @@ public final class RotationUtils {
 	}
 
 	public static Vec3 getPlayerLookVec(Player player) {
-		return getPlayerLookVec(player.yRot(), player.xRot());
+		return getPlayerLookVec(player.getYRot(), player.getXRot());
 	}
 
 	public static Rotation getDiff(Rotation rotation1, Rotation rotation2) {
@@ -79,8 +79,8 @@ public final class RotationUtils {
 	}
 
 	public static double getAngleToRotation(Rotation rotation) {
-		double currentYaw = Mth.wrapDegrees(mc.player.yRot());
-		double currentPitch = Mth.wrapDegrees(mc.player.xRot());
+		double currentYaw = Mth.wrapDegrees(mc.player.getYRot());
+		double currentPitch = Mth.wrapDegrees(mc.player.getXRot());
 
 		double diffYaw = Mth.wrapDegrees(currentYaw - rotation.yaw());
 		double diffPitch = Mth.wrapDegrees(currentPitch - rotation.pitch());

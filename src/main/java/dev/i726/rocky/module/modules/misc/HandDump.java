@@ -152,7 +152,7 @@ public final class HandDump extends Module implements TickListener {
             int handlerSlot = invIndexToHandlerSlot(invIdx, containerSize);
             if (handlerSlot == -1) continue;
 
-            mc.gameMode.handleInventoryMouseClick(
+            mc.gameMode.handleContainerInput(
                     handler.containerId,
                     handlerSlot,
                     0,

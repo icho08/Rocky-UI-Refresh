@@ -78,7 +78,7 @@ public final class Strafe extends Module implements TickListener {
         };
 
         // Build perpendicular velocity vector relative to look direction
-        double yawRad = Math.toRadians(mc.player.yRot() + (cw ? 90.0 : -90.0));
+        double yawRad = Math.toRadians(mc.player.getYRot() + (cw ? 90.0 : -90.0));
         double vx = -Math.sin(yawRad) * speed.getValue();
         double vz =  Math.cos(yawRad) * speed.getValue();
 

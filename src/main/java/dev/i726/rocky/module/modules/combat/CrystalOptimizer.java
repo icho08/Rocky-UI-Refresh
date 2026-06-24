@@ -63,49 +63,41 @@ public final class CrystalOptimizer extends Module implements PacketSendListener
         public void onPacketSend(PacketSendEvent event) {
                 if (!(event.packet instanceof ServerboundInteractPacket interactPacket)) return;
 
-                interactPacket.dispatch(new ServerboundInteractPacket.Handler() {
-                        @Override
-                        public void onInteraction(InteractionHand hand) {}
+                // In MC 26.1.2 ServerboundInteractPacket is a Record; attack packets have hand == null
+                if (interactPacket.hand() != null) return;
 
-                        @Override
-                        public void onInteraction(InteractionHand hand, Vec3 pos) {}
+                if (mc.hitResult == null) return;
+                if (mc.hitResult.getType() != HitResult.Type.ENTITY) return;
+                if (!(mc.hitResult instanceof EntityHitResult hit)) return;
+                if (!(hit.getEntity() instanceof EndCrystal)) return;
 
-                        @Override
-                        public void onAttack() {
-                                if (mc.hitResult == null) return;
-                                if (mc.hitResult.getType() != HitResult.Type.ENTITY) return;
-                                if (!(mc.hitResult instanceof EntityHitResult hit)) return;
-                                if (!(hit.getEntity() instanceof EndCrystal)) return;
+                // Reach gate
+                if (mc.player.distanceTo(hit.getEntity()) > maxReach.getValue()) return;
 
-                                // Reach gate
-                                if (mc.player.distanceTo(hit.getEntity()) > maxReach.getValue()) return;
+                // Original "tool/strength/no-weakness" gate
+                MobEffectInstance weakness = mc.player.getEffect(MobEffects.WEAKNESS);
+                MobEffectInstance strength = mc.player.getEffect(MobEffects.STRENGTH);
+                boolean toolOk  = !requireWeapon.getValue() || WorldUtils.isTool(mc.player.getMainHandItem());
+                boolean strOver = requireStrength.getValue() && weakness != null && strength != null && strength.getAmplifier() > weakness.getAmplifier();
+                if (!(weakness == null || strOver || toolOk)) return;
 
-                                // Original "tool/strength/no-weakness" gate
-                                MobEffectInstance weakness = mc.player.getEffect(MobEffects.WEAKNESS);
-                                MobEffectInstance strength = mc.player.getEffect(MobEffects.STRENGTH);
-                                boolean toolOk  = !requireWeapon.getValue() || WorldUtils.isTool(mc.player.getMainHandItem());
-                                boolean strOver = requireStrength.getValue() && weakness != null && strength != null && strength.getAmplifier() > weakness.getAmplifier();
-                                if (!(weakness == null || strOver || toolOk)) return;
+                // Random kill chance
+                int c = chance.getValueInt();
+                if (c < 100 && random.nextInt(100) >= c) return;
 
-                                // Random kill chance
-                                int c = chance.getValueInt();
-                                if (c < 100 && random.nextInt(100) >= c) return;
-
-                                // Random pre-kill delay so insta-kills aren't perfectly tick-aligned
-                                if (killDelay.getMaxValue() > 0) {
-                                        if (pendingDelay <= 0) {
-                                                pendingDelay = killDelay.getRandomValueInt();
-                                                delayTimer.reset();
-                                                return;
-                                        }
-                                        if (!delayTimer.delay(pendingDelay)) return;
-                                        pendingDelay = 0;
-                                }
-
-                                hit.getEntity().discard();
-                                hit.getEntity().setRemoved(Entity.RemovalReason.KILLED);
-                                hit.getEntity().onClientRemoval();
+                // Random pre-kill delay so insta-kills aren't perfectly tick-aligned
+                if (killDelay.getMaxValue() > 0) {
+                        if (pendingDelay <= 0) {
+                                pendingDelay = killDelay.getRandomValueInt();
+                                delayTimer.reset();
+                                return;
                         }
-                });
+                        if (!delayTimer.delay(pendingDelay)) return;
+                        pendingDelay = 0;
+                }
+
+                hit.getEntity().discard();
+                hit.getEntity().setRemoved(Entity.RemovalReason.KILLED);
+                hit.getEntity().onClientRemoval();
         }
 }

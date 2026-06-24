@@ -38,8 +38,8 @@ public class ClientPlayerEntityMixin extends AbstractClientPlayer {
 
 		if (RotationOverride.active) {
 			LocalPlayer self = (LocalPlayer)(Object)this;
-			RotationOverride.savedRealYaw   = self.yRot();
-			RotationOverride.savedRealPitch = self.xRot();
+			RotationOverride.savedRealYaw   = self.getYRot();
+			RotationOverride.savedRealPitch = self.getXRot();
 			self.setYRot(RotationOverride.serverYaw);
 			self.setXRot(RotationOverride.serverPitch);
 		}

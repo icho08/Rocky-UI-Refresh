@@ -1,6 +1,7 @@
 -dontwarn **
 -dontnote **
 -dontoptimize
+-ignorewarnings
 -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
 
 # Keep main class and all agent entry points

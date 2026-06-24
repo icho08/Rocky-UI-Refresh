@@ -157,9 +157,9 @@ public final class BypassAssist extends Module implements TickListener {
             rotNoiseYaw   = rotNoiseYaw   * 0.6f + (float)((rng.nextDouble() - 0.5) * amp);
             rotNoisePitch = rotNoisePitch * 0.6f + (float)((rng.nextDouble() - 0.5) * amp * 0.5);
 
-            float newYaw   = mc.player.yRot()   + rotNoiseYaw;
+            float newYaw   = mc.player.getYRot()   + rotNoiseYaw;
             float newPitch = net.minecraft.util.Mth.clamp(
-                    mc.player.xRot() + rotNoisePitch, -90f, 90f);
+                    mc.player.getXRot() + rotNoisePitch, -90f, 90f);
 
             mc.getConnection().send(
                     new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.PosRot(

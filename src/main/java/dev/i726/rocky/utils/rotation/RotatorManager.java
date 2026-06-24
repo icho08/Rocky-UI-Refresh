@@ -84,8 +84,8 @@ public final class RotatorManager implements PacketSendListener, BlockBreakingLi
 	}
 
 	public void setClientRotation(Rotation rotation) {
-		this.clientYaw = mc.player.yRot();
-		this.clientPitch = mc.player.xRot();
+		this.clientYaw = mc.player.getYRot();
+		this.clientPitch = mc.player.getXRot();
 
 		mc.player.setYRot((float) rotation.yaw());
 		mc.player.setXRot((float) rotation.pitch());
@@ -143,7 +143,7 @@ public final class RotatorManager implements PacketSendListener, BlockBreakingLi
 
 		if (rotateBack) {
 			Rotation serverRot = new Rotation(serverYaw, serverPitch);
-			Rotation clientRot = new Rotation(mc.player.yRot(), mc.player.xRot());
+			Rotation clientRot = new Rotation(mc.player.getYRot(), mc.player.getXRot());
 
 			if (RotationUtils.getTotalDiff(serverRot, clientRot) > 1) {
 				Rotation smoothRotation = RotationUtils.getSmoothRotation(serverRot, clientRot, 0.2);

@@ -80,7 +80,7 @@ public final class AutoPot extends Module implements TickListener {
         if (previousPitch != -1) {
             // Send look packet to restore server-side pitch
             mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                    mc.player.yRot(), previousPitch, mc.player.onGround(), false));
+                    mc.player.getYRot(), previousPitch, mc.player.onGround(), false));
             mc.player.setXRot(previousPitch);
             previousPitch = -1;
         }
@@ -152,10 +152,10 @@ public final class AutoPot extends Module implements TickListener {
 
             case PITCHING -> {
                 if (lookDown.getValue()) {
-                    if (previousPitch == -1) previousPitch = mc.player.xRot();
+                    if (previousPitch == -1) previousPitch = mc.player.getXRot();
                     // Send server-side look-down packet AND update client pitch
                     mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
-                            mc.player.yRot(), 90f, mc.player.onGround(), false));
+                            mc.player.getYRot(), 90f, mc.player.onGround(), false));
                     mc.player.setXRot(90f);
                 }
                 currentState = State.THROWING;

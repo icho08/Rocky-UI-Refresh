@@ -57,7 +57,7 @@ public final class AntiAFK extends Module implements TickListener {
             float delta = rotateRandom.getValue()
                     ? (float) (Math.random() * 360)
                     : 45f;
-            mc.player.setYRot(mc.player.yRot() + delta);
+            mc.player.setYRot(mc.player.getYRot() + delta);
 
         } else if (m == Mode.Jump) {
             if (mc.player.onGround()) mc.player.jumpFromGround();

@@ -76,7 +76,7 @@ public final class HoverTotem extends Module implements TickListener {
 
 		// Priority 1: Offhand (most important for survival)
 		if (!mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) {
-			mc.gameMode.handleInventoryMouseClick(inv.getMenu().containerId, slotIndex, 40, ContainerInput.SWAP, mc.player);
+			mc.gameMode.handleContainerInput(inv.getMenu().containerId, slotIndex, 40, ContainerInput.SWAP, mc.player);
 			delayClock = delay.getValueInt();
 			return;
 		}
@@ -88,7 +88,7 @@ public final class HoverTotem extends Module implements TickListener {
 			boolean hasTotem = mc.player.getInventory().getItem(targetSlot).getItem() == Items.TOTEM_OF_UNDYING;
 			
 			if (!hasTotem && (!onlyEmpty.getValue() || slotEmpty)) {
-				mc.gameMode.handleInventoryMouseClick(inv.getMenu().containerId, slotIndex, targetSlot, ContainerInput.SWAP, mc.player);
+				mc.gameMode.handleContainerInput(inv.getMenu().containerId, slotIndex, targetSlot, ContainerInput.SWAP, mc.player);
 				delayClock = delay.getValueInt();
 			}
 		}

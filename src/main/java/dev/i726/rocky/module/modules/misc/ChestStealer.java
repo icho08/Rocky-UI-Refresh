@@ -152,7 +152,7 @@ public final class ChestStealer extends Module implements TickListener {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private void clickSlot(ChestMenu handler, int slot) {
-        mc.gameMode.handleInventoryMouseClick(handler.containerId, slot, 0, ContainerInput.QUICK_MOVE, mc.player);
+        mc.gameMode.handleContainerInput(handler.containerId, slot, 0, ContainerInput.QUICK_MOVE, mc.player);
         timer.reset();
         rollDelay();
     }

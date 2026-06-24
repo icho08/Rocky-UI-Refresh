@@ -127,7 +127,7 @@ public final class AutoDoubleHand extends Module implements HudListener {
                 // Find an empty hotbar slot to QUICK_MOVE into
                 for (int h = 0; h < 9; h++) {
                     if (mc.player.getInventory().getItem(h).isEmpty()) {
-                        mc.gameMode.handleInventoryMouseClick(
+                        mc.gameMode.handleContainerInput(
                                 mc.player.inventoryMenu.containerId,
                                 i, h, net.minecraft.world.inventory.ContainerInput.SWAP, mc.player);
                         prevSlot = mc.player.getInventory().getSelectedSlot();
@@ -139,7 +139,7 @@ public final class AutoDoubleHand extends Module implements HudListener {
                 }
                 // No empty hotbar slot — QUICK_MOVE straight to offhand
                 int handlerSlot = i < 9 ? i + 36 : i;
-                mc.gameMode.handleInventoryMouseClick(
+                mc.gameMode.handleContainerInput(
                         mc.player.inventoryMenu.containerId,
                         handlerSlot, 0, net.minecraft.world.inventory.ContainerInput.QUICK_MOVE, mc.player);
                 return;

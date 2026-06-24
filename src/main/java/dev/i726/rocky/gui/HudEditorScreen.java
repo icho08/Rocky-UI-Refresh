@@ -50,7 +50,7 @@ public final class HudEditorScreen extends Screen {
     // ── Render ────────────────────────────────────────────────────────────
 
     @Override
-    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         ctx.fill(0, 0, width, height, GuiTheme.rgba(0, 0, 0, 160));
 
         ctx.centeredText(font,

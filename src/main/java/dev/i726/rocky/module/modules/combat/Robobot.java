@@ -52,8 +52,8 @@ public final class Robobot extends Module implements AttackListener, TickListene
         fakePlayer = new RemotePlayer(mc.level, new GameProfile(UUID.randomUUID(), "Robobot"));
         fakePlayer.copyPosition(mc.player);
         fakePlayer.yBodyRot = mc.player.yBodyRot;
-        fakePlayer.setYRot(mc.player.yRot());
-        fakePlayer.setXRot(mc.player.xRot());
+        fakePlayer.setYRot(mc.player.getYRot());
+        fakePlayer.setXRot(mc.player.getXRot());
         fakePlayer.setId(-1337);
 
         for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
@@ -127,7 +127,7 @@ public final class Robobot extends Module implements AttackListener, TickListene
             }
             // Random rotation drift
             if (Math.random() < 0.02) {
-                fakePlayer.setYRot(fakePlayer.yRot() + (float)(Math.random() * 40 - 20));
+                fakePlayer.setYRot(fakePlayer.getYRot() + (float)(Math.random() * 40 - 20));
             }
         }
     }

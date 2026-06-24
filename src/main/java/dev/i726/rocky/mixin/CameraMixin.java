@@ -10,13 +10,16 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 @Mixin(Camera.class)
 public class CameraMixin {
-	@ModifyArgs(method = "update", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/render/Camera;setPos(DDD)V"))
-	private void update(Args args) {
-		CameraUpdateListener.CameraUpdateEvent event = new CameraUpdateListener.CameraUpdateEvent(args.get(0), args.get(1), args.get(2));
-		EventManager.fire(event);
+        @ModifyArgs(
+                method = "update(Lnet/minecraft/client/DeltaTracker;)V",
+                at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V")
+        )
+        private void update(Args args) {
+                CameraUpdateListener.CameraUpdateEvent event = new CameraUpdateListener.CameraUpdateEvent(args.get(0), args.get(1), args.get(2));
+                EventManager.fire(event);
 
-		args.set(0, event.getX());
-		args.set(1, event.getY());
-		args.set(2, event.getZ());
-	}
+                args.set(0, event.getX());
+                args.set(1, event.getY());
+                args.set(2, event.getZ());
+        }
 }

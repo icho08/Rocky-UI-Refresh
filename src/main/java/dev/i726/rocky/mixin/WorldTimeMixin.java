@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(Level.class)
 public abstract class WorldTimeMixin {
 
-    @Inject(method = "getDayTime", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "getDefaultClockTime", at = @At("HEAD"), cancellable = true)
     private void rocky$overrideTimeOfDay(CallbackInfoReturnable<Long> cir) {
         if (!((Object) this instanceof ClientLevel)) return;
         if (Rocky.INSTANCE == null) return;

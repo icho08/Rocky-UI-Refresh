@@ -1,6 +1,6 @@
 # Rocky — Minecraft Fabric Utility Client
 
-A Minecraft Fabric mod for version 1.21.x with a custom in-game GUI.
+A Minecraft Fabric mod for version 26.1.2 with a custom in-game GUI.
 
 ## Build
 

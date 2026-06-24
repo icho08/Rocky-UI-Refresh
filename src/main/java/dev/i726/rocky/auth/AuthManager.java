@@ -29,7 +29,7 @@ public final class AuthManager {
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(TIMEOUT_MS);
             conn.setReadTimeout(TIMEOUT_MS);
-            conn.setRequestProperty("User-Agent", "Rocky/b1.1");
+            conn.setRequestProperty("User-Agent", "Rocky/b26.1.2");
 
             int responseCode = conn.getResponseCode();
 

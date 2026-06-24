@@ -7,6 +7,7 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
+import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.utils.RenderUtils;
 
 import java.awt.Color;

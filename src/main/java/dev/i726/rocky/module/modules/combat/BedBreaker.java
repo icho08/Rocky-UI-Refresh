@@ -6,13 +6,15 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.block.BedBlock;
-import net.minecraft.block.BlockState;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.*;
-
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.world.phys.*;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.level.block.BedBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import java.util.*;
 
 /**
@@ -82,7 +84,7 @@ public final class BedBreaker extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
         if (!breakTimer.delay(nextDelay)) return;
 
         // 1. Find nearest bed
@@ -115,7 +117,7 @@ public final class BedBreaker extends Module implements TickListener {
 
         // 3. Auto tool
         if (autoTool.getValue()) {
-            BlockState state = mc.world.getBlockState(targetPos);
+            BlockState state = mc.level.getBlockState(targetPos);
             int best = findBestToolSlot(state);
             if (best != -1 && best != mc.player.getInventory().getSelectedSlot()) {
                 if (prevSlot == -1) prevSlot = mc.player.getInventory().getSelectedSlot();
@@ -126,25 +128,25 @@ public final class BedBreaker extends Module implements TickListener {
         // 4. Silent rotation — one LookAndOnGround per tick; natural return via
         //    subsequent PositionAndRotation packets from Minecraft's movement code.
         if (rotate.getValue()) {
-            float[] rot = calcRotation(Vec3d.ofCenter(targetPos)
-                    .add(face.getOffsetX() * 0.4, face.getOffsetY() * 0.4, face.getOffsetZ() * 0.4));
+            float[] rot = calcRotation(Vec3.atCenterOf(targetPos)
+                    .add(face.getStepX() * 0.4, face.getStepY() * 0.4, face.getStepZ() * 0.4));
             rot[0] += (float) (rng.nextGaussian() * 0.45);
             rot[1] += (float) (rng.nextGaussian() * 0.35);
-            mc.getNetworkHandler().sendPacket(
-                    new PlayerMoveC2SPacket.LookAndOnGround(
+            mc.getConnection().send(
+                    new ServerboundMovePlayerPacket.Rot(
                             rot[0], rot[1],
-                            mc.player.isOnGround(),
+                            mc.player.onGround(),
                             mc.player.horizontalCollision));
         }
 
         // 5. Send START_DESTROY_BLOCK directly — bypasses client-side interaction-manager
         //    state machine and works reliably for both instant-break and multi-tick beds.
-        mc.getNetworkHandler().sendPacket(
-                new PlayerActionC2SPacket(
-                        PlayerActionC2SPacket.Action.START_DESTROY_BLOCK,
+        mc.getConnection().send(
+                new ServerboundPlayerActionPacket(
+                        ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK,
                         targetPos, face));
 
-        mc.player.swingHand(Hand.MAIN_HAND);
+        mc.player.swing(InteractionHand.MAIN_HAND);
 
         breakTimer.reset();
         rollDelay();
@@ -154,7 +156,7 @@ public final class BedBreaker extends Module implements TickListener {
 
     private BlockPos findBed() {
         double r = range.getValue();
-        BlockPos playerPos = mc.player.getBlockPos();
+        BlockPos playerPos = mc.player.blockPosition();
         int ri = (int) Math.ceil(r);
 
         BlockPos nearest = null;
@@ -163,10 +165,10 @@ public final class BedBreaker extends Module implements TickListener {
         for (int x = -ri; x <= ri; x++) {
             for (int y = -ri; y <= ri; y++) {
                 for (int z = -ri; z <= ri; z++) {
-                    BlockPos pos = playerPos.add(x, y, z);
-                    double dist = mc.player.getEyePos().distanceTo(Vec3d.ofCenter(pos));
+                    BlockPos pos = playerPos.offset(x, y, z);
+                    double dist = mc.player.getEyePosition().distanceTo(Vec3.atCenterOf(pos));
                     if (dist > r) continue;
-                    if (!(mc.world.getBlockState(pos).getBlock() instanceof BedBlock)) continue;
+                    if (!(mc.level.getBlockState(pos).getBlock() instanceof BedBlock)) continue;
                     if (dist < nearestDist) {
                         nearestDist = dist;
                         nearest = pos;
@@ -178,21 +180,21 @@ public final class BedBreaker extends Module implements TickListener {
     }
 
     private Direction findAccessibleFace(BlockPos pos) {
-        Vec3d eyes = mc.player.getEyePos();
+        Vec3 eyes = mc.player.getEyePosition();
         double r = range.getValue() + 0.5;
 
         Direction bestFace = null;
         double bestDist = Double.MAX_VALUE;
 
         for (Direction dir : Direction.values()) {
-            BlockPos neighbour = pos.offset(dir);
-            BlockState nState = mc.world.getBlockState(neighbour);
-            if (!nState.isAir() && nState.isSolidBlock(mc.world, neighbour)) continue;
+            BlockPos neighbour = pos.relative(dir);
+            BlockState nState = mc.level.getBlockState(neighbour);
+            if (!nState.isAir() && nState.isRedstoneConductor(mc.level, neighbour)) continue;
 
-            Vec3d faceCentre = Vec3d.ofCenter(pos)
-                    .add(dir.getOffsetX() * 0.5,
-                         dir.getOffsetY() * 0.5,
-                         dir.getOffsetZ() * 0.5);
+            Vec3 faceCentre = Vec3.atCenterOf(pos)
+                    .add(dir.getStepX() * 0.5,
+                         dir.getStepY() * 0.5,
+                         dir.getStepZ() * 0.5);
             double dist = eyes.distanceTo(faceCentre);
             if (dist > r) continue;
 
@@ -205,7 +207,7 @@ public final class BedBreaker extends Module implements TickListener {
     }
 
     private BreakTarget findCover(BlockPos bedPos) {
-        Vec3d eyes = mc.player.getEyePos();
+        Vec3 eyes = mc.player.getEyePosition();
         double r = range.getValue() + 0.5;
 
         BlockPos bestPos = null;
@@ -215,25 +217,25 @@ public final class BedBreaker extends Module implements TickListener {
         for (int x = -1; x <= 1; x++) {
             for (int y = -1; y <= 2; y++) {
                 for (int z = -1; z <= 1; z++) {
-                    BlockPos check = bedPos.add(x, y, z);
+                    BlockPos check = bedPos.offset(x, y, z);
                     if (check.equals(bedPos)) continue;
 
-                    BlockState state = mc.world.getBlockState(check);
+                    BlockState state = mc.level.getBlockState(check);
                     if (state.isAir()) continue;
                     if (state.getBlock() instanceof BedBlock) continue;
 
-                    double blockDist = eyes.distanceTo(Vec3d.ofCenter(check));
+                    double blockDist = eyes.distanceTo(Vec3.atCenterOf(check));
                     if (blockDist > r) continue;
 
                     for (Direction dir : Direction.values()) {
-                        BlockPos neighbour = check.offset(dir);
-                        BlockState nState = mc.world.getBlockState(neighbour);
-                        if (!nState.isAir() && nState.isSolidBlock(mc.world, neighbour)) continue;
+                        BlockPos neighbour = check.relative(dir);
+                        BlockState nState = mc.level.getBlockState(neighbour);
+                        if (!nState.isAir() && nState.isRedstoneConductor(mc.level, neighbour)) continue;
 
-                        Vec3d faceCentre = Vec3d.ofCenter(check)
-                                .add(dir.getOffsetX() * 0.5,
-                                     dir.getOffsetY() * 0.5,
-                                     dir.getOffsetZ() * 0.5);
+                        Vec3 faceCentre = Vec3.atCenterOf(check)
+                                .add(dir.getStepX() * 0.5,
+                                     dir.getStepY() * 0.5,
+                                     dir.getStepZ() * 0.5);
                         double faceDist = eyes.distanceTo(faceCentre);
                         if (faceDist > r) continue;
 
@@ -255,9 +257,9 @@ public final class BedBreaker extends Module implements TickListener {
         int best = -1;
         float bestSpeed = 1.0f;
         for (int i = 0; i < 9; i++) {
-            var stack = mc.player.getInventory().getStack(i);
+            var stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
-            float speed = stack.getMiningSpeedMultiplier(state);
+            float speed = stack.getDestroySpeed(state);
             if (speed > bestSpeed) {
                 bestSpeed = speed;
                 best = i;
@@ -266,8 +268,8 @@ public final class BedBreaker extends Module implements TickListener {
         return best;
     }
 
-    private float[] calcRotation(Vec3d target) {
-        Vec3d eyes = mc.player.getEyePos();
+    private float[] calcRotation(Vec3 target) {
+        Vec3 eyes = mc.player.getEyePosition();
         double dx = target.x - eyes.x;
         double dy = target.y - eyes.y;
         double dz = target.z - eyes.z;

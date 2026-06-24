@@ -6,12 +6,11 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.*;
-import net.minecraft.entity.decoration.EndCrystalEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.item.Items;
 
 public final class AutoDoubleHand extends Module implements HudListener {
     private final NumberSetting healthThreshold = new NumberSetting(EncryptedString.of("Health"), 1, 20, 8, 1)
@@ -57,22 +56,22 @@ public final class AutoDoubleHand extends Module implements HudListener {
     }
 
     private boolean shouldUseTotem() {
-        if (mc.player == null || mc.world == null) return false;
-        if (mc.player.getOffHandStack().getItem() == Items.TOTEM_OF_UNDYING) return false;
+        if (mc.player == null || mc.level == null) return false;
+        if (mc.player.getOffhandItem().getItem() == Items.TOTEM_OF_UNDYING) return false;
 
         if (onPop.getValue() && mc.player.getHealth() < lastHealth - 5) return true;
         if (mc.player.getHealth() <= healthThreshold.getValue()) return true;
 
         if (checkPlayers.getValue()) {
-            boolean hasNearby = mc.world.getPlayers().stream()
-                    .anyMatch(p -> p != mc.player && !p.isDead()
+            boolean hasNearby = mc.level.players().stream()
+                    .anyMatch(p -> p != mc.player && !p.isDeadOrDying()
                             && mc.player.distanceTo(p) <= playerRange.getValue());
             if (!hasNearby) return false;
         }
 
         if (predictDamage.getValue()) {
-            for (EndCrystalEntity crystal : mc.world.getEntitiesByClass(EndCrystalEntity.class,
-                    mc.player.getBoundingBox().expand(6), e -> true)) {
+            for (EndCrystal crystal : mc.level.getEntitiesOfClass(EndCrystal.class,
+                    mc.player.getBoundingBox().inflate(6), e -> true)) {
                 double dist = mc.player.distanceTo(crystal);
                 if (dist <= 6) {
                     double est = Math.max(0, 12 - dist * 2);
@@ -102,9 +101,9 @@ public final class AutoDoubleHand extends Module implements HudListener {
                 return;
             }
             // Send the actual offhand swap packet
-            mc.getNetworkHandler().sendPacket(new PlayerActionC2SPacket(
-                    PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND,
-                    BlockPos.ORIGIN, Direction.DOWN));
+            mc.getConnection().send(new ServerboundPlayerActionPacket(
+                    ServerboundPlayerActionPacket.Action.SWAP_ITEM_WITH_OFFHAND,
+                    BlockPos.ZERO, Direction.DOWN));
             // Restore previous slot
             if (prevSlot != -1) InventoryUtils.setInvSlot(prevSlot);
             swapping = false;
@@ -124,13 +123,13 @@ public final class AutoDoubleHand extends Module implements HudListener {
         // Totem not in hotbar — use QUICK_MOVE to push one from inventory into an available slot
         // Find totem in inventory (slots 9-35)
         for (int i = 9; i < 36; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() == Items.TOTEM_OF_UNDYING) {
+            if (mc.player.getInventory().getItem(i).getItem() == Items.TOTEM_OF_UNDYING) {
                 // Find an empty hotbar slot to QUICK_MOVE into
                 for (int h = 0; h < 9; h++) {
-                    if (mc.player.getInventory().getStack(h).isEmpty()) {
-                        mc.interactionManager.clickSlot(
-                                mc.player.playerScreenHandler.syncId,
-                                i, h, net.minecraft.screen.slot.SlotActionType.SWAP, mc.player);
+                    if (mc.player.getInventory().getItem(h).isEmpty()) {
+                        mc.gameMode.handleInventoryMouseClick(
+                                mc.player.inventoryMenu.containerId,
+                                i, h, net.minecraft.world.inventory.ContainerInput.SWAP, mc.player);
                         prevSlot = mc.player.getInventory().getSelectedSlot();
                         InventoryUtils.setInvSlot(h);
                         swapping = true;
@@ -140,9 +139,9 @@ public final class AutoDoubleHand extends Module implements HudListener {
                 }
                 // No empty hotbar slot — QUICK_MOVE straight to offhand
                 int handlerSlot = i < 9 ? i + 36 : i;
-                mc.interactionManager.clickSlot(
-                        mc.player.playerScreenHandler.syncId,
-                        handlerSlot, 0, net.minecraft.screen.slot.SlotActionType.QUICK_MOVE, mc.player);
+                mc.gameMode.handleInventoryMouseClick(
+                        mc.player.inventoryMenu.containerId,
+                        handlerSlot, 0, net.minecraft.world.inventory.ContainerInput.QUICK_MOVE, mc.player);
                 return;
             }
         }

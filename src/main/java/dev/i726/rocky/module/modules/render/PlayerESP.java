@@ -9,12 +9,11 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-
 import java.awt.Color;
 import java.util.List;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 public final class PlayerESP extends Module implements GameRenderListener {
 
@@ -60,7 +59,7 @@ public final class PlayerESP extends Module implements GameRenderListener {
 
     @Override
     public void onGameRender(GameRenderEvent event) {
-        if (mc == null || mc.world == null || mc.player == null) return;
+        if (mc == null || mc.level == null || mc.player == null) return;
 
         Color accent = GuiTheme.accent();
         int fA = (int) fillOpacity.getValue();
@@ -68,19 +67,19 @@ public final class PlayerESP extends Module implements GameRenderListener {
         Color fillColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), fA);
         Color outlineColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), oA);
 
-        List<AbstractClientPlayerEntity> players = mc.world.getPlayers();
+        List<AbstractClientPlayer> players = mc.level.players();
         EspMode currentMode = mode.getMode();
         boolean drawBox = currentMode == EspMode.Box || currentMode == EspMode.Both;
         boolean drawTracer = currentMode == EspMode.Tracer || currentMode == EspMode.Both;
         float tickDelta = event.delta;
 
-        for (AbstractClientPlayerEntity player : players) {
+        for (AbstractClientPlayer player : players) {
             if (player == mc.player) continue;
 
-            Vec3d lerpedPos = player.getLerpedPos(tickDelta);
-            float hw = player.getWidth() / 2f;
-            float h = player.getHeight();
-            Box box = new Box(
+            Vec3 lerpedPos = player.getPosition(tickDelta);
+            float hw = player.getBbWidth() / 2f;
+            float h = player.getBbHeight();
+            AABB box = new AABB(
                     lerpedPos.x - hw, lerpedPos.y,      lerpedPos.z - hw,
                     lerpedPos.x + hw, lerpedPos.y + h,  lerpedPos.z + hw
             );

@@ -1,13 +1,13 @@
 package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.imixin.IPlayerRenderState;
-import net.minecraft.client.render.entity.state.PlayerEntityRenderState;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 
 import java.util.UUID;
+import net.minecraft.client.renderer.entity.state.AvatarRenderState;
 
-@Mixin(PlayerEntityRenderState.class)
+@Mixin(AvatarRenderState.class)
 public class PlayerEntityRenderStateMixin implements IPlayerRenderState {
 
     @Unique

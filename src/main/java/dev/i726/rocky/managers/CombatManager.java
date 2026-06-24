@@ -4,13 +4,12 @@ import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.events.PacketReceiveListener;
 import dev.i726.rocky.event.events.PostAttackListener;
 import dev.i726.rocky.event.events.TickListener;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.network.packet.s2c.play.EntityAnimationS2CPacket;
-
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import net.minecraft.client.Minecraft;
+import net.minecraft.network.protocol.game.ClientboundAnimatePacket;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
 
 public final class CombatManager implements PostAttackListener, TickListener, PacketReceiveListener {
 
@@ -19,7 +18,7 @@ public final class CombatManager implements PostAttackListener, TickListener, Pa
 
     private final ConcurrentHashMap<UUID, Long> timestamps = new ConcurrentHashMap<>();
     private float lastHealth = -1f;
-    private final MinecraftClient mc = MinecraftClient.getInstance();
+    private final Minecraft mc = Minecraft.getInstance();
 
     public CombatManager() {
         Rocky.INSTANCE.getEventManager().add(PostAttackListener.class, this);
@@ -30,20 +29,20 @@ public final class CombatManager implements PostAttackListener, TickListener, Pa
     @Override
     public void onPostAttack(PostAttackEvent event) {
         Entity target = event.getTarget();
-        if (target instanceof PlayerEntity) {
-            mark(target.getUuid());
+        if (target instanceof Player) {
+            mark(target.getUUID());
         }
     }
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         float hp = mc.player.getHealth();
         if (lastHealth > 0f && hp < lastHealth) {
-            mc.world.getEntitiesByClass(PlayerEntity.class,
-                            mc.player.getBoundingBox().expand(6.0), e -> e != mc.player)
-                    .forEach(p -> mark(p.getUuid()));
+            mc.level.getEntitiesOfClass(Player.class,
+                            mc.player.getBoundingBox().inflate(6.0), e -> e != mc.player)
+                    .forEach(p -> mark(p.getUUID()));
         }
         lastHealth = hp;
 
@@ -53,16 +52,16 @@ public final class CombatManager implements PostAttackListener, TickListener, Pa
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (!(event.packet instanceof EntityAnimationS2CPacket pkt)) return;
-        int anim = pkt.getAnimationId();
+        if (!(event.packet instanceof ClientboundAnimatePacket pkt)) return;
+        int anim = pkt.getAction();
         if (anim != 0 && anim != 3) return;
 
-        if (mc.world == null || mc.player == null) return;
-        Entity entity = mc.world.getEntityById(pkt.getEntityId());
-        if (!(entity instanceof PlayerEntity player) || entity == mc.player) return;
+        if (mc.level == null || mc.player == null) return;
+        Entity entity = mc.level.getEntity(pkt.getId());
+        if (!(entity instanceof Player player) || entity == mc.player) return;
         if (player.distanceTo(mc.player) > SWING_REACH) return;
 
-        mark(player.getUuid());
+        mark(player.getUUID());
     }
 
     public void mark(UUID uuid) {

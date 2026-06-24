@@ -2,13 +2,13 @@ package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.module.modules.misc.VersionSpoof;
-import net.minecraft.network.packet.c2s.handshake.HandshakeC2SPacket;
+import net.minecraft.network.protocol.handshake.ClientIntentionPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(HandshakeC2SPacket.class)
+@Mixin(ClientIntentionPacket.class)
 public class HandshakeC2SPacketMixin {
 
     @Inject(method = "protocolVersion", at = @At("RETURN"), cancellable = true)

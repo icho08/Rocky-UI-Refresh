@@ -2,18 +2,17 @@ package dev.i726.rocky.event.events;
 
 import dev.i726.rocky.event.Event;
 import dev.i726.rocky.event.Listener;
-import net.minecraft.client.gui.DrawContext;
-
 import java.util.ArrayList;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public interface HudListener extends Listener {
 	void onRenderHud(HudEvent event);
 
 	class HudEvent extends Event<HudListener> {
-		public DrawContext context;
+		public GuiGraphicsExtractor context;
 		public float delta;
 
-		public HudEvent(DrawContext context, float delta) {
+		public HudEvent(GuiGraphicsExtractor context, float delta) {
 			this.context = context;
 			this.delta = delta;
 		}

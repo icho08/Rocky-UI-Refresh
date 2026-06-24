@@ -1,15 +1,16 @@
 package dev.i726.rocky.utils;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.render.*;
-import net.minecraft.client.render.debug.DebugRenderer;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.renderer.*;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.client.renderer.rendertype.RenderType;
+import net.minecraft.client.renderer.debug.DebugRenderer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.mojang.blaze3d.vertex.VertexFormat;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix3x2f;
 import org.joml.Matrix4f;
 import org.lwjgl.opengl.GL11;
@@ -23,37 +24,37 @@ import static dev.i726.rocky.Rocky.mc;
 public final class RenderUtils {
         public static boolean rendering3D = true;
 
-        public static Vec3d getCameraPos() {
-                return mc.gameRenderer.getCamera().getPos();
+        public static Vec3 getCameraPos() {
+                return mc.gameRenderer.getMainCamera().position();
         }
 
         public static double deltaTime() {
-                return mc.getCurrentFps() > 0 ? (1.0000 / mc.getCurrentFps()) : 1;
+                return mc.getFps() > 0 ? (1.0000 / mc.getFps()) : 1;
         }
 
         public static float fast(float end, float start, float multiple) {
-                return (1 - MathHelper.clamp((float) (deltaTime() * multiple), 0, 1)) * end + MathHelper.clamp((float) (deltaTime() * multiple), 0, 1) * start;
+                return (1 - Mth.clamp((float) (deltaTime() * multiple), 0, 1)) * end + Mth.clamp((float) (deltaTime() * multiple), 0, 1) * start;
         }
 
-        public static Vec3d getPlayerLookVec(PlayerEntity player) {
+        public static Vec3 getPlayerLookVec(Player player) {
                 float f = 0.017453292F;
                 float pi = 3.1415927F;
-                float f1 = MathHelper.cos(-player.getYaw() * f - pi);
-                float f2 = MathHelper.sin(-player.getYaw() * f - pi);
-                float f3 = -MathHelper.cos(-player.getPitch() * f);
-                float f4 = MathHelper.sin(-player.getPitch() * f);
-                return (new Vec3d((f2 * f3), f4, (f1 * f3))).normalize();
+                float f1 = Mth.cos(-player.yRot() * f - pi);
+                float f2 = Mth.sin(-player.yRot() * f - pi);
+                float f3 = -Mth.cos(-player.xRot() * f);
+                float f4 = Mth.sin(-player.xRot() * f);
+                return (new Vec3((f2 * f3), f4, (f1 * f3))).normalize();
         }
 
         public static void unscaledProjection() {}
 
         public static void scaledProjection() {}
 
-        public static void drawRoundedRect(DrawContext context, float x1, float y1, float x2, float y2, float radius, int color) {
+        public static void drawRoundedRect(GuiGraphicsExtractor context, float x1, float y1, float x2, float y2, float radius, int color) {
                 renderRoundedQuad(context, new Color(color, true), x1, y1, x2, y2, radius, 15);
         }
 
-        public static void renderGradientRoundedQuad(DrawContext context, Color c1, Color c2, double x, double y, double x2, double y2, double radius, double samples) {
+        public static void renderGradientRoundedQuad(GuiGraphicsExtractor context, Color c1, Color c2, double x, double y, double x2, double y2, double radius, double samples) {
                 // Bodies
                 double r = Math.min(radius, Math.min((x2 - x) / 2, (y2 - y) / 2));
                 
@@ -73,19 +74,19 @@ public final class RenderUtils {
                 }
         }
 
-        private static void renderRoundedCorner(DrawContext context, Color c, double cx, double cy, double r, double startAngle, double samples) {
-                org.joml.Matrix3x2f matrix = context.getMatrices();
-                VertexConsumer bufferBuilder = mc.getBufferBuilders().getEntityVertexConsumers().getBuffer(RenderLayer.getDebugTriangleFan());
+        private static void renderRoundedCorner(GuiGraphicsExtractor context, Color c, double cx, double cy, double r, double startAngle, double samples) {
+                org.joml.Matrix3x2f matrix = context.pose();
+                VertexConsumer bufferBuilder = mc.renderBuffers().bufferSource().getBuffer(RenderType.debugTriangleFan());
                 float f = c.getAlpha() / 255f, g = c.getRed() / 255f, h = c.getGreen() / 255f, k = c.getBlue() / 255f;
                 
-                bufferBuilder.vertex(matrix, (float)cx, (float)cy).color(g, h, k, f);
+                bufferBuilder.addVertexWith2DPose(matrix, (float)cx, (float)cy).setColor(g, h, k, f);
                 for (double i = 0; i <= 90; i += (90 / samples)) {
                         double radians = Math.toRadians(startAngle + i);
-                        bufferBuilder.vertex(matrix, (float)(cx + Math.sin(radians) * r), (float)(cy + Math.cos(radians) * r)).color(g, h, k, f);
+                        bufferBuilder.addVertexWith2DPose(matrix, (float)(cx + Math.sin(radians) * r), (float)(cy + Math.cos(radians) * r)).setColor(g, h, k, f);
                 }
         }
 
-        public static void renderRoundedQuad(DrawContext context, Color c, double x, double y, double x2, double y2, double topLeft, double topRight, double bottomRight, double bottomLeft, double samples) {
+        public static void renderRoundedQuad(GuiGraphicsExtractor context, Color c, double x, double y, double x2, double y2, double topLeft, double topRight, double bottomRight, double bottomLeft, double samples) {
                 int color = c.getRGB();
                 double rTL = Math.min(topLeft, Math.min((x2 - x) / 2, (y2 - y) / 2));
                 double rTR = Math.min(topRight, Math.min((x2 - x) / 2, (y2 - y) / 2));
@@ -106,16 +107,16 @@ public final class RenderUtils {
                 if (rBL > 0) renderRoundedCorner(context, c, x + rBL, y2 - rBL, rBL, 90, samples);
         }
 
-        public static void renderRoundedQuad(DrawContext context, Color c, double x, double y, double x1, double y1, double rad, double samples) {
+        public static void renderRoundedQuad(GuiGraphicsExtractor context, Color c, double x, double y, double x1, double y1, double rad, double samples) {
                 renderRoundedQuad(context, c, x, y, x1, y1, rad, rad, rad, rad, samples);
         }
 
-        public static void renderRoundedOutline(DrawContext context, Color c, double x, double y, double x2, double y2, double topLeft, double topRight, double bottomRight, double bottomLeft, double width, double samples) {
+        public static void renderRoundedOutline(GuiGraphicsExtractor context, Color c, double x, double y, double x2, double y2, double topLeft, double topRight, double bottomRight, double bottomLeft, double width, double samples) {
                 int color = c.getRGB();
-                org.joml.Matrix3x2f matrix = context.getMatrices();
+                org.joml.Matrix3x2f matrix = context.pose();
                 float f = c.getAlpha() / 255f, g = c.getRed() / 255f, h = c.getGreen() / 255f, k = c.getBlue() / 255f;
                 
-                VertexConsumer bufferBuilder = mc.getBufferBuilders().getEntityVertexConsumers().getBuffer(RenderLayer.getDebugQuads());
+                VertexConsumer bufferBuilder = mc.renderBuffers().bufferSource().getBuffer(RenderType.debugQuads());
                 
                 // Map corners: BR (0), BL (90), TL (180), TR (270)
                 double[][] map = new double[][]{
@@ -136,10 +137,10 @@ public final class RenderUtils {
                                 float s2 = (float) Math.sin(Math.toRadians(rad_next));
                                 float c2 = (float) Math.cos(Math.toRadians(rad_next));
                                 
-                                bufferBuilder.vertex(matrix, (float)current[0] + s1 * (float)rad, (float)current[1] + c1 * (float)rad).color(g, h, k, f);
-                                bufferBuilder.vertex(matrix, (float)current[0] + s1 * (float)(rad + width), (float)current[1] + c1 * (float)(rad + width)).color(g, h, k, f);
-                                bufferBuilder.vertex(matrix, (float)current[0] + s2 * (float)(rad + width), (float)current[1] + c2 * (float)(rad + width)).color(g, h, k, f);
-                                bufferBuilder.vertex(matrix, (float)current[0] + s2 * (float)rad, (float)current[1] + c2 * (float)rad).color(g, h, k, f);
+                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s1 * (float)rad, (float)current[1] + c1 * (float)rad).setColor(g, h, k, f);
+                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s1 * (float)(rad + width), (float)current[1] + c1 * (float)(rad + width)).setColor(g, h, k, f);
+                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s2 * (float)(rad + width), (float)current[1] + c2 * (float)(rad + width)).setColor(g, h, k, f);
+                                bufferBuilder.addVertexWith2DPose(matrix, (float)current[0] + s2 * (float)rad, (float)current[1] + c2 * (float)rad).setColor(g, h, k, f);
                         }
                 }
                 
@@ -151,7 +152,7 @@ public final class RenderUtils {
         }
 
         public static void renderCircle(org.joml.Matrix3x2fStack matrices, Color c, double originX, double originY, double rad, int segments) {
-                int segments1 = MathHelper.clamp(segments, 4, 360);
+                int segments1 = Mth.clamp(segments, 4, 360);
                 int color = c.getRGB();
 
                 org.joml.Matrix3x2f matrix = matrices;
@@ -160,22 +161,22 @@ public final class RenderUtils {
                 float h = (float) (color >> 8 & 255) / 255.0F;
                 float k = (float) (color & 255) / 255.0F;
 
-                VertexConsumerProvider.Immediate immediate = mc.getBufferBuilders().getEntityVertexConsumers();
-                VertexConsumer bufferBuilder = immediate.getBuffer(RenderLayer.getDebugTriangleFan());
+                MultiBufferSource.BufferSource immediate = mc.renderBuffers().bufferSource();
+                VertexConsumer bufferBuilder = immediate.getBuffer(RenderType.debugTriangleFan());
                 for (int i = 0; i < 360; i += Math.min(360 / segments1, 360 - i)) {
                         double radians = Math.toRadians(i);
                         double sin = Math.sin(radians) * rad;
                         double cos = Math.cos(radians) * rad;
-                        bufferBuilder.vertex(matrix, (float) (originX + sin), (float) (originY + cos)).color(g, h, k, f);
+                        bufferBuilder.addVertexWith2DPose(matrix, (float) (originX + sin), (float) (originY + cos)).setColor(g, h, k, f);
                 }
-                immediate.draw();
+                immediate.endBatch();
         }
 
-        public static void renderLine(MatrixStack matrices, Color color, Vec3d start, Vec3d end) {
-                Matrix4f matrix = matrices.peek().getPositionMatrix();
-                VertexConsumer buffer = mc.getBufferBuilders().getEntityVertexConsumers()
-                                .getBuffer(RenderLayer.getDebugLineStrip(1.0));
-                Vec3d cam = getCameraPos();
+        public static void renderLine(PoseStack matrices, Color color, Vec3 start, Vec3 end) {
+                Matrix4f matrix = matrices.last().pose();
+                VertexConsumer buffer = mc.renderBuffers().bufferSource()
+                                .getBuffer(RenderType.debugLineStrip(1.0));
+                Vec3 cam = getCameraPos();
 
                 float r = color.getRed() / 255f;
                 float g = color.getGreen() / 255f;
@@ -189,14 +190,14 @@ public final class RenderUtils {
                 float ey = (float)(end.y - cam.y);
                 float ez = (float)(end.z - cam.z);
 
-                buffer.vertex(matrix, sx, sy, sz).color(r, g, b, a);
-                buffer.vertex(matrix, ex, ey, ez).color(r, g, b, a);
+                buffer.addVertex(matrix, sx, sy, sz).setColor(r, g, b, a);
+                buffer.addVertex(matrix, ex, ey, ez).setColor(r, g, b, a);
         }
 
-        public static void renderFilledBox(MatrixStack matrices, double x1, double y1, double z1, double x2, double y2, double z2, Color color) {
-                Matrix4f matrix = matrices.peek().getPositionMatrix();
-                VertexConsumer buffer = mc.getBufferBuilders().getEntityVertexConsumers().getBuffer(RenderLayer.getDebugFilledBox());
-                Vec3d cam = getCameraPos();
+        public static void renderFilledBox(PoseStack matrices, double x1, double y1, double z1, double x2, double y2, double z2, Color color) {
+                Matrix4f matrix = matrices.last().pose();
+                VertexConsumer buffer = mc.renderBuffers().bufferSource().getBuffer(RenderType.debugFilledBox());
+                Vec3 cam = getCameraPos();
                 
                 float r = color.getRed() / 255f;
                 float g = color.getGreen() / 255f;
@@ -211,77 +212,77 @@ public final class RenderUtils {
                 float maxZ = (float) (z2 - cam.z);
 
                 // Box sides
-                buffer.vertex(matrix, minX, minY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, minY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, minY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, minY, maxZ).color(r, g, b, a);
+                buffer.addVertex(matrix, minX, minY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, minY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, minY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, minY, maxZ).setColor(r, g, b, a);
                 
-                buffer.vertex(matrix, minX, maxY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, maxY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, maxY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, maxY, minZ).color(r, g, b, a);
+                buffer.addVertex(matrix, minX, maxY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, maxY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, maxY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, maxY, minZ).setColor(r, g, b, a);
                 
-                buffer.vertex(matrix, minX, minY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, maxY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, maxY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, minY, minZ).color(r, g, b, a);
+                buffer.addVertex(matrix, minX, minY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, maxY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, maxY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, minY, minZ).setColor(r, g, b, a);
                 
-                buffer.vertex(matrix, maxX, minY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, maxY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, maxY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, minY, maxZ).color(r, g, b, a);
+                buffer.addVertex(matrix, maxX, minY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, maxY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, maxY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, minY, maxZ).setColor(r, g, b, a);
                 
-                buffer.vertex(matrix, maxX, minY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, maxX, maxY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, maxY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, minY, maxZ).color(r, g, b, a);
+                buffer.addVertex(matrix, maxX, minY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, maxX, maxY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, maxY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, minY, maxZ).setColor(r, g, b, a);
                 
-                buffer.vertex(matrix, minX, minY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, maxY, maxZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, maxY, minZ).color(r, g, b, a);
-                buffer.vertex(matrix, minX, minY, minZ).color(r, g, b, a);
+                buffer.addVertex(matrix, minX, minY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, maxY, maxZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, maxY, minZ).setColor(r, g, b, a);
+                buffer.addVertex(matrix, minX, minY, minZ).setColor(r, g, b, a);
         }
 
-        public static void drawOutlinedBox(MatrixStack matrices, net.minecraft.util.math.Box box, Color color) {
-                Matrix4f matrix = matrices.peek().getPositionMatrix();
-                VertexConsumer buffer = mc.getBufferBuilders().getEntityVertexConsumers().getBuffer(RenderLayer.getLines());
-                Vec3d cam = getCameraPos();
+        public static void drawOutlinedBox(PoseStack matrices, net.minecraft.world.phys.AABB box, Color color) {
+                Matrix4f matrix = matrices.last().pose();
+                VertexConsumer buffer = mc.renderBuffers().bufferSource().getBuffer(RenderType.lines());
+                Vec3 cam = getCameraPos();
                 
                 float r = color.getRed() / 255f;
                 float g = color.getGreen() / 255f;
                 float b = color.getBlue() / 255f;
                 float a = color.getAlpha() / 255f;
                 
-                DebugRenderer.drawBox(matrices, mc.getBufferBuilders().getEntityVertexConsumers(), box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z, box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z, r, g, b, a);
+                DebugRenderer.renderFilledBox(matrices, mc.renderBuffers().bufferSource(), box.minX - cam.x, box.minY - cam.y, box.minZ - cam.z, box.maxX - cam.x, box.maxY - cam.y, box.maxZ - cam.z, r, g, b, a);
         }
 
-        public static void renderBoxWithTracers(MatrixStack matrices, net.minecraft.entity.Entity entity, Color color) {
-                net.minecraft.util.math.Box box = entity.getBoundingBox();
+        public static void renderBoxWithTracers(PoseStack matrices, net.minecraft.world.entity.Entity entity, Color color) {
+                net.minecraft.world.phys.AABB box = entity.getBoundingBox();
                 drawOutlinedBox(matrices, box, color);
                 renderFilledBox(matrices, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, new Color(color.getRed(), color.getGreen(), color.getBlue(), 50));
                 drawTracer(matrices, entity.getBoundingBox().getCenter(), color);
         }
 
-        public static void drawTracer(MatrixStack matrices, Vec3d end, Color color) {
+        public static void drawTracer(PoseStack matrices, Vec3 end, Color color) {
                 // Do NOT start from the exact camera position: in perspective projection
                 // a vertex at the eye origin has w_clip = 0 (perspective divide by zero),
                 // which the GPU treats as a degenerate point and may discard the primitive.
                 // Shift 0.1 blocks forward along the look direction so z_view < 0.
-                net.minecraft.client.render.Camera cam = mc.gameRenderer.getCamera();
-                Vec3d forward = Vec3d.fromPolar(cam.getPitch(), cam.getYaw());
-                Vec3d origin = cam.getPos().add(forward.multiply(0.1));
+                net.minecraft.client.Camera cam = mc.gameRenderer.getMainCamera();
+                Vec3 forward = Vec3.directionFromRotation(cam.xRot(), cam.yRot());
+                Vec3 origin = cam.position().add(forward.scale(0.1));
                 renderLine(matrices, color, origin, end);
         }
 
-        public static void setScissorRegion(DrawContext context, int x, int y, int width, int height) {
+        public static void setScissorRegion(GuiGraphicsExtractor context, int x, int y, int width, int height) {
                 context.enableScissor(x, y, x + width, y + height);
         }
 
-        public static void disableScissor(DrawContext context) {
+        public static void disableScissor(GuiGraphicsExtractor context) {
                 context.disableScissor();
         }
 
-        public static void renderNeonQuad(DrawContext context, Color base, Color glow, double x, double y, double x2, double y2, double radius) {
+        public static void renderNeonQuad(GuiGraphicsExtractor context, Color base, Color glow, double x, double y, double x2, double y2, double radius) {
                 // Subtle Glow (Single layer)
                 renderRoundedOutline(context, new Color(glow.getRed(), glow.getGreen(), glow.getBlue(), 30), x - 1, y - 1, x2 + 1, y2 + 1, radius + 1, radius + 1, radius + 1, radius + 1, 1.5, 15);
                 
@@ -292,19 +293,19 @@ public final class RenderUtils {
                 renderRoundedOutline(context, new Color(255, 255, 255, 15), x, y, x2, y2, radius, radius, radius, radius, 0.5, 15);
         }
 
-        public static void renderPremiumShadow(DrawContext context, double x, double y, double x2, double y2, double radius) {
+        public static void renderPremiumShadow(GuiGraphicsExtractor context, double x, double y, double x2, double y2, double radius) {
                 // Single soft shadow layer
                 renderRoundedQuad(context, new Color(0, 0, 0, 40), x + 2, y + 2, x2 + 4, y2 + 4, radius + 2, 10);
         }
 
-        public static void renderAccentLine(DrawContext context, Color start, Color end, double x, double y, double x2, double y2) {
+        public static void renderAccentLine(GuiGraphicsExtractor context, Color start, Color end, double x, double y, double x2, double y2) {
                 context.fillGradient((int)x, (int)y, (int)x2, (int)y2, start.getRGB(), end.getRGB());
                 // Glow for the line
                 context.fillGradient((int)x - 1, (int)y, (int)x, (int)y2, new Color(start.getRed(), start.getGreen(), start.getBlue(), 40).getRGB(), new Color(end.getRed(), end.getGreen(), end.getBlue(), 40).getRGB());
                 context.fillGradient((int)x2, (int)y, (int)x2 + 1, (int)y2, new Color(start.getRed(), start.getGreen(), start.getBlue(), 40).getRGB(), new Color(end.getRed(), end.getGreen(), end.getBlue(), 40).getRGB());
         }
 
-        public static void renderSwitch(DrawContext context, boolean enabled, float animation, double x, double y, double width, double height, Color accent) {
+        public static void renderSwitch(GuiGraphicsExtractor context, boolean enabled, float animation, double x, double y, double width, double height, Color accent) {
                 // Track
                 Color trackColor = enabled ? new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), (int)(100 + 100 * animation)) : new Color(50, 50, 55, 200);
                 renderRoundedQuad(context, trackColor, x, y, x + width, y + height, height / 2, 15);

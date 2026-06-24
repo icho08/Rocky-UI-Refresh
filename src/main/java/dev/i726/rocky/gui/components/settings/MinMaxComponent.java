@@ -2,8 +2,8 @@ package dev.i726.rocky.gui.components.settings;
 
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.setting.MinMaxSetting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class MinMaxComponent extends SettingComponent {
 
@@ -21,15 +21,15 @@ public class MinMaxComponent extends SettingComponent {
     }
 
     @Override
-    public void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
         ctx.fill(x, y, x + width, y + 22, GuiTheme.settingBg());
 
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 setting.getName().toString(), x + 8, y + 2, GuiTheme.textSecondary(), false);
 
         String range = formatVal(setting.getMinValue()) + " - " + formatVal(setting.getMaxValue());
-        int rw = MinecraftClient.getInstance().textRenderer.getWidth(range);
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        int rw = Minecraft.getInstance().font.width(range);
+        ctx.text(Minecraft.getInstance().font,
                 range, x + width - rw - 6, y + 2, GuiTheme.textAccent(), false);
 
         int tx = x + 8, ty = y + 14, tw = width - 16;

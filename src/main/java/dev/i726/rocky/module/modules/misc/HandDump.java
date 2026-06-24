@@ -8,16 +8,21 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.block.entity.*;
-import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.world.level.block.entity.*;
+import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
+import net.minecraft.world.level.block.entity.TrappedChestBlockEntity;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Hand Dump — automatically deposits items from your hand or hotbar into a chest
@@ -97,10 +102,10 @@ public final class HandDump extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         // ── Auto-open: find and open a nearby storage block ──────────────────
-        if (autoOpen.getValue() && !(mc.currentScreen instanceof GenericContainerScreen)) {
+        if (autoOpen.getValue() && !(mc.screen instanceof ContainerScreen)) {
             if (openTimer.hasReached(500)) {
                 BlockPos nearest = findNearestStorage();
                 if (nearest != null) {
@@ -112,12 +117,12 @@ public final class HandDump extends Module implements TickListener {
         }
 
         // ── Deposit into the open container ──────────────────────────────────
-        if (!(mc.currentScreen instanceof GenericContainerScreen)) return;
+        if (!(mc.screen instanceof ContainerScreen)) return;
         if (!moveTimer.hasReached(nextDelay)) return;
 
-        GenericContainerScreenHandler handler =
-                (GenericContainerScreenHandler) mc.player.currentScreenHandler;
-        int containerSize = handler.getRows() * 9;
+        ChestMenu handler =
+                (ChestMenu) mc.player.containerMenu;
+        int containerSize = handler.getRowCount() * 9;
 
         // Resolve which inventory indices to dump
         int slotStart, slotEnd;
@@ -141,17 +146,17 @@ public final class HandDump extends Module implements TickListener {
         //   containerSize +  0..26  → main inv  (player inv 9–35)
         //   containerSize + 27..35  → hotbar     (player inv 0–8)
         for (int invIdx = slotStart; invIdx <= slotEnd; invIdx++) {
-            if (mc.player.getInventory().getStack(invIdx).isEmpty()) continue;
+            if (mc.player.getInventory().getItem(invIdx).isEmpty()) continue;
 
             // Convert player inventory index → handler slot index
             int handlerSlot = invIndexToHandlerSlot(invIdx, containerSize);
             if (handlerSlot == -1) continue;
 
-            mc.interactionManager.clickSlot(
-                    handler.syncId,
+            mc.gameMode.handleInventoryMouseClick(
+                    handler.containerId,
                     handlerSlot,
                     0,
-                    SlotActionType.QUICK_MOVE,
+                    ContainerInput.QUICK_MOVE,
                     mc.player
             );
             moveTimer.reset();
@@ -160,7 +165,7 @@ public final class HandDump extends Module implements TickListener {
         }
 
         // Nothing left to dump — close and disable (HandDump is a one-shot action)
-        if (closeWhenDone.getValue()) mc.player.closeHandledScreen();
+        if (closeWhenDone.getValue()) mc.player.closeContainer();
         this.toggle();
     }
 
@@ -181,7 +186,7 @@ public final class HandDump extends Module implements TickListener {
 
     /** Scans nearby loaded chunks for the nearest openable storage block. */
     private BlockPos findNearestStorage() {
-        Vec3d eye   = mc.player.getEyePos();
+        Vec3 eye   = mc.player.getEyePosition();
         double maxR = autoOpenRange.getValue();
         BlockPos best     = null;
         double   bestDist = Double.MAX_VALUE;
@@ -191,14 +196,14 @@ public final class HandDump extends Module implements TickListener {
 
         for (int cx = playerCX - 1; cx <= playerCX + 1; cx++) {
             for (int cz = playerCZ - 1; cz <= playerCZ + 1; cz++) {
-                WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(cx, cz);
+                LevelChunk chunk = mc.level.getChunkSource().getChunkNow(cx, cz);
                 if (chunk == null) continue;
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
                     if (!isStorageBlock(be)) continue;
-                    double d = eye.distanceTo(Vec3d.ofCenter(be.getPos()));
+                    double d = eye.distanceTo(Vec3.atCenterOf(be.getBlockPos()));
                     if (d <= maxR && d < bestDist) {
                         bestDist = d;
-                        best     = be.getPos();
+                        best     = be.getBlockPos();
                     }
                 }
             }
@@ -214,9 +219,9 @@ public final class HandDump extends Module implements TickListener {
     }
 
     private void openStorage(BlockPos pos) {
-        Vec3d eye    = mc.player.getEyePos();
-        Vec3d center = Vec3d.ofCenter(pos);
-        Vec3d delta  = eye.subtract(center);
+        Vec3 eye    = mc.player.getEyePosition();
+        Vec3 center = Vec3.atCenterOf(pos);
+        Vec3 delta  = eye.subtract(center);
 
         double ax = Math.abs(delta.x), ay = Math.abs(delta.y), az = Math.abs(delta.z);
         Direction face;
@@ -224,9 +229,9 @@ public final class HandDump extends Module implements TickListener {
         else if (ax >= az)        face = delta.x >= 0 ? Direction.EAST  : Direction.WEST;
         else                      face = delta.z >= 0 ? Direction.SOUTH : Direction.NORTH;
 
-        Vec3d hitVec = center.add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
+        Vec3 hitVec = center.add(face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
         BlockHitResult hit = new BlockHitResult(hitVec, face, pos, false);
-        mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
     }
 
     private void rollDelay() {

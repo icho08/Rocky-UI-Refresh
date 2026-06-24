@@ -1,19 +1,18 @@
 package dev.i726.rocky.module.modules.render;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.math.Axis;
 import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.RotationAxis;
-import net.minecraft.util.math.Vec3d;
-
 import java.awt.Color;
+import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 public final class ShowHealth extends Module implements GameRenderListener {
 
@@ -53,15 +52,15 @@ public final class ShowHealth extends Module implements GameRenderListener {
 
     @Override
     public void onGameRender(GameRenderEvent event) {
-        if (mc == null || mc.player == null || mc.world == null) return;
+        if (mc == null || mc.player == null || mc.level == null) return;
 
-        MatrixStack matrices = event.matrices;
-        Camera cam = mc.gameRenderer.getCamera();
-        Vec3d camPos = cam.getPos();
-        VertexConsumerProvider.Immediate vertexConsumers = mc.getBufferBuilders().getEntityVertexConsumers();
-        float tickDelta = mc.getRenderTickCounter().getTickProgress(true);
+        PoseStack matrices = event.matrices;
+        Camera cam = mc.gameRenderer.getMainCamera();
+        Vec3 camPos = cam.position();
+        MultiBufferSource.BufferSource vertexConsumers = mc.renderBuffers().bufferSource();
+        float tickDelta = mc.getDeltaTracker().getGameTimeDeltaPartialTick(true);
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (player == mc.player || !player.isAlive()) continue;
             if (mc.player.distanceTo(player) > range.getValue()) continue;
 
@@ -77,25 +76,25 @@ public final class ShowHealth extends Module implements GameRenderListener {
 
             String label = String.format("%.1f", total);
 
-            Vec3d pos = player.getLerpedPos(tickDelta);
+            Vec3 pos = player.getPosition(tickDelta);
             double x = pos.x - camPos.x;
-            double y = pos.y - camPos.y + player.getHeight() + yOffset.getValue();
+            double y = pos.y - camPos.y + player.getBbHeight() + yOffset.getValue();
             double z = pos.z - camPos.z;
 
-            matrices.push();
+            matrices.pushPose();
             matrices.translate(x, y, z);
-            matrices.multiply(RotationAxis.POSITIVE_Y.rotationDegrees(-cam.getYaw()));
-            matrices.multiply(RotationAxis.POSITIVE_X.rotationDegrees(cam.getPitch()));
+            matrices.mulPose(Axis.YP.rotationDegrees(-cam.yRot()));
+            matrices.mulPose(Axis.XP.rotationDegrees(cam.xRot()));
             matrices.scale(-0.025f, -0.025f, 0.025f);
 
-            float textWidth = mc.textRenderer.getWidth(label);
-            mc.textRenderer.draw(label, -textWidth / 2f, 0, textColor, false,
-                    matrices.peek().getPositionMatrix(), vertexConsumers,
-                    net.minecraft.client.font.TextRenderer.TextLayerType.SEE_THROUGH, 0, 15728880);
+            float textWidth = mc.font.width(label);
+            mc.font.drawInBatch(label, -textWidth / 2f, 0, textColor, false,
+                    matrices.last().pose(), vertexConsumers,
+                    net.minecraft.client.gui.Font.DisplayMode.SEE_THROUGH, 0, 15728880);
 
-            matrices.pop();
+            matrices.popPose();
         }
 
-        vertexConsumers.draw();
+        vertexConsumers.endBatch();
     }
 }

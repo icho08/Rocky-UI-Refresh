@@ -4,7 +4,6 @@ import dev.i726.rocky.utils.EncryptedString;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.io.*;
-import net.minecraft.client.MinecraftClient;
 
 public class CategoryManager {
     private static final Map<String, Category> categories = new ConcurrentHashMap<>();

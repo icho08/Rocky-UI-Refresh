@@ -2,11 +2,11 @@ package dev.i726.rocky.gui.components.settings;
 
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.setting.StringSetting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
 import org.lwjgl.glfw.GLFW;
 
 import java.awt.Color;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class StringComponent extends SettingComponent {
 
@@ -23,13 +23,13 @@ public class StringComponent extends SettingComponent {
     }
 
     @Override
-    public void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
-        MinecraftClient mc = MinecraftClient.getInstance();
+    public void render(GuiGraphicsExtractor ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
+        Minecraft mc = Minecraft.getInstance();
         Color ac = GuiTheme.accent();
 
         ctx.fill(x, y, x + width, y + 28, GuiTheme.settingBg());
 
-        ctx.drawText(mc.textRenderer, setting.getName().toString(),
+        ctx.text(mc.font, setting.getName().toString(),
                 x + 8, y + 3, GuiTheme.textSecondary(), false);
 
         int fieldX = x + 6;
@@ -53,22 +53,22 @@ public class StringComponent extends SettingComponent {
         int textY = fieldY + 2;
 
         if (val.isEmpty() && !focused) {
-            ctx.drawText(mc.textRenderer, "Click to edit...", textX, textY,
+            ctx.text(mc.font, "Click to edit...", textX, textY,
                     GuiTheme.textSecondary(), false);
         } else {
             int maxTextW = fieldW - 10;
             String displayed = val;
-            int tw = mc.textRenderer.getWidth(displayed);
+            int tw = mc.font.width(displayed);
             if (tw > maxTextW) {
-                while (mc.textRenderer.getWidth(displayed) > maxTextW && !displayed.isEmpty())
+                while (mc.font.width(displayed) > maxTextW && !displayed.isEmpty())
                     displayed = displayed.substring(1);
             }
             ctx.enableScissor(textX, fieldY, fieldX + fieldW - 2, fieldY + fieldH);
-            ctx.drawText(mc.textRenderer, displayed, textX, textY, GuiTheme.textPrimary(), false);
+            ctx.text(mc.font, displayed, textX, textY, GuiTheme.textPrimary(), false);
             ctx.disableScissor();
 
             if (focused && (System.currentTimeMillis() / 530) % 2 == 0) {
-                int cursorX = textX + mc.textRenderer.getWidth(displayed);
+                int cursorX = textX + mc.font.width(displayed);
                 ctx.fill(cursorX, fieldY + 2, cursorX + 1, fieldY + fieldH - 2,
                         GuiTheme.textPrimary());
             }

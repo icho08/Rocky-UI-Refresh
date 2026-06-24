@@ -13,19 +13,18 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.KeyUtils;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
-import net.minecraft.network.packet.c2s.play.HandSwingC2SPacket;
-import net.minecraft.network.packet.c2s.common.CommonPongC2SPacket;
-import net.minecraft.network.packet.c2s.common.KeepAliveC2SPacket;
-import net.minecraft.network.packet.c2s.common.ResourcePackStatusC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractBlockC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
-import net.minecraft.network.packet.s2c.play.ExplosionS2CPacket;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Queue;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
+import net.minecraft.network.protocol.common.ServerboundPongPacket;
+import net.minecraft.network.protocol.common.ServerboundResourcePackPacket;
+import net.minecraft.network.protocol.game.ClientboundExplodePacket;
+import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundSwingPacket;
+import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.Vec3;
 
 public final class FakeLag extends Module implements PlayerTickListener, PacketReceiveListener, PacketSendListener {
 
@@ -41,7 +40,7 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
     /** Guards against re-queuing packets that we are currently flushing. */
     public volatile boolean flushing = false;
 
-    public Vec3d pos = Vec3d.ZERO;
+    public Vec3 pos = Vec3.ZERO;
     public TimerUtils timerUtil = new TimerUtils();
 
     private final MinMaxSetting lagDelay = new MinMaxSetting(
@@ -75,7 +74,7 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
         eventManager.add(PacketReceiveListener.class, this);
 
         timerUtil.reset();
-        if (mc.player != null) pos = mc.player.getEntityPos();
+        if (mc.player != null) pos = mc.player.position();
         delay = lagDelay.getRandomValueInt();
         super.onEnable();
     }
@@ -91,23 +90,23 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (mc.world == null || mc.player == null || mc.player.isDead()) return;
+        if (mc.level == null || mc.player == null || mc.player.isDeadOrDying()) return;
 
         // Always flush immediately on explosion packets
-        if (event.packet instanceof ExplosionS2CPacket) flush();
+        if (event.packet instanceof ClientboundExplodePacket) flush();
     }
 
     @Override
     public void onPacketSend(PacketSendEvent event) {
-        if (mc.world == null || mc.player == null) return;
+        if (mc.level == null || mc.player == null) return;
         if (flushing) return;
-        if (mc.player.isUsingItem() || mc.player.isDead()) return;
+        if (mc.player.isUsingItem() || mc.player.isDeadOrDying()) return;
 
         // ── Critical packets that must NEVER be queued ─────────────────────────
         // Holding keepalives causes ReadTimeoutException kicks on all servers.
-        if (event.packet instanceof KeepAliveC2SPacket
-                || event.packet instanceof CommonPongC2SPacket
-                || event.packet instanceof ResourcePackStatusC2SPacket) {
+        if (event.packet instanceof ServerboundKeepAlivePacket
+                || event.packet instanceof ServerboundPongPacket
+                || event.packet instanceof ServerboundResourcePackPacket) {
             // Let these pass through instantly — flush anything waiting first so
             // the server sees packets in order.
             flush();
@@ -115,16 +114,16 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
         }
 
         // Interaction or inventory packets break the lag — flush immediately
-        if (event.packet instanceof PlayerInteractEntityC2SPacket
-                || event.packet instanceof HandSwingC2SPacket
-                || event.packet instanceof PlayerInteractBlockC2SPacket
-                || event.packet instanceof ClickSlotC2SPacket) {
+        if (event.packet instanceof ServerboundInteractPacket
+                || event.packet instanceof ServerboundSwingPacket
+                || event.packet instanceof ServerboundUseItemOnPacket
+                || event.packet instanceof ServerboundContainerClickPacket) {
             flush();
             return;
         }
 
         if (cancelOnElytra.getValue()
-                && mc.player.getInventory().getStack(2 + 36).getItem() == Items.ELYTRA) {
+                && mc.player.getInventory().getItem(2 + 36).getItem() == Items.ELYTRA) {
             flush();
             return;
         }
@@ -164,7 +163,7 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
     }
 
     private void flush() {
-        if (mc.player == null || mc.world == null) {
+        if (mc.player == null || mc.level == null) {
             packetQueue.clear();
             return;
         }
@@ -172,11 +171,11 @@ public final class FakeLag extends Module implements PlayerTickListener, PacketR
         flushing = true;
         TimedPacket tp;
         while ((tp = packetQueue.poll()) != null) {
-            mc.getNetworkHandler().getConnection().send(tp.packet, null, false);
+            mc.getConnection().getConnection().send(tp.packet, null, false);
         }
         flushing = false;
         timerUtil.reset();
-        if (mc.player != null) pos = mc.player.getEntityPos();
+        if (mc.player != null) pos = mc.player.position();
     }
 
     // ── Wrapper to track when each packet entered the queue ──────────────────

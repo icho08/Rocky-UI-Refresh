@@ -7,11 +7,10 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.MinMaxSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.Hand;
-
 import java.util.Random;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Items;
 
 public final class AutoXP extends Module implements TickListener {
         // Random per-throw delay in ticks
@@ -56,18 +55,18 @@ public final class AutoXP extends Module implements TickListener {
 
         @Override
         public void onTick() {
-                if (mc.player == null || mc.currentScreen != null) return;
+                if (mc.player == null || mc.screen != null) return;
 
                 if (clock > 0) {
                         clock--;
                         return;
                 }
 
-                if (mc.player.getMainHandStack().getItem() != Items.EXPERIENCE_BOTTLE) return;
+                if (mc.player.getMainHandItem().getItem() != Items.EXPERIENCE_BOTTLE) return;
 
                 if (onlyLowXP.getValue() && mc.player.experienceLevel >= xpThreshold.getValueInt()) return;
 
-                if (!mc.options.useKey.isPressed()) return;
+                if (!mc.options.keyUse.isDown()) return;
 
                 if (smartThrow.getValue()) {
                         // Sync the throwing rotation to the server before the use packet
@@ -75,27 +74,27 @@ public final class AutoXP extends Module implements TickListener {
                         // and yaw deltas are randomized per-throw via MinMaxSettings so
                         // the rotation looks human and won't trip GCD / constant-pitch
                         // heuristics.
-                        float prevPitch = mc.player.getPitch();
-                        float prevYaw = mc.player.getYaw();
+                        float prevPitch = mc.player.xRot();
+                        float prevYaw = mc.player.yRot();
                         float pitchAmp = pitchJitter.getRandomValueFloat();
                         float yawAmp = yawJitter.getRandomValueFloat();
                         float pitchSign = random.nextBoolean() ? 1f : -1f;
                         float yawSign = random.nextBoolean() ? 1f : -1f;
                         float aimPitch = -45.0f + pitchSign * pitchAmp;
                         float aimYaw = prevYaw + yawSign * yawAmp;
-                        mc.player.setPitch(aimPitch);
-                        mc.player.setYaw(aimYaw);
-                        mc.getNetworkHandler().sendPacket(
-                                new PlayerMoveC2SPacket.LookAndOnGround(aimYaw, aimPitch, mc.player.isOnGround(), false));
-                        mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+                        mc.player.setXRot(aimPitch);
+                        mc.player.setYRot(aimYaw);
+                        mc.getConnection().send(
+                                new ServerboundMovePlayerPacket.Rot(aimYaw, aimPitch, mc.player.onGround(), false));
+                        mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
                         if (restoreRotation.getValue()) {
-                                mc.player.setPitch(prevPitch);
-                                mc.player.setYaw(prevYaw);
-                                mc.getNetworkHandler().sendPacket(
-                                        new PlayerMoveC2SPacket.LookAndOnGround(prevYaw, prevPitch, mc.player.isOnGround(), false));
+                                mc.player.setXRot(prevPitch);
+                                mc.player.setYRot(prevYaw);
+                                mc.getConnection().send(
+                                        new ServerboundMovePlayerPacket.Rot(prevYaw, prevPitch, mc.player.onGround(), false));
                         }
                 } else {
-                        mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
+                        mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
                 }
 
                 clock = delay.getRandomValueInt();

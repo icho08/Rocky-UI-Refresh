@@ -7,18 +7,17 @@ import dev.i726.rocky.module.setting.MinMaxSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.BedItem;
-import net.minecraft.item.SpawnEggItem;
-import net.minecraft.block.Block;
-import net.minecraft.block.ChestBlock;
-import net.minecraft.block.CraftingTableBlock;
-import net.minecraft.block.FurnaceBlock;
-import net.minecraft.block.EnderChestBlock;
-import net.minecraft.block.ShulkerBoxBlock;
-
 import java.util.Random;
+import net.minecraft.world.item.BedItem;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.SpawnEggItem;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.ChestBlock;
+import net.minecraft.world.level.block.CraftingTableBlock;
+import net.minecraft.world.level.block.EnderChestBlock;
+import net.minecraft.world.level.block.FurnaceBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 
 public final class FastUse extends Module {
     public enum Mode {
@@ -83,8 +82,8 @@ public final class FastUse extends Module {
             // doing precise placement, so let vanilla rate take over.
             try {
                 if (respectBuilding.getValue()
-                        && net.minecraft.client.MinecraftClient.getInstance().player != null
-                        && net.minecraft.client.MinecraftClient.getInstance().player.isSneaking())
+                        && net.minecraft.client.Minecraft.getInstance().player != null
+                        && net.minecraft.client.Minecraft.getInstance().player.isShiftKeyDown())
                     return 4;
             } catch (Throwable ignored) { }
 

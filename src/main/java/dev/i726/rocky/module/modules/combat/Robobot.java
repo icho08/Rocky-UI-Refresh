@@ -8,13 +8,12 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.network.OtherClientPlayerEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.MovementType;
-import net.minecraft.sound.SoundEvents;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.UUID;
+import net.minecraft.client.player.RemotePlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.MoverType;
+import net.minecraft.world.phys.Vec3;
 
 public final class Robobot extends Module implements AttackListener, TickListener {
 
@@ -34,7 +33,7 @@ public final class Robobot extends Module implements AttackListener, TickListene
             new dev.i726.rocky.module.setting.BooleanSetting(EncryptedString.of("Infinite Health"), false)
             .setDescription(EncryptedString.of("Bot cannot die — health damage is ignored, useful for extended training"));
 
-    private OtherClientPlayerEntity fakePlayer;
+    private RemotePlayer fakePlayer;
     private float health;
 
     public Robobot() {
@@ -47,21 +46,21 @@ public final class Robobot extends Module implements AttackListener, TickListene
 
     @Override
     public void onEnable() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         health = maxHealth.getValueFloat();
-        fakePlayer = new OtherClientPlayerEntity(mc.world, new GameProfile(UUID.randomUUID(), "Robobot"));
-        fakePlayer.copyPositionAndRotation(mc.player);
-        fakePlayer.bodyYaw = mc.player.bodyYaw;
-        fakePlayer.setYaw(mc.player.getYaw());
-        fakePlayer.setPitch(mc.player.getPitch());
+        fakePlayer = new RemotePlayer(mc.level, new GameProfile(UUID.randomUUID(), "Robobot"));
+        fakePlayer.copyPosition(mc.player);
+        fakePlayer.yBodyRot = mc.player.yBodyRot;
+        fakePlayer.setYRot(mc.player.yRot());
+        fakePlayer.setXRot(mc.player.xRot());
         fakePlayer.setId(-1337);
 
-        for (int i = 0; i < mc.player.getInventory().size(); i++) {
-            fakePlayer.getInventory().setStack(i, mc.player.getInventory().getStack(i).copy());
+        for (int i = 0; i < mc.player.getInventory().getContainerSize(); i++) {
+            fakePlayer.getInventory().setItem(i, mc.player.getInventory().getItem(i).copy());
         }
 
-        mc.world.addEntity(fakePlayer);
+        mc.level.addEntity(fakePlayer);
         eventManager.add(AttackListener.class, this);
         eventManager.add(TickListener.class, this);
         super.onEnable();
@@ -71,8 +70,8 @@ public final class Robobot extends Module implements AttackListener, TickListene
     public void onDisable() {
         eventManager.remove(AttackListener.class, this);
         eventManager.remove(TickListener.class, this);
-        if (fakePlayer != null && mc.world != null) {
-            mc.world.removeEntity(fakePlayer.getId(), Entity.RemovalReason.DISCARDED);
+        if (fakePlayer != null && mc.level != null) {
+            mc.level.removeEntity(fakePlayer.getId(), Entity.RemovalReason.DISCARDED);
             fakePlayer = null;
         }
         super.onDisable();
@@ -91,44 +90,44 @@ public final class Robobot extends Module implements AttackListener, TickListene
         if (!infiniteHealth.getValue()) health -= dmg;
 
         // Damage animation + sound
-        fakePlayer.handleStatus((byte) 2);
-        mc.player.playSound(SoundEvents.ENTITY_PLAYER_HURT, 1.0f, 1.0f);
+        fakePlayer.handleEntityEvent((byte) 2);
+        mc.player.playSound(SoundEvents.PLAYER_HURT, 1.0f, 1.0f);
 
         // Knockback
         double diffX = fakePlayer.getX() - mc.player.getX();
         double diffZ = fakePlayer.getZ() - mc.player.getZ();
         if (diffX != 0 || diffZ != 0) {
             double dist = Math.sqrt(diffX * diffX + diffZ * diffZ);
-            fakePlayer.setVelocity(new Vec3d(diffX / dist * 0.4, 0.3, diffZ / dist * 0.4));
+            fakePlayer.setDeltaMovement(new Vec3(diffX / dist * 0.4, 0.3, diffZ / dist * 0.4));
         }
 
         if (!infiniteHealth.getValue() && health <= 0) {
-            mc.player.playSound(SoundEvents.ENTITY_PLAYER_DEATH, 1.0f, 1.0f);
+            mc.player.playSound(SoundEvents.PLAYER_DEATH, 1.0f, 1.0f);
             setEnabled(false);
         }
     }
 
     @Override
     public void onTick() {
-        if (fakePlayer == null || mc.world == null) return;
+        if (fakePlayer == null || mc.level == null) return;
 
         // Gravity
-        if (!fakePlayer.isOnGround()) {
-            fakePlayer.setVelocity(fakePlayer.getVelocity().add(0, -0.04, 0));
+        if (!fakePlayer.onGround()) {
+            fakePlayer.setDeltaMovement(fakePlayer.getDeltaMovement().add(0, -0.04, 0));
         }
         // Friction
-        fakePlayer.setVelocity(fakePlayer.getVelocity().multiply(0.8, 0.98, 0.8));
+        fakePlayer.setDeltaMovement(fakePlayer.getDeltaMovement().multiply(0.8, 0.98, 0.8));
         // Physics
-        fakePlayer.move(MovementType.SELF, fakePlayer.getVelocity());
+        fakePlayer.move(MoverType.SELF, fakePlayer.getDeltaMovement());
 
-        if (mc.player != null && !fakePlayer.isDead()) {
+        if (mc.player != null && !fakePlayer.isDeadOrDying()) {
             // Simple step-up on wall collision
-            if (fakePlayer.horizontalCollision && fakePlayer.isOnGround()) {
-                fakePlayer.setVelocity(fakePlayer.getVelocity().add(0, 0.42, 0));
+            if (fakePlayer.horizontalCollision && fakePlayer.onGround()) {
+                fakePlayer.setDeltaMovement(fakePlayer.getDeltaMovement().add(0, 0.42, 0));
             }
             // Random rotation drift
             if (Math.random() < 0.02) {
-                fakePlayer.setYaw(fakePlayer.getYaw() + (float)(Math.random() * 40 - 20));
+                fakePlayer.setYRot(fakePlayer.yRot() + (float)(Math.random() * 40 - 20));
             }
         }
     }

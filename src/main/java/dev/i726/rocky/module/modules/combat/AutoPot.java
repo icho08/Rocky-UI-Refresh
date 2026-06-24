@@ -9,10 +9,10 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.effect.MobEffects;
 
 public final class AutoPot extends Module implements TickListener {
 
@@ -79,9 +79,9 @@ public final class AutoPot extends Module implements TickListener {
         }
         if (previousPitch != -1) {
             // Send look packet to restore server-side pitch
-            mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    mc.player.getYaw(), previousPitch, mc.player.isOnGround(), false));
-            mc.player.setPitch(previousPitch);
+            mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
+                    mc.player.yRot(), previousPitch, mc.player.onGround(), false));
+            mc.player.setXRot(previousPitch);
             previousPitch = -1;
         }
     }
@@ -91,34 +91,34 @@ public final class AutoPot extends Module implements TickListener {
         float hp = (mc.player.getHealth() / mc.player.getMaxHealth()) * 100;
         return switch (potionType.getMode()) {
             case Health         -> hp <= healthPercent.getValue();
-            case Strength       -> !mc.player.hasStatusEffect(StatusEffects.STRENGTH);
-            case Speed          -> !mc.player.hasStatusEffect(StatusEffects.SPEED);
-            case FireResistance -> !mc.player.hasStatusEffect(StatusEffects.FIRE_RESISTANCE);
+            case Strength       -> !mc.player.hasEffect(MobEffects.STRENGTH);
+            case Speed          -> !mc.player.hasEffect(MobEffects.SPEED);
+            case FireResistance -> !mc.player.hasEffect(MobEffects.FIRE_RESISTANCE);
         };
     }
 
     private int findPotionSlot() {
         return switch (potionType.getMode()) {
-            case Health         -> InventoryUtils.findSplash(StatusEffects.INSTANT_HEALTH.value(), 1, 1);
-            case Strength       -> InventoryUtils.findSplash(StatusEffects.STRENGTH.value(), 1, 1);
-            case Speed          -> InventoryUtils.findSplash(StatusEffects.SPEED.value(), 1, 1);
-            case FireResistance -> InventoryUtils.findSplash(StatusEffects.FIRE_RESISTANCE.value(), 1, 1);
+            case Health         -> InventoryUtils.findSplash(MobEffects.INSTANT_HEALTH.value(), 1, 1);
+            case Strength       -> InventoryUtils.findSplash(MobEffects.STRENGTH.value(), 1, 1);
+            case Speed          -> InventoryUtils.findSplash(MobEffects.SPEED.value(), 1, 1);
+            case FireResistance -> InventoryUtils.findSplash(MobEffects.FIRE_RESISTANCE.value(), 1, 1);
         };
     }
 
     private boolean hasCorrectPotion() {
         if (mc.player == null) return false;
         return switch (potionType.getMode()) {
-            case Health         -> InventoryUtils.isThatSplash(StatusEffects.INSTANT_HEALTH.value(), 1, 1, mc.player.getMainHandStack());
-            case Strength       -> InventoryUtils.isThatSplash(StatusEffects.STRENGTH.value(), 1, 1, mc.player.getMainHandStack());
-            case Speed          -> InventoryUtils.isThatSplash(StatusEffects.SPEED.value(), 1, 1, mc.player.getMainHandStack());
-            case FireResistance -> InventoryUtils.isThatSplash(StatusEffects.FIRE_RESISTANCE.value(), 1, 1, mc.player.getMainHandStack());
+            case Health         -> InventoryUtils.isThatSplash(MobEffects.INSTANT_HEALTH.value(), 1, 1, mc.player.getMainHandItem());
+            case Strength       -> InventoryUtils.isThatSplash(MobEffects.STRENGTH.value(), 1, 1, mc.player.getMainHandItem());
+            case Speed          -> InventoryUtils.isThatSplash(MobEffects.SPEED.value(), 1, 1, mc.player.getMainHandItem());
+            case FireResistance -> InventoryUtils.isThatSplash(MobEffects.FIRE_RESISTANCE.value(), 1, 1, mc.player.getMainHandItem());
         };
     }
 
     @Override
     public void onTick() {
-        if (mc.currentScreen != null || mc.player == null) return;
+        if (mc.screen != null || mc.player == null) return;
 
         if (!shouldUsePot()) {
             if (currentState != State.IDLE) restoreState();
@@ -152,19 +152,19 @@ public final class AutoPot extends Module implements TickListener {
 
             case PITCHING -> {
                 if (lookDown.getValue()) {
-                    if (previousPitch == -1) previousPitch = mc.player.getPitch();
+                    if (previousPitch == -1) previousPitch = mc.player.xRot();
                     // Send server-side look-down packet AND update client pitch
-                    mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                            mc.player.getYaw(), 90f, mc.player.isOnGround(), false));
-                    mc.player.setPitch(90f);
+                    mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
+                            mc.player.yRot(), 90f, mc.player.onGround(), false));
+                    mc.player.setXRot(90f);
                 }
                 currentState = State.THROWING;
             }
 
             case THROWING -> {
                 if (hasCorrectPotion()) {
-                    ActionResult result = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-                    if (result.isAccepted()) mc.player.swingHand(Hand.MAIN_HAND);
+                    InteractionResult result = mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+                    if (result.consumesAction()) mc.player.swing(InteractionHand.MAIN_HAND);
                 }
                 restoreState();
                 currentState = State.IDLE;

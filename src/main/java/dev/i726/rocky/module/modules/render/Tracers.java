@@ -8,14 +8,13 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
-import net.minecraft.client.network.AbstractClientPlayerEntity;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.entity.mob.HostileEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.util.math.Vec3d;
-
 import java.awt.Color;
+import net.minecraft.client.player.AbstractClientPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Monster;
+import net.minecraft.world.phys.Vec3;
 
 public final class Tracers extends Module implements GameRenderListener {
 
@@ -63,24 +62,24 @@ public final class Tracers extends Module implements GameRenderListener {
 
     @Override
     public void onGameRender(GameRenderEvent event) {
-        if (mc == null || mc.world == null || mc.player == null) return;
+        if (mc == null || mc.level == null || mc.player == null) return;
 
         Color accent = GuiTheme.accent();
         Color tracerColor = new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), 200);
         double rangeSq = maxRange.getValue() * maxRange.getValue();
         float tickDelta = event.delta;
 
-        for (Entity entity : mc.world.getEntities()) {
-            if (mc.player.squaredDistanceTo(entity) > rangeSq) continue;
+        for (Entity entity : mc.level.entitiesForRendering()) {
+            if (mc.player.distanceToSqr(entity) > rangeSq) continue;
 
-            Vec3d lerpedPos = entity.getLerpedPos(tickDelta);
-            Vec3d center = lerpedPos.add(0, entity.getHeight() / 2.0, 0);
+            Vec3 lerpedPos = entity.getPosition(tickDelta);
+            Vec3 center = lerpedPos.add(0, entity.getBbHeight() / 2.0, 0);
 
-            if (players.getValue() && entity instanceof AbstractClientPlayerEntity player) {
+            if (players.getValue() && entity instanceof AbstractClientPlayer player) {
                 if (player == mc.player) continue;
                 RenderUtils.drawTracer(event.matrices, center, tracerColor);
-            } else if (mobs.getValue() && entity instanceof MobEntity mob) {
-                if (hostilesOnly.getValue() && !(mob instanceof HostileEntity)) continue;
+            } else if (mobs.getValue() && entity instanceof Mob mob) {
+                if (hostilesOnly.getValue() && !(mob instanceof Monster)) continue;
                 RenderUtils.drawTracer(event.matrices, center, tracerColor);
             } else if (items.getValue() && entity instanceof ItemEntity) {
                 RenderUtils.drawTracer(event.matrices, center, tracerColor);

@@ -10,14 +10,13 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
 import dev.i726.rocky.utils.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Vec3d;
-
 import java.awt.Color;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 public final class TargetHud extends Module implements HudListener, PacketSendListener {
 
@@ -57,10 +56,10 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
 
     @Override
     public void onRenderHud(HudEvent event) {
-        DrawContext ctx = event.context;
+        GuiGraphicsExtractor ctx = event.context;
         if (mc.player == null) return;
 
-        boolean hasTarget = mc.player.getAttacking() instanceof PlayerEntity p && p.isAlive();
+        boolean hasTarget = mc.player.getLastHurtMob() instanceof Player p && p.isAlive();
         boolean withinTimeout = !hudTimeout.getValue()
                 || (System.currentTimeMillis() - lastAttackTime <= TIMEOUT_MS);
 
@@ -69,13 +68,13 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
 
         if (!hasTarget || !withinTimeout) return;
 
-        PlayerEntity target = (PlayerEntity) mc.player.getAttacking();
-        PlayerListEntry entry = mc.getNetworkHandler() != null
-                ? mc.getNetworkHandler().getPlayerListEntry(target.getUuid()) : null;
+        Player target = (Player) mc.player.getLastHurtMob();
+        PlayerInfo entry = mc.getConnection() != null
+                ? mc.getConnection().getPlayerInfo(target.getUUID()) : null;
 
         float health       = Math.min(target.getHealth() + target.getAbsorptionAmount(), 20f);
         float healthPct    = health / 20f;
-        int   armorVal     = target.getArmor();
+        int   armorVal     = target.getArmorValue();
         float armorPct     = armorVal / 20f;
         int   ping         = entry != null ? entry.getLatency() : -1;
         String name        = target.getName().getString();
@@ -117,7 +116,7 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
         // Name
         int nameColor = isBot ? GuiTheme.rgba(239, 68, 68, 255) : GuiTheme.textPrimary();
         String displayName = isBot ? name + " [BOT]" : name;
-        ctx.drawText(mc.textRenderer, displayName, x + 9, y + 6, nameColor, false);
+        ctx.text(mc.font, displayName, x + 9, y + 6, nameColor, false);
 
         // ── Header separator ─────────────────────────────────────────────────
         int sepY = y + HEADER_H;
@@ -129,12 +128,12 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
         int barW = CARD_W - 18;
 
         // Label
-        ctx.drawText(mc.textRenderer, "HP", barX, rowY, GuiTheme.textSecondary(), false);
+        ctx.text(mc.font, "HP", barX, rowY, GuiTheme.textSecondary(), false);
         // Value (right-aligned, colored by health %)
         String hpStr   = String.valueOf(Math.round(health));
         int    hpColor = healthBarColor(healthPct);
-        int    hpStrW  = mc.textRenderer.getWidth(hpStr);
-        ctx.drawText(mc.textRenderer, hpStr, x + CARD_W - 9 - hpStrW, rowY, hpColor, false);
+        int    hpStrW  = mc.font.width(hpStr);
+        ctx.text(mc.font, hpStr, x + CARD_W - 9 - hpStrW, rowY, hpColor, false);
 
         // Health bar
         int barY = rowY + 10;
@@ -149,10 +148,10 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
 
         // ── Armor row ────────────────────────────────────────────────────────
         rowY = barY + 10;
-        ctx.drawText(mc.textRenderer, "Armor", barX, rowY, GuiTheme.textSecondary(), false);
+        ctx.text(mc.font, "Armor", barX, rowY, GuiTheme.textSecondary(), false);
         String armorStr  = String.valueOf(armorVal);
-        int    armorStrW = mc.textRenderer.getWidth(armorStr);
-        ctx.drawText(mc.textRenderer, armorStr, x + CARD_W - 9 - armorStrW, rowY, acInt, false);
+        int    armorStrW = mc.font.width(armorStr);
+        ctx.text(mc.font, armorStr, x + CARD_W - 9 - armorStrW, rowY, acInt, false);
 
         barY = rowY + 10;
         ctx.fill(barX, barY, barX + barW, barY + 5, GuiTheme.sliderTrack());
@@ -168,13 +167,13 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
             rowY = barY + 10;
             ctx.fill(x + 4, rowY - 3, x + CARD_W - 4, rowY - 2, GuiTheme.separator());
             rowY += 3;
-            ctx.drawText(mc.textRenderer, "Ping", barX, rowY, GuiTheme.textSecondary(), false);
+            ctx.text(mc.font, "Ping", barX, rowY, GuiTheme.textSecondary(), false);
             String pingStr  = ping + "ms";
             int    pingColor = ping < 80 ? GuiTheme.rgba(34, 197, 94, 255)
                     : ping < 150 ? GuiTheme.rgba(234, 179, 8, 255)
                     : GuiTheme.rgba(239, 68, 68, 255);
-            int pingStrW = mc.textRenderer.getWidth(pingStr);
-            ctx.drawText(mc.textRenderer, pingStr, x + CARD_W - 9 - pingStrW, rowY, pingColor, false);
+            int pingStrW = mc.font.width(pingStr);
+            ctx.text(mc.font, pingStr, x + CARD_W - 9 - pingStrW, rowY, pingColor, false);
         }
     }
 
@@ -186,13 +185,13 @@ public final class TargetHud extends Module implements HudListener, PacketSendLi
 
     @Override
     public void onPacketSend(PacketSendListener.PacketSendEvent event) {
-        if (event.packet instanceof PlayerInteractEntityC2SPacket packet) {
-            packet.handle(new PlayerInteractEntityC2SPacket.Handler() {
-                @Override public void interact(Hand hand) {}
-                @Override public void interactAt(Hand hand, Vec3d pos) {}
+        if (event.packet instanceof ServerboundInteractPacket packet) {
+            packet.dispatch(new ServerboundInteractPacket.Handler() {
+                @Override public void onInteraction(InteractionHand hand) {}
+                @Override public void onInteraction(InteractionHand hand, Vec3 pos) {}
                 @Override
-                public void attack() {
-                    if (mc.targetedEntity instanceof PlayerEntity) {
+                public void onAttack() {
+                    if (mc.crosshairPickEntity instanceof Player) {
                         lastAttackTime = System.currentTimeMillis();
                     }
                 }

@@ -2,8 +2,8 @@ package dev.i726.rocky.gui.components.settings;
 
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.setting.KeybindSetting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import org.lwjgl.glfw.GLFW;
 
 public class KeybindComponent extends SettingComponent {
@@ -20,17 +20,17 @@ public class KeybindComponent extends SettingComponent {
     }
 
     @Override
-    public void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
         int bg = setting.isListening() ? GuiTheme.accentFaint() : GuiTheme.settingBg();
         ctx.fill(x, y, x + width, y + 14, bg);
 
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 setting.getName().toString(), x + 8, y + 3, GuiTheme.textSecondary(), false);
 
         String keyLabel = setting.isListening() ? "..." : keyName(setting.getKey());
-        int kw = MinecraftClient.getInstance().textRenderer.getWidth(keyLabel);
+        int kw = Minecraft.getInstance().font.width(keyLabel);
         int color = setting.isListening() ? GuiTheme.textPrimary() : GuiTheme.textAccent();
-        ctx.drawText(MinecraftClient.getInstance().textRenderer, keyLabel, x + width - kw - 6, y + 3, color, false);
+        ctx.text(Minecraft.getInstance().font, keyLabel, x + width - kw - 6, y + 3, color, false);
 
         queueTooltipIfHovered(setting, x, y, width, 14, mouseX, mouseY);
     }

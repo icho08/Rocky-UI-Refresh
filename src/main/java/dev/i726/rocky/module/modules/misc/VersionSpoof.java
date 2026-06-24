@@ -4,7 +4,6 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.network.packet.c2s.handshake.HandshakeC2SPacket;
 
 public final class VersionSpoof extends Module {
     public enum Version {

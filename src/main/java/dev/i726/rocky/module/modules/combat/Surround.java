@@ -6,14 +6,14 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.block.Blocks;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.Items;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public final class Surround extends Module implements TickListener {
 
@@ -66,8 +66,8 @@ public final class Surround extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
-        if (onlyGround.getValue() && !mc.player.isOnGround()) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
+        if (onlyGround.getValue() && !mc.player.onGround()) return;
         if (!placeTimer.delay((float) delay.getValue())) return;
 
         // Snap to center of block
@@ -75,9 +75,9 @@ public final class Surround extends Module implements TickListener {
             double cx = Math.floor(mc.player.getX()) + 0.5;
             double cz = Math.floor(mc.player.getZ()) + 0.5;
             if (Math.abs(mc.player.getX() - cx) > 0.1 || Math.abs(mc.player.getZ() - cz) > 0.1) {
-                mc.player.setVelocity(
+                mc.player.setDeltaMovement(
                         (cx - mc.player.getX()) * 0.5,
-                        mc.player.getVelocity().y,
+                        mc.player.getDeltaMovement().y,
                         (cz - mc.player.getZ()) * 0.5);
             }
         }
@@ -89,25 +89,25 @@ public final class Surround extends Module implements TickListener {
         int prevSlot = mc.player.getInventory().getSelectedSlot();
         mc.player.getInventory().setSelectedSlot(slot);
 
-        BlockPos feet = BlockPos.ofFloored(mc.player.getX(), mc.player.getY(), mc.player.getZ());
+        BlockPos feet = BlockPos.containing(mc.player.getX(), mc.player.getY(), mc.player.getZ());
 
         boolean placed = false;
         int[][] offsets = renderPlaced.getValue()
                 ? concat(INNER, OUTER) : INNER;
 
         for (int[] off : offsets) {
-            BlockPos target = feet.add(off[0], off[1], off[2]);
-            if (!mc.world.getBlockState(target).isAir()) continue;
+            BlockPos target = feet.offset(off[0], off[1], off[2]);
+            if (!mc.level.getBlockState(target).isAir()) continue;
 
             // Need a solid support block beneath
-            BlockPos support = target.down();
-            if (mc.world.getBlockState(support).isAir()) continue;
+            BlockPos support = target.below();
+            if (mc.level.getBlockState(support).isAir()) continue;
 
-            Vec3d hitVec = Vec3d.ofCenter(target).add(0, 0.5, 0);
+            Vec3 hitVec = Vec3.atCenterOf(target).add(0, 0.5, 0);
             BlockHitResult bhr = new BlockHitResult(hitVec, Direction.UP, support, false);
 
-            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, bhr);
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, bhr);
+            mc.player.swing(InteractionHand.MAIN_HAND);
             placed = true;
             break;
         }
@@ -118,7 +118,7 @@ public final class Surround extends Module implements TickListener {
 
     private int findBlockSlot() {
         for (int i = 0; i < 9; i++) {
-            var stack = mc.player.getInventory().getStack(i);
+            var stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
             if (!(stack.getItem() instanceof BlockItem bi)) continue;
             var block = bi.getBlock();
@@ -126,7 +126,7 @@ public final class Surround extends Module implements TickListener {
             if (block == Blocks.OBSIDIAN || block == Blocks.CRYING_OBSIDIAN) return i;
         }
         for (int i = 0; i < 9; i++) {
-            var stack = mc.player.getInventory().getStack(i);
+            var stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
             if (!(stack.getItem() instanceof BlockItem)) continue;
             if (stack.getItem() == Items.DIRT || stack.getItem() == Items.COBBLESTONE
@@ -134,7 +134,7 @@ public final class Surround extends Module implements TickListener {
         }
         // Any block item
         for (int i = 0; i < 9; i++) {
-            var stack = mc.player.getInventory().getStack(i);
+            var stack = mc.player.getInventory().getItem(i);
             if (!stack.isEmpty() && stack.getItem() instanceof BlockItem) return i;
         }
         return -1;

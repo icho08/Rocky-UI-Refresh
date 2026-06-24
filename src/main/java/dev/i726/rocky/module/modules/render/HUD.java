@@ -13,14 +13,6 @@ import dev.i726.rocky.module.setting.KeybindSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.NotificationManager;
 import dev.i726.rocky.utils.TextRenderer;
-import net.minecraft.client.gl.RenderPipelines;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 import java.awt.Color;
@@ -30,6 +22,14 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 
 public final class HUD extends Module implements HudListener, ButtonListener {
 
@@ -146,7 +146,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
             .setDescription(EncryptedString.of("Open the HUD layout editor to drag panels"));
 
     // ── State ─────────────────────────────────────────────────────────────
-    private Vec3d lastPos;
+    private Vec3 lastPos;
     private long  lastPosTime;
     private double currentBps;
 
@@ -186,7 +186,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
     public void onButtonPress(ButtonEvent event) {
         if (event.action != GLFW.GLFW_PRESS) return;
         if (event.button != editorKey.getKey()) return;
-        if (mc != null && !(mc.currentScreen instanceof HudEditorScreen)) {
+        if (mc != null && !(mc.screen instanceof HudEditorScreen)) {
             mc.setScreen(new HudEditorScreen());
         }
     }
@@ -196,8 +196,8 @@ public final class HUD extends Module implements HudListener, ButtonListener {
     public void onRenderHud(HudEvent event) {
         try {
             if (mc == null) return;
-            if (mc.currentScreen instanceof ClickGuiScreen) return;
-            if (mc.currentScreen instanceof HudEditorScreen) return;
+            if (mc.screen instanceof ClickGuiScreen) return;
+            if (mc.screen instanceof HudEditorScreen) return;
             renderHudInternal(event);
         } catch (Exception ignored) {
             // Prevent rendering exceptions from propagating to the event system.
@@ -208,11 +208,11 @@ public final class HUD extends Module implements HudListener, ButtonListener {
 
     private void renderHudInternal(HudEvent event) {
 
-        DrawContext ctx       = event.context;
+        GuiGraphicsExtractor ctx       = event.context;
         Color       ac        = GuiTheme.accent();
         int         accentInt = GuiTheme.accentInt();
-        int screenW = mc.getWindow().getScaledWidth();
-        int screenH = mc.getWindow().getScaledHeight();
+        int screenW = mc.getWindow().getGuiScaledWidth();
+        int screenH = mc.getWindow().getGuiScaledHeight();
 
         updateBps();
 
@@ -220,16 +220,16 @@ public final class HUD extends Module implements HudListener, ButtonListener {
         if (info.getValue() && mc.player != null) {
             StringBuilder sfx = new StringBuilder();
             if (showFps.getValue()) {
-                sfx.append("  |  ").append(mc.getCurrentFps()).append(" FPS");
+                sfx.append("  |  ").append(mc.getFps()).append(" FPS");
             }
-            if (showPing.getValue() && mc.getNetworkHandler() != null) {
-                PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(mc.player.getUuid());
+            if (showPing.getValue() && mc.getConnection() != null) {
+                PlayerInfo entry = mc.getConnection().getPlayerInfo(mc.player.getUUID());
                 String ping = entry != null ? entry.getLatency() + "ms" : "0ms";
                 sfx.append("  |  ").append(ping);
             }
             if (showServer.getValue()) {
-                String server = mc.getCurrentServerEntry() == null
-                        ? "Singleplayer" : mc.getCurrentServerEntry().address;
+                String server = mc.getCurrentServer() == null
+                        ? "Singleplayer" : mc.getCurrentServer().ip;
                 sfx.append("  |  ").append(server);
             }
             if (clock.getValue()) {
@@ -249,8 +249,8 @@ public final class HUD extends Module implements HudListener, ButtonListener {
             ctx.fillGradient(bx + 3, by, bx + bw, by + 1,
                     GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 70),
                     GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
-            TextRenderer.drawString("ROCKY",  ctx, bx + 9,           by + 6, accentInt);
-            TextRenderer.drawString(suffix,   ctx, bx + 9 + rockyW,  by + 6, GuiTheme.textPrimary());
+            TextRenderer.text("ROCKY",  ctx, bx + 9,           by + 6, accentInt);
+            TextRenderer.text(suffix,   ctx, bx + 9 + rockyW,  by + 6, GuiTheme.textPrimary());
         }
 
         // ── 2. Coordinates / BPS ──────────────────────────────────────────
@@ -260,7 +260,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 int x = (int) mc.player.getX();
                 int y = (int) mc.player.getY();
                 int z = (int) mc.player.getZ();
-                lines.add("XYZ  " + x + " / " + y + " / " + z + "  [" + getFacing(mc.player.getYaw()) + "]");
+                lines.add("XYZ  " + x + " / " + y + " / " + z + "  [" + getFacing(mc.player.yRot()) + "]");
             }
             if (bpsHud.getValue()) {
                 lines.add("BPS  " + String.format("%.1f", currentBps));
@@ -275,7 +275,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 ctx.fill(bx, by, bx + bw, by + bh, GuiTheme.panelBg());
                 ctx.fill(bx, by, bx + 3, by + bh, accentInt);
                 for (int i = 0; i < lines.size(); i++)
-                    TextRenderer.drawString(lines.get(i), ctx, bx + 9, by + 5 + i * 13, GuiTheme.textPrimary());
+                    TextRenderer.text(lines.get(i), ctx, bx + 9, by + 5 + i * 13, GuiTheme.textPrimary());
             }
         }
 
@@ -283,10 +283,10 @@ public final class HUD extends Module implements HudListener, ButtonListener {
         if (armorHud.getValue() && mc.player != null) {
             String[] labels = {"Helm", "Chest", "Legs", "Boots"};
             ItemStack[] display = {
-                    mc.player.getInventory().getStack(39),
-                    mc.player.getInventory().getStack(38),
-                    mc.player.getInventory().getStack(37),
-                    mc.player.getInventory().getStack(36)
+                    mc.player.getInventory().getItem(39),
+                    mc.player.getInventory().getItem(38),
+                    mc.player.getInventory().getItem(37),
+                    mc.player.getInventory().getItem(36)
             };
             final int rowH  = 13;
             final int bw    = 115;
@@ -302,39 +302,39 @@ public final class HUD extends Module implements HudListener, ButtonListener {
             // Header
             ctx.fill(bx + 3, by, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 18));
             ctx.fill(bx + 3, by + headH - 1, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 60));
-            TextRenderer.drawString("ARMOR", ctx, bx + 9, by + 3, accentInt);
+            TextRenderer.text("ARMOR", ctx, bx + 9, by + 3, accentInt);
 
             for (int i = 0; i < 4; i++) {
                 ItemStack stack = display[i];
                 int rowY = by + headH + 2 + i * rowH;
 
                 if (stack.isEmpty()) {
-                    TextRenderer.drawString(labels[i], ctx, bx + 24, rowY + 5, GuiTheme.textSecondary());
-                    TextRenderer.drawString("--", ctx, bx + bw - 18, rowY + 5, GuiTheme.textSecondary());
+                    TextRenderer.text(labels[i], ctx, bx + 24, rowY + 5, GuiTheme.textSecondary());
+                    TextRenderer.text("--", ctx, bx + bw - 18, rowY + 5, GuiTheme.textSecondary());
                     continue;
                 }
 
-                ctx.drawItemWithoutEntity(stack, bx + 5, rowY + 1);
+                ctx.fakeItem(stack, bx + 5, rowY + 1);
 
                 int maxDmg = stack.getMaxDamage();
-                int curDmg = stack.getDamage();
+                int curDmg = stack.getDamageValue();
                 float pct  = maxDmg > 0 ? (float)(maxDmg - curDmg) / maxDmg : 1f;
                 Color valC = pct > 0.5f ? new Color(34, 197, 94)
                            : pct > 0.25f ? new Color(249, 115, 22)
                            : new Color(239, 68, 68);
 
                 // Label left, value right — no bar
-                TextRenderer.drawString(labels[i], ctx, bx + 24, rowY + 5, GuiTheme.textSecondary());
+                TextRenderer.text(labels[i], ctx, bx + 24, rowY + 5, GuiTheme.textSecondary());
                 String pctStr = (int)(pct * 100) + "%";
                 int pctW = TextRenderer.getWidth(pctStr);
-                TextRenderer.drawString(pctStr, ctx, bx + bw - pctW - 6, rowY + 5,
+                TextRenderer.text(pctStr, ctx, bx + bw - pctW - 6, rowY + 5,
                         GuiTheme.rgba(valC.getRed(), valC.getGreen(), valC.getBlue(), 230));
             }
         }
 
         // ── 4. Potion Effects ──────────────────────────────────────────────
-        if (effectsHud.getValue() && mc.player != null && !mc.player.getStatusEffects().isEmpty()) {
-            List<StatusEffectInstance> effects = new ArrayList<>(mc.player.getStatusEffects());
+        if (effectsHud.getValue() && mc.player != null && !mc.player.getActiveEffects().isEmpty()) {
+            List<MobEffectInstance> effects = new ArrayList<>(mc.player.getActiveEffects());
             final int rowH  = 13;
             final int bw    = 145;
             final int headH = 14;
@@ -352,10 +352,10 @@ public final class HUD extends Module implements HudListener, ButtonListener {
             // Header
             ctx.fill(bx + 3, by, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 18));
             ctx.fill(bx + 3, by + headH - 1, bx + bw, by + headH, GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 60));
-            TextRenderer.drawString("EFFECTS", ctx, bx + 9, by + 3, accentInt);
+            TextRenderer.text("EFFECTS", ctx, bx + 9, by + 3, accentInt);
 
             for (int i = 0; i < effects.size(); i++) {
-                StatusEffectInstance fx = effects.get(i);
+                MobEffectInstance fx = effects.get(i);
                 int rowY = by + headH + 2 + i * rowH;
 
                 int durSec = fx.getDuration() / 20;
@@ -364,27 +364,27 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                             :               new Color(239, 68, 68);
 
                 // Effect icon from GUI atlas (mob_effect/<name>)
-                var effect = fx.getEffectType().value();
-                var iconId = Registries.STATUS_EFFECT.getId(effect);
+                var effect = fx.getEffect().value();
+                var iconId = BuiltInRegistries.MOB_EFFECT.getKey(effect);
                 if (iconId != null) {
                     try {
-                        Identifier spriteId = Identifier.of(iconId.getNamespace(), "mob_effect/" + iconId.getPath());
-                        ctx.drawGuiTexture(RenderPipelines.GUI_TEXTURED, spriteId, bx + 5, rowY + 1, 10, 10);
+                        Identifier spriteId = Identifier.fromNamespaceAndPath(iconId.getNamespace(), "mob_effect/" + iconId.getPath());
+                        ctx.blitSprite(RenderPipelines.GUI_TEXTURED, spriteId, bx + 5, rowY + 1, 10, 10);
                     } catch (Exception ignored) {}
                 }
 
                 // Effect name (left, after icon)
-                String efName = effect.getName().getString();
+                String efName = effect.getDisplayName().getString();
                 int lvl = fx.getAmplifier() + 1;
                 String label = lvl > 1 ? efName + " " + toRoman(lvl) : efName;
-                TextRenderer.drawString(label, ctx, bx + 19, rowY + 2, GuiTheme.textSecondary());
+                TextRenderer.text(label, ctx, bx + 19, rowY + 2, GuiTheme.textSecondary());
 
                 // Time remaining (colored, right)
                 String time = durSec >= 60
                         ? (durSec / 60) + "m " + (durSec % 60) + "s"
                         : durSec + "s";
                 int timeW = TextRenderer.getWidth(time);
-                TextRenderer.drawString(time, ctx, bx + bw - timeW - 6, rowY + 2,
+                TextRenderer.text(time, ctx, bx + bw - timeW - 6, rowY + 2,
                         GuiTheme.rgba(timeC.getRed(), timeC.getGreen(), timeC.getBlue(), 230));
             }
         }
@@ -424,7 +424,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
                 ctx.fillGradient(ex, ey, er - accentBarW, ey + 1,
                         GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0),
                         GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 70));
-                TextRenderer.drawString(mname, ctx, ex + paddingX, ey + 5, GuiTheme.textPrimary());
+                TextRenderer.text(mname, ctx, ex + paddingX, ey + 5, GuiTheme.textPrimary());
                 startY += entryH + gap;
             }
         }
@@ -440,7 +440,7 @@ public final class HUD extends Module implements HudListener, ButtonListener {
     private void updateBps() {
         if (mc.player == null) { lastPos = null; return; }
         long  now = System.currentTimeMillis();
-        Vec3d pos = new Vec3d(mc.player.getX(), mc.player.getY(), mc.player.getZ());
+        Vec3 pos = new Vec3(mc.player.getX(), mc.player.getY(), mc.player.getZ());
         if (lastPos != null && now > lastPosTime) {
             double dist = Math.sqrt(
                     Math.pow(pos.x - lastPos.x, 2) + Math.pow(pos.z - lastPos.z, 2));

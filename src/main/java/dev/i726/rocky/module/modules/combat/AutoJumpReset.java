@@ -52,18 +52,18 @@ public final class AutoJumpReset extends Module implements TickListener {
 
 	@Override
 	public void onTick() {
-		if (mc.player == null || mc.currentScreen != null) return;
+		if (mc.player == null || mc.screen != null) return;
 
 		// Don't jump while using items (eating, blocking, etc.)
 		if (mc.player.isUsingItem()) return;
 
 		// Detect new hit
-		if (mc.player.hurtTime > lastHurtTime && mc.player.hurtTime == mc.player.maxHurtTime) {
+		if (mc.player.hurtTime > lastHurtTime && mc.player.hurtTime == mc.player.hurtDuration) {
 			// Check if we should jump based on chance
 			if (MathUtils.randomInt(1, 100) <= chance.getValueInt()) {
 				// Check if hit by player (if setting enabled)
-				if (onlyPlayers.getValue() && mc.player.getAttacker() != null && 
-					!(mc.player.getAttacker() instanceof net.minecraft.entity.player.PlayerEntity)) {
+				if (onlyPlayers.getValue() && mc.player.getLastHurtByMob() != null && 
+					!(mc.player.getLastHurtByMob() instanceof net.minecraft.world.entity.player.Player)) {
 					return;
 				}
 
@@ -81,13 +81,13 @@ public final class AutoJumpReset extends Module implements TickListener {
 		lastHurtTime = mc.player.hurtTime;
 
 		// Execute jump with delay
-		if (shouldJump && mc.player.isOnGround() && jumpTimer.delay(jumpDelay * 50)) { // Convert ticks to ms
-			mc.player.jump();
+		if (shouldJump && mc.player.onGround() && jumpTimer.delay(jumpDelay * 50)) { // Convert ticks to ms
+			mc.player.jumpFromGround();
 			shouldJump = false;
 		}
 
 		// Reset if we're no longer on ground or hurt time expired
-		if (!mc.player.isOnGround() || mc.player.hurtTime == 0) {
+		if (!mc.player.onGround() || mc.player.hurtTime == 0) {
 			shouldJump = false;
 		}
 	}

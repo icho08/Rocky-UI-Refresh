@@ -7,11 +7,6 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -20,6 +15,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.AABB;
 
 public final class OreESP extends Module implements GameRenderListener {
 
@@ -76,12 +75,12 @@ public final class OreESP extends Module implements GameRenderListener {
 
     private void scanOres() {
         try {
-            if (mc == null || mc.world == null || mc.player == null) return;
+            if (mc == null || mc.level == null || mc.player == null) return;
 
-            BlockPos center     = mc.player.getBlockPos();
+            BlockPos center     = mc.player.blockPosition();
             int      r          = range.getValueInt();
-            int      worldBottom = mc.world.getBottomY();
-            int      worldTop    = worldBottom + mc.world.getHeight() - 1;
+            int      worldBottom = mc.level.getMinY();
+            int      worldTop    = worldBottom + mc.level.getHeight() - 1;
 
             List<OreEntry> found = new ArrayList<>();
 
@@ -90,7 +89,7 @@ public final class OreESP extends Module implements GameRenderListener {
                     for (int y = Math.max(worldBottom, center.getY() - r);
                              y <= Math.min(worldTop,    center.getY() + r); y++) {
                         BlockPos pos   = new BlockPos(x, y, z);
-                        Block    block = mc.world.getBlockState(pos).getBlock();
+                        Block    block = mc.level.getBlockState(pos).getBlock();
                         Color    color = oreColor(block);
                         if (color != null) found.add(new OreEntry(pos, color));
                     }
@@ -104,10 +103,10 @@ public final class OreESP extends Module implements GameRenderListener {
 
     @Override
     public void onGameRender(GameRenderEvent event) {
-        if (mc == null || mc.world == null || mc.player == null) return;
+        if (mc == null || mc.level == null || mc.player == null) return;
 
         for (OreEntry entry : cachedOres) {
-            Box box = new Box(
+            AABB box = new AABB(
                     entry.pos.getX(),     entry.pos.getY(),     entry.pos.getZ(),
                     entry.pos.getX() + 1, entry.pos.getY() + 1, entry.pos.getZ() + 1);
 

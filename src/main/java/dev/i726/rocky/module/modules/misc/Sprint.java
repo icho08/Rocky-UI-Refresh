@@ -68,19 +68,19 @@ public final class Sprint extends Module implements TickListener {
             }
         }
 
-        if (!keepOnSneak.getValue() && mc.player.isSneaking()) {
+        if (!keepOnSneak.getValue() && mc.player.isShiftKeyDown()) {
             mc.player.setSprinting(false);
             return;
         }
 
-        if (!keepInAir.getValue() && !mc.player.isOnGround()) return;
+        if (!keepInAir.getValue() && !mc.player.onGround()) return;
 
         boolean shouldSprint;
         if (mode.isMode(Mode.Omni)) {
             var in = mc.player.input;
-            shouldSprint = in.playerInput.forward() || in.playerInput.backward() || in.playerInput.left() || in.playerInput.right();
+            shouldSprint = in.keyPresses.forward() || in.keyPresses.backward() || in.keyPresses.left() || in.keyPresses.right();
         } else {
-            shouldSprint = mc.player.input.playerInput.forward();
+            shouldSprint = mc.player.input.keyPresses.forward();
         }
         mc.player.setSprinting(shouldSprint);
     }

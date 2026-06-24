@@ -1,16 +1,15 @@
 package dev.i726.rocky.mixin;
 
+import com.mojang.blaze3d.platform.Window;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.*;
 import dev.i726.rocky.module.modules.misc.FastUse;
 import dev.i726.rocky.module.modules.misc.Timer;
 import dev.i726.rocky.utils.MouseSimulation;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.util.Window;
-import net.minecraft.client.world.ClientWorld;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.world.phys.EntityHitResult;
 import org.jetbrains.annotations.Nullable;
 import org.lwjgl.glfw.GLFW;
 import org.spongepowered.asm.mixin.Final;
@@ -23,34 +22,34 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 
-@Mixin(MinecraftClient.class)
+@Mixin(Minecraft.class)
 public class MinecraftClientMixin {
         @Shadow
         @Nullable
-        public ClientWorld world;
+        public ClientLevel level;
 
         @Shadow
         @Final
         private Window window;
 
         @Shadow
-        private int itemUseCooldown;
+        private int rightClickDelay;
 
         @Inject(method = "tick", at = @At("HEAD"))
         private void onTick(CallbackInfo ci) {
-                if (world != null) {
+                if (level != null) {
                         TickListener.TickEvent event = new TickListener.TickEvent();
 
                         EventManager.fire(event);
                 }
         }
 
-        @Inject(method = "onResolutionChanged", at = @At("HEAD"))
+        @Inject(method = "resizeDisplay", at = @At("HEAD"))
         private void onResolutionChanged(CallbackInfo ci) {
                 EventManager.fire(new ResolutionListener.ResolutionEvent(this.window));
         }
 
-        @Inject(method = "doItemUse", at = @At("HEAD"), cancellable = true)
+        @Inject(method = "startUseItem", at = @At("HEAD"), cancellable = true)
         private void onItemUse(CallbackInfo ci) {
                 ItemUseListener.ItemUseEvent event = new ItemUseListener.ItemUseEvent();
 
@@ -63,9 +62,9 @@ public class MinecraftClientMixin {
                 }
         }
 
-        @Inject(method = "doAttack", at = @At("HEAD"), cancellable = true)
+        @Inject(method = "startAttack", at = @At("HEAD"), cancellable = true)
         private void onAttack(CallbackInfoReturnable<Boolean> cir) {
-                AttackListener.AttackEvent event = new AttackListener.AttackEvent(((MinecraftClient)(Object)this).crosshairTarget instanceof EntityHitResult hit ? hit.getEntity() : null);
+                AttackListener.AttackEvent event = new AttackListener.AttackEvent(((Minecraft)(Object)this).hitResult instanceof EntityHitResult hit ? hit.getEntity() : null);
 
                 EventManager.fire(event);
                 if (event.isCancelled()) cir.setReturnValue(false);
@@ -76,7 +75,7 @@ public class MinecraftClientMixin {
                 }
         }
 
-        @Inject(method = "handleBlockBreaking", at = @At("HEAD"), cancellable = true)
+        @Inject(method = "continueAttack", at = @At("HEAD"), cancellable = true)
         private void onBlockBreaking(boolean breaking, CallbackInfo ci) {
                 BlockBreakingListener.BlockBreakingEvent event = new BlockBreakingListener.BlockBreakingEvent();
 
@@ -89,22 +88,22 @@ public class MinecraftClientMixin {
                 }
         }
 
-        @Inject(method = "stop", at = @At("HEAD"))
+        @Inject(method = "destroy", at = @At("HEAD"))
         private void onClose(CallbackInfo ci) {
                 if (Rocky.INSTANCE != null) {
                         Rocky.INSTANCE.getProfileManager().saveProfile("default");
                 }
         }
 
-        @Inject(method = "doItemUse", at = @At("RETURN"))
+        @Inject(method = "startUseItem", at = @At("RETURN"))
         private void onDoItemUsePost(CallbackInfo ci) {
                 if (Rocky.INSTANCE != null) {
                         FastUse fastUse = Rocky.INSTANCE.getModuleManager().getModule(FastUse.class);
-                        MinecraftClient mc = (MinecraftClient)(Object)this;
+                        Minecraft mc = (Minecraft)(Object)this;
                         if (fastUse != null && fastUse.isEnabled() && mc.player != null) {
-                                int mainCooldown = fastUse.getItemUseCooldown(mc.player.getMainHandStack());
-                                int offCooldown = fastUse.getItemUseCooldown(mc.player.getOffHandStack());
-                                itemUseCooldown = Math.min(mainCooldown, offCooldown);
+                                int mainCooldown = fastUse.getItemUseCooldown(mc.player.getMainHandItem());
+                                int offCooldown = fastUse.getItemUseCooldown(mc.player.getOffhandItem());
+                                rightClickDelay = Math.min(mainCooldown, offCooldown);
                         }
                 }
         }
@@ -115,9 +114,9 @@ public class MinecraftClientMixin {
          * time has elapsed — effectively multiplying the game's tick rate by Timer.speed.
          */
         @ModifyArg(
-                method = "render",
+                method = "runTick",
                 at = @At(value = "INVOKE",
-                         target = "Lnet/minecraft/client/render/RenderTickCounter;beginRenderTick(JZ)I"),
+                         target = "Lnet/minecraft/client/DeltaTracker;beginRenderTick(JZ)I"),
                 index = 0
         )
         private long rocky$modifyTimerSpeed(long timeMillis) {

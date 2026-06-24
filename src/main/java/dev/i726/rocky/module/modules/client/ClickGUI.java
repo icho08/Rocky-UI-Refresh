@@ -6,7 +6,7 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.Minecraft;
 import org.lwjgl.glfw.GLFW;
 
 public final class ClickGUI extends Module {
@@ -28,7 +28,7 @@ public final class ClickGUI extends Module {
     @Override
     public void onEnable() {
         // Theme is managed exclusively by ThemePicker — do not call setTheme here.
-        MinecraftClient mc = MinecraftClient.getInstance();
+        Minecraft mc = Minecraft.getInstance();
         if (mc != null) {
             mc.setScreen(new ClickGuiScreen());
         }

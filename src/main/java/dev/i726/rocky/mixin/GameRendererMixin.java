@@ -5,10 +5,8 @@ import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.GameRenderListener;
 import dev.i726.rocky.module.modules.misc.Freecam;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.GameRenderer;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.GameRenderer;
 import org.joml.Matrix4f;
 import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
@@ -20,11 +18,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
-	@Shadow public abstract Matrix4f getBasicProjectionMatrix(float fov);
+	@Shadow public abstract Matrix4f getProjectionMatrix(float fov);
 
 	@Shadow protected abstract float getFov(Camera camera, float tickDelta, boolean changingFov);
 
-	@Shadow @Final private Camera camera;
+	@Shadow @Final private Camera mainCamera;
 
 
 	@Inject(method = "shouldRenderBlockOutline", at = @At("HEAD"), cancellable = true)

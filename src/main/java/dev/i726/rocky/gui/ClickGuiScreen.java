@@ -8,19 +8,19 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.BlatantModules;
 import dev.i726.rocky.module.modules.client.FpsModules;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.input.CharInput;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.CharacterEvent;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
 
 public class ClickGuiScreen extends Screen {
 
@@ -42,7 +42,7 @@ public class ClickGuiScreen extends Screen {
     private boolean searchFocused = false;
 
     public ClickGuiScreen() {
-        super(Text.literal("Rocky"));
+        super(Component.literal("Rocky"));
     }
 
     /** Called by ModuleRow during render to schedule a tooltip for the end of the frame. */
@@ -168,7 +168,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         pendingTooltip = null;
 
         ctx.fill(0, 0, this.width, this.height, GuiTheme.rgba(5, 4, 10, 175));
@@ -185,14 +185,14 @@ public class ClickGuiScreen extends Screen {
         }
     }
 
-    private void renderTooltip(DrawContext ctx, String text, int mouseX, int mouseY) {
-        MinecraftClient mc = MinecraftClient.getInstance();
+    private void renderTooltip(GuiGraphicsExtractor ctx, String text, int mouseX, int mouseY) {
+        Minecraft mc = Minecraft.getInstance();
         int maxWidth = 160;
 
         // Word-wrap
         List<String> lines = wrapText(mc, text, maxWidth - 12);
 
-        int lineH   = mc.textRenderer.fontHeight + 2;
+        int lineH   = mc.font.lineHeight + 2;
         int boxW    = maxWidth;
         int boxH    = 6 + lines.size() * lineH + 2;
 
@@ -223,18 +223,18 @@ public class ClickGuiScreen extends Screen {
         int textX = tx + 8;
         int textY = ty + 4;
         for (String line : lines) {
-            ctx.drawText(mc.textRenderer, line, textX, textY, GuiTheme.rgba(190, 186, 220, 255), false);
+            ctx.text(mc.font, line, textX, textY, GuiTheme.rgba(190, 186, 220, 255), false);
             textY += lineH;
         }
     }
 
-    private List<String> wrapText(MinecraftClient mc, String text, int maxWidth) {
+    private List<String> wrapText(Minecraft mc, String text, int maxWidth) {
         List<String> lines = new ArrayList<>();
         String[] words = text.split(" ");
         StringBuilder current = new StringBuilder();
         for (String word : words) {
             String test = current.isEmpty() ? word : current + " " + word;
-            if (mc.textRenderer.getWidth(test) <= maxWidth) {
+            if (mc.font.width(test) <= maxWidth) {
                 current = new StringBuilder(test);
             } else {
                 if (!current.isEmpty()) lines.add(current.toString());
@@ -245,19 +245,19 @@ public class ClickGuiScreen extends Screen {
         return lines.isEmpty() ? List.of(text) : lines;
     }
 
-    private void renderTopBar(DrawContext ctx, int mouseX, int mouseY) {
-        MinecraftClient mc = MinecraftClient.getInstance();
+    private void renderTopBar(GuiGraphicsExtractor ctx, int mouseX, int mouseY) {
+        Minecraft mc = Minecraft.getInstance();
         Color ac = GuiTheme.accent();
         int acInt = GuiTheme.accentInt();
 
         // ── Floating "Rocky Client" title — no background ───────────────────
         int ty = BAR_Y + 10;
-        ctx.drawText(mc.textRenderer, "Rocky", 12, ty, acInt, true);
-        int rockyW = mc.textRenderer.getWidth("Rocky");
-        ctx.drawText(mc.textRenderer, " Client", 12 + rockyW, ty, GuiTheme.textPrimary(), true);
-        int clientW = mc.textRenderer.getWidth(" Client");
+        ctx.text(mc.font, "Rocky", 12, ty, acInt, true);
+        int rockyW = mc.font.width("Rocky");
+        ctx.text(mc.font, " Client", 12 + rockyW, ty, GuiTheme.textPrimary(), true);
+        int clientW = mc.font.width(" Client");
         String ver = Rocky.INSTANCE.getVersion().trim();
-        ctx.drawText(mc.textRenderer, "  " + ver,
+        ctx.text(mc.font, "  " + ver,
                 12 + rockyW + clientW, ty,
                 GuiTheme.rgba(90, 86, 128, 255), true);
 
@@ -282,22 +282,22 @@ public class ClickGuiScreen extends Screen {
 
         // Search icon
         int iconColor = searchFocused ? acInt : GuiTheme.textSecondary();
-        ctx.drawText(mc.textRenderer, "\u2315", sbX + 4, sbY + 4, iconColor, false);
+        ctx.text(mc.font, "\u2315", sbX + 4, sbY + 4, iconColor, false);
 
         // Text / placeholder
         int textX = sbX + 16;
         int textY = sbY + 4;
         if (searchQuery.isEmpty() && !searchFocused) {
-            ctx.drawText(mc.textRenderer, "Search modules...", textX, textY,
+            ctx.text(mc.font, "Search modules...", textX, textY,
                     GuiTheme.textSecondary(), false);
         } else {
             ctx.enableScissor(textX, sbY, sbX + SB_W - 4, sbY + sbH);
-            ctx.drawText(mc.textRenderer, searchQuery, textX, textY,
+            ctx.text(mc.font, searchQuery, textX, textY,
                     GuiTheme.textPrimary(), false);
             ctx.disableScissor();
             // Blinking cursor
             if (searchFocused && (System.currentTimeMillis() / 530) % 2 == 0) {
-                int cursorX = textX + mc.textRenderer.getWidth(searchQuery);
+                int cursorX = textX + mc.font.width(searchQuery);
                 ctx.fill(cursorX, sbY + 3, cursorX + 1, sbY + sbH - 3, GuiTheme.textPrimary());
             }
         }
@@ -318,7 +318,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(Click click, boolean canDoubleClick) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean canDoubleClick) {
         double mouseX = click.x(), mouseY = click.y();
         int button = click.button();
 
@@ -337,7 +337,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         double mouseX = click.x(), mouseY = click.y();
         int button = click.button();
         for (CategoryPanel panel : panels)
@@ -346,7 +346,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         double mouseX = click.x(), mouseY = click.y();
         int button = click.button();
         for (CategoryPanel panel : panels) panel.mouseReleased(mouseX, mouseY, button);
@@ -361,7 +361,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyInput input) {
+    public boolean keyPressed(KeyEvent input) {
         int keyCode = input.key(), scanCode = input.scancode(), modifiers = input.modifiers();
 
         if (searchFocused) {
@@ -390,8 +390,8 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean charTyped(CharInput input) {
-        if (!input.isValidChar()) return super.charTyped(input);
+    public boolean charTyped(CharacterEvent input) {
+        if (!input.isAllowedChatCharacter()) return super.charTyped(input);
         char chr = (char) input.codepoint();
         int modifiers = input.modifiers();
 
@@ -423,7 +423,7 @@ public class ClickGuiScreen extends Screen {
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 

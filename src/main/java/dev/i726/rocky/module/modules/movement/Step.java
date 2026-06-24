@@ -5,13 +5,13 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.entity.attribute.EntityAttributeModifier;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.util.Identifier;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 
 public final class Step extends Module implements TickListener {
 
-    private static final Identifier STEP_ID = Identifier.of("rocky", "step_height");
+    private static final Identifier STEP_ID = Identifier.fromNamespaceAndPath("rocky", "step_height");
 
     private final NumberSetting height = new NumberSetting(EncryptedString.of("Height"), 0.6, 2.5, 1.0, 0.1)
             .setDescription(EncryptedString.of("Max block height the player can step over (vanilla = 0.6)"));
@@ -42,7 +42,7 @@ public final class Step extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null) return;
 
-        var attr = mc.player.getAttributeInstance(EntityAttributes.STEP_HEIGHT);
+        var attr = mc.player.getAttribute(Attributes.STEP_HEIGHT);
         if (attr == null) return;
 
         double target = height.getValue();
@@ -53,17 +53,17 @@ public final class Step extends Module implements TickListener {
         boolean hasModifier = attr.getModifier(STEP_ID) != null;
 
         if (!hasModifier && needed > 0) {
-            attr.addTemporaryModifier(new EntityAttributeModifier(
-                    STEP_ID, needed, EntityAttributeModifier.Operation.ADD_VALUE));
+            attr.addTransientModifier(new AttributeModifier(
+                    STEP_ID, needed, AttributeModifier.Operation.ADD_VALUE));
             modifierApplied = true;
         } else if (hasModifier) {
             // Refresh if the height setting changed
-            double current = attr.getModifier(STEP_ID).value();
+            double current = attr.getModifier(STEP_ID).amount();
             if (Math.abs(current - needed) > 0.001) {
                 attr.removeModifier(STEP_ID);
                 if (needed > 0) {
-                    attr.addTemporaryModifier(new EntityAttributeModifier(
-                            STEP_ID, needed, EntityAttributeModifier.Operation.ADD_VALUE));
+                    attr.addTransientModifier(new AttributeModifier(
+                            STEP_ID, needed, AttributeModifier.Operation.ADD_VALUE));
                 }
             }
         }
@@ -71,7 +71,7 @@ public final class Step extends Module implements TickListener {
 
     private void removeModifier() {
         if (mc != null && mc.player != null) {
-            var attr = mc.player.getAttributeInstance(EntityAttributes.STEP_HEIGHT);
+            var attr = mc.player.getAttribute(Attributes.STEP_HEIGHT);
             if (attr != null) attr.removeModifier(STEP_ID);
         }
         modifierApplied = false;

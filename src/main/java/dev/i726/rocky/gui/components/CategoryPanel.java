@@ -3,13 +3,12 @@ package dev.i726.rocky.gui.components;
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.utils.RenderUtils;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class CategoryPanel {
 
@@ -57,12 +56,12 @@ public class CategoryPanel {
                 .collect(Collectors.toList());
     }
 
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         float collapseTarget = collapsed ? 0f : 1f;
         collapseAnim = RenderUtils.fast(collapseAnim, collapseTarget, 10f);
 
         List<ModuleRow> visible   = getVisibleRows();
-        int screenH    = MinecraftClient.getInstance().getWindow().getScaledHeight();
+        int screenH    = Minecraft.getInstance().getWindow().getGuiScaledHeight();
         int ix         = (int) x;
         int iy         = (int) y;
         int contentH   = getContentHeight(visible);
@@ -90,16 +89,16 @@ public class CategoryPanel {
         // ── Header icons (right to left) ────────────────────────────────────
         // Collapse arrow (rightmost slot)
         String arrow = collapsed ? "\u25B6" : "\u25BC";
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 arrow, ix + WIDTH - ICON_W + 1, iy + 5, GuiTheme.textSecondary(), false);
 
         // Minor-filter icon ≡ — accent colour when hiding minors, secondary when showing all
         int filterCol = hideMinor ? GuiTheme.accentInt() : GuiTheme.textSecondary();
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 "\u2261", ix + WIDTH - ICON_W * 2 + 2, iy + 5, filterCol, false);
 
         // Panel title
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 name.toUpperCase(), ix + 9, iy + 5, GuiTheme.textPrimary(), false);
 
         // ── Header icon tooltips ─────────────────────────────────────────────
@@ -250,7 +249,7 @@ public class CategoryPanel {
 
     private boolean isOverBody(double mx, double my) {
         List<ModuleRow> visible = getVisibleRows();
-        int screenH    = MinecraftClient.getInstance().getWindow().getScaledHeight();
+        int screenH    = Minecraft.getInstance().getWindow().getGuiScaledHeight();
         int contentH   = getContentHeight(visible);
         int maxVisible = Math.max(0, screenH - (int) y - HEADER_H - 6);
         int visibleH   = (int) (Math.min(contentH, maxVisible) * collapseAnim);

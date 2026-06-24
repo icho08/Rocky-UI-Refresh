@@ -10,13 +10,12 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.*;
 import dev.i726.rocky.utils.rotation.Rotation;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.AxeItem;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 
 public final class AimAssist extends Module implements HudListener, MouseMoveListener {
@@ -104,15 +103,15 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
 
     @Override
     public void onRenderHud(HudEvent event) {
-        if (mc.player == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.screen != null) return;
 
-        if (onlyWeapon.getValue() && !(WorldUtils.isSword(mc.player.getMainHandStack().getItem())
-                || mc.player.getMainHandStack().getItem() instanceof AxeItem)) {
+        if (onlyWeapon.getValue() && !(WorldUtils.isSword(mc.player.getMainHandItem().getItem())
+                || mc.player.getMainHandItem().getItem() instanceof AxeItem)) {
             lerpFactor = 0;
             return;
         }
 
-        if (onLeftClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(),
+        if (onLeftClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().handle(),
                 GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS) {
             lerpFactor = Math.max(0, lerpFactor - 0.15f);
             if (!stickyAim.getValue()) lockedTarget = null;
@@ -120,7 +119,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         }
 
         LivingEntity target = resolveTarget();
-        if (target == null || target.isDead() || target.isRemoved()) {
+        if (target == null || target.isDeadOrDying() || target.isRemoved()) {
             lerpFactor   = Math.max(0, lerpFactor - 0.1f);
             lockedTarget = null;
             return;
@@ -144,16 +143,16 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         }
 
         // Build aim position
-        Vec3d targetPos = target.getEyePos();
+        Vec3 targetPos = target.getEyePosition();
         double eyeH = target.getEyeHeight(target.getPose());
         if (aimAt.isMode(AimMode.Chest)) targetPos = targetPos.add(0, -eyeH * 0.4, 0);
         else if (aimAt.isMode(AimMode.Legs)) targetPos = targetPos.add(0, -eyeH * 0.8, 0);
 
         // Lightweight velocity prediction
-        Vec3d vel = target.getVelocity();
+        Vec3 vel = target.getDeltaMovement();
         targetPos = targetPos.add(vel.x * 0.4, vel.y * 0.2, vel.z * 0.4);
 
-        Rotation rotation = RotationUtils.getDirection(mc.player.getEyePos(), targetPos);
+        Rotation rotation = RotationUtils.getDirection(mc.player.getEyePosition(), targetPos);
         if (rotation == null) return;
 
         double angleToTarget = RotationUtils.getAngleToRotation(rotation);
@@ -169,7 +168,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         // oscillation that manifests as visible screen shake.
         if (stopAtTarget.getValue()) {
             EntityHitResult hitResult = WorldUtils.getHitResult(mc.player, false,
-                    mc.player.getYaw(), mc.player.getPitch(), range.getValue()) instanceof EntityHitResult r ? r : null;
+                    mc.player.yRot(), mc.player.xRot(), range.getValue()) instanceof EntityHitResult r ? r : null;
             if (hitResult != null && hitResult.getEntity() == target) {
                 lerpFactor = Math.max(0, lerpFactor - 0.10f);
                 if (!stickyAim.getValue()) return;
@@ -194,11 +193,11 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         float targetYaw   = (float) rotation.yaw()   + aimOffsetYaw;
         float targetPitch = (float) rotation.pitch() + aimOffsetPitch;
 
-        float rawYawDelta   = MathHelper.wrapDegrees(targetYaw   - mc.player.getYaw());
-        float rawPitchDelta = MathHelper.wrapDegrees(targetPitch - mc.player.getPitch());
+        float rawYawDelta   = Mth.wrapDegrees(targetYaw   - mc.player.yRot());
+        float rawPitchDelta = Mth.wrapDegrees(targetPitch - mc.player.xRot());
 
-        float yawDelta   = MathHelper.clamp(rawYawDelta,   -maxDegreesThisFrame, maxDegreesThisFrame);
-        float pitchDelta = MathHelper.clamp(rawPitchDelta, -maxDegreesThisFrame, maxDegreesThisFrame);
+        float yawDelta   = Mth.clamp(rawYawDelta,   -maxDegreesThisFrame, maxDegreesThisFrame);
+        float pitchDelta = Mth.clamp(rawPitchDelta, -maxDegreesThisFrame, maxDegreesThisFrame);
 
         // ── GCD correction ──────────────────────────────────────────────────
         if (gcdCorrection.getValue()) {
@@ -215,11 +214,11 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
             pitchDelta += (float)((Math.random() - 0.5) * jitter);
         }
 
-        float newYaw   = mc.player.getYaw()   + yawDelta;
-        float newPitch = MathHelper.clamp(mc.player.getPitch() + pitchDelta, -90, 90);
+        float newYaw   = mc.player.yRot()   + yawDelta;
+        float newPitch = Mth.clamp(mc.player.xRot() + pitchDelta, -90, 90);
 
-        mc.player.setYaw(newYaw);
-        mc.player.setPitch(newPitch);
+        mc.player.setYRot(newYaw);
+        mc.player.setXRot(newPitch);
         // No manual packet here — setting yaw/pitch is enough.
         // The game's sendMovementPackets() fires every tick and carries the
         // updated rotation in a PositionAndRotation packet at exactly 20 hz,
@@ -246,20 +245,20 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
         LivingEntity best = null;
         float bestDist = Float.MAX_VALUE;
 
-        for (net.minecraft.entity.Entity e : mc.world.getEntities()) {
+        for (net.minecraft.world.entity.Entity e : mc.level.entitiesForRendering()) {
             if (!(e instanceof LivingEntity le)) continue;
             if (le == mc.player) continue;
             if (!le.isAlive() || le.isRemoved()) continue;
 
             // Filter by target mode
-            if (targets.isMode(TargetMode.Mobs) && !(le instanceof MobEntity)) continue;
+            if (targets.isMode(TargetMode.Mobs) && !(le instanceof Mob)) continue;
             // TargetMode.All passes through without extra filtering
 
             float dist = mc.player.distanceTo(le);
             if (dist > maxDist) continue;
 
             // FOV check
-            Rotation rot = RotationUtils.getDirection(mc.player.getEyePos(), le.getEyePos());
+            Rotation rot = RotationUtils.getDirection(mc.player.getEyePosition(), le.getEyePosition());
             if (rot != null && RotationUtils.getAngleToRotation(rot) > halfFov) continue;
 
             if (dist < bestDist) {
@@ -271,7 +270,7 @@ public final class AimAssist extends Module implements HudListener, MouseMoveLis
     }
 
     private float calcGcd() {
-        double sens = mc.options.getMouseSensitivity().getValue();
+        double sens = mc.options.sensitivity().get();
         double f    = sens * 0.6 + 0.2;
         return (float)(f * f * f * 8.0);
     }

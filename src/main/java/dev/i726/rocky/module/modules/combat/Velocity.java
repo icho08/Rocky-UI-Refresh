@@ -7,7 +7,7 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 public final class Velocity extends Module implements TickListener {
 
@@ -51,7 +51,7 @@ public final class Velocity extends Module implements TickListener {
     // State for Gradual mode
     private int hitTicks           = 0;
     private int gradualTicksLeft   = 0;
-    private Vec3d savedVelocity    = Vec3d.ZERO;
+    private Vec3 savedVelocity    = Vec3.ZERO;
 
     public Velocity() {
         super(EncryptedString.of("Anti Knockback"),
@@ -65,7 +65,7 @@ public final class Velocity extends Module implements TickListener {
         eventManager.add(TickListener.class, this);
         hitTicks         = 0;
         gradualTicksLeft = 0;
-        savedVelocity    = Vec3d.ZERO;
+        savedVelocity    = Vec3.ZERO;
         super.onEnable();
     }
 
@@ -100,8 +100,8 @@ public final class Velocity extends Module implements TickListener {
             h = Math.max(0, Math.min(1, h));
             v = Math.max(0, Math.min(1, v));
 
-            Vec3d vel = mc.player.getVelocity();
-            mc.player.setVelocity(vel.x * h, vel.y * v, vel.z * h);
+            Vec3 vel = mc.player.getDeltaMovement();
+            mc.player.setDeltaMovement(vel.x * h, vel.y * v, vel.z * h);
         }
     }
 
@@ -109,7 +109,7 @@ public final class Velocity extends Module implements TickListener {
         if (mc.player.hurtTime > 0 && hitTicks == 0) {
             hitTicks         = mc.player.hurtTime;
             gradualTicksLeft = gradualTicks.getValueInt();
-            savedVelocity    = mc.player.getVelocity();
+            savedVelocity    = mc.player.getDeltaMovement();
         }
 
         if (gradualTicksLeft > 0) {
@@ -118,7 +118,7 @@ public final class Velocity extends Module implements TickListener {
             double h    = (horizontal.getValue() / 100.0);
             double v    = (vertical.getValue()   / 100.0);
             double prog = 1.0 - (double) gradualTicksLeft / gradualTicks.getValueInt();
-            Vec3d  vel  = mc.player.getVelocity();
+            Vec3  vel  = mc.player.getDeltaMovement();
 
             double rx = randomize.getValue() ? 1 + (Math.random() - 0.5) * 0.05 : 1;
             double rz = randomize.getValue() ? 1 + (Math.random() - 0.5) * 0.05 : 1;
@@ -128,7 +128,7 @@ public final class Velocity extends Module implements TickListener {
             double targetZ = savedVelocity.z * h;
             double targetY = savedVelocity.y * v;
 
-            mc.player.setVelocity(
+            mc.player.setDeltaMovement(
                 lerp(prog, vel.x, targetX) * rx,
                 lerp(prog, vel.y, targetY),
                 lerp(prog, vel.z, targetZ) * rz
@@ -139,8 +139,8 @@ public final class Velocity extends Module implements TickListener {
     private void handleCancel() {
         if (mc.player.hurtTime > 0 && hitTicks == 0) {
             hitTicks = mc.player.hurtTime;
-            Vec3d vel = mc.player.getVelocity();
-            mc.player.setVelocity(0, vel.y * 0.05, 0);
+            Vec3 vel = mc.player.getDeltaMovement();
+            mc.player.setDeltaMovement(0, vel.y * 0.05, 0);
         }
     }
 

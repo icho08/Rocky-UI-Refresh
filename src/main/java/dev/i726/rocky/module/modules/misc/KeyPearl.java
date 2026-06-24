@@ -10,9 +10,9 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
 import dev.i726.rocky.utils.KeyUtils;
-import net.minecraft.item.Items;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.item.Items;
 import org.lwjgl.glfw.GLFW;
 
 public final class KeyPearl extends Module implements TickListener {
@@ -46,7 +46,7 @@ public final class KeyPearl extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if(mc.currentScreen != null)
+        if(mc.screen != null)
             return;
 
         if(KeyUtils.isKeyPressed(activateKey.getKey())) {
@@ -65,9 +65,9 @@ public final class KeyPearl extends Module implements TickListener {
             }
 
             if(!hasActivated) {
-                ActionResult result = mc.interactionManager.interactItem(mc.player, Hand.MAIN_HAND);
-                if (result.isAccepted() && result.isAccepted())
-                    mc.player.swingHand(Hand.MAIN_HAND);
+                InteractionResult result = mc.gameMode.useItem(mc.player, InteractionHand.MAIN_HAND);
+                if (result.consumesAction() && result.consumesAction())
+                    mc.player.swing(InteractionHand.MAIN_HAND);
 
                 hasActivated = true;
             }

@@ -51,27 +51,27 @@ public final class LongJump extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null) return;
 
-        boolean onGround = mc.player.isOnGround();
+        boolean onGround = mc.player.onGround();
 
         // Detect the jump frame: was on ground last tick, now airborne, going up
-        if (wasOnGround && !onGround && mc.player.getVelocity().y > 0) {
+        if (wasOnGround && !onGround && mc.player.getDeltaMovement().y > 0) {
             if (requireSprint.getValue() && !mc.player.isSprinting()) {
                 wasOnGround = onGround;
                 return;
             }
             if (onlyForward.getValue() && mc.player.input != null
-                    && !mc.player.input.playerInput.forward()) {
+                    && !mc.player.input.keyPresses.forward()) {
                 wasOnGround = onGround;
                 return;
             }
 
-            double yaw = Math.toRadians(mc.player.getYaw());
-            double vx = mc.player.getVelocity().x;
-            double vz = mc.player.getVelocity().z;
+            double yaw = Math.toRadians(mc.player.yRot());
+            double vx = mc.player.getDeltaMovement().x;
+            double vz = mc.player.getDeltaMovement().z;
 
             // Scale horizontal component by boost multiplier
             double scale = boost.getValue();
-            mc.player.addVelocity(
+            mc.player.push(
                     vx * (scale - 1.0),
                     heightBoost.getValue(),
                     vz * (scale - 1.0));

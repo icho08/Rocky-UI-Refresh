@@ -2,9 +2,8 @@ package dev.i726.rocky.event.events;
 
 import dev.i726.rocky.event.CancellableEvent;
 import dev.i726.rocky.event.Listener;
-import net.minecraft.network.packet.Packet;
-
 import java.util.ArrayList;
+import net.minecraft.network.protocol.Packet;
 
 
 public interface PacketReceiveListener extends Listener {

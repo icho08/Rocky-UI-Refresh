@@ -6,7 +6,7 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 public final class HighJump extends Module implements TickListener {
 
@@ -44,13 +44,13 @@ public final class HighJump extends Module implements TickListener {
     public void onTick() {
         if (mc.player == null) return;
 
-        boolean onGround = mc.player.isOnGround();
+        boolean onGround = mc.player.onGround();
 
         // Apply the boost the first tick the player leaves the ground
         if (!onGround && wasOnGround && !boosted) {
-            Vec3d vel = mc.player.getVelocity();
+            Vec3 vel = mc.player.getDeltaMovement();
             if (vel.y > 0.01) {
-                mc.player.setVelocity(vel.x, vel.y + jumpBoost.getValue(), vel.z);
+                mc.player.setDeltaMovement(vel.x, vel.y + jumpBoost.getValue(), vel.z);
                 boosted = true;
             }
         }
@@ -60,7 +60,7 @@ public final class HighJump extends Module implements TickListener {
 
         // Zero fallDistance while still ascending so only descent height counts
         if (noFall.getValue() && !onGround) {
-            Vec3d vel = mc.player.getVelocity();
+            Vec3 vel = mc.player.getDeltaMovement();
             if (vel.y > 0) mc.player.fallDistance = 0f;
         }
 

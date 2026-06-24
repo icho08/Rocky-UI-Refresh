@@ -17,7 +17,7 @@ public final class Phase extends Module implements TickListener {
     public void onEnable() {
         eventManager.add(TickListener.class, this);
         if (mc.player != null) {
-            mc.player.noClip = true;
+            mc.player.noPhysics = true;
             mc.player.fallDistance = 0f;
         }
         super.onEnable();
@@ -27,7 +27,7 @@ public final class Phase extends Module implements TickListener {
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
         if (mc.player != null) {
-            mc.player.noClip = false;
+            mc.player.noPhysics = false;
         }
         super.onDisable();
     }
@@ -37,7 +37,7 @@ public final class Phase extends Module implements TickListener {
         if (mc.player == null) return;
         // noClip lets the player pass through blocks using normal WASD movement.
         // No velocity override — that's what caused it to act like a flight module.
-        mc.player.noClip = true;
+        mc.player.noPhysics = true;
         mc.player.fallDistance = 0f;
     }
 }

@@ -3,10 +3,6 @@ package dev.i726.rocky;
 import dev.i726.rocky.auth.AuthManager;
 import dev.i726.rocky.managers.ProfileManager;
 import net.fabricmc.api.ClientModInitializer;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
-
 import java.io.IOException;
 
 public final class Main implements ClientModInitializer {

@@ -6,8 +6,8 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.entity.LivingEntity;
 
 public final class Criticals extends Module implements AttackListener {
 
@@ -41,8 +41,8 @@ public final class Criticals extends Module implements AttackListener {
     public void onAttack(AttackEvent event) {
         if (mc.player == null) return;
         if (!(event.getTarget() instanceof LivingEntity)) return;
-        if (mc.player.isInFluid() || mc.player.isClimbing()) return;
-        if (onlyGround.getValue() && !mc.player.isOnGround()) return;
+        if (mc.player.isInLiquid() || mc.player.onClimbable()) return;
+        if (onlyGround.getValue() && !mc.player.onGround()) return;
 
         if (mode.isMode(Mode.Packet)) {
             // Classic 3-packet crit: send up → down → grounded before the attack lands.
@@ -52,19 +52,19 @@ public final class Criticals extends Module implements AttackListener {
             double z  = mc.player.getZ();
             boolean hc = mc.player.horizontalCollision;
 
-            mc.getNetworkHandler().sendPacket(
-                    new PlayerMoveC2SPacket.PositionAndOnGround(x, y + 0.0625, z, false, hc));
-            mc.getNetworkHandler().sendPacket(
-                    new PlayerMoveC2SPacket.PositionAndOnGround(x, y, z, false, hc));
-            mc.getNetworkHandler().sendPacket(
-                    new PlayerMoveC2SPacket.OnGroundOnly(true, hc));
+            mc.getConnection().send(
+                    new ServerboundMovePlayerPacket.Pos(x, y + 0.0625, z, false, hc));
+            mc.getConnection().send(
+                    new ServerboundMovePlayerPacket.Pos(x, y, z, false, hc));
+            mc.getConnection().send(
+                    new ServerboundMovePlayerPacket.StatusOnly(true, hc));
 
         } else { // Jump
-            if (mc.player.isOnGround()) {
-                mc.player.setVelocity(
-                        mc.player.getVelocity().x,
+            if (mc.player.onGround()) {
+                mc.player.setDeltaMovement(
+                        mc.player.getDeltaMovement().x,
                         0.42,
-                        mc.player.getVelocity().z);
+                        mc.player.getDeltaMovement().z);
             }
         }
     }

@@ -7,12 +7,12 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.attribute.EntityAttributeModifier;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.item.ItemStack;
-import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.ItemStack;
 
 public final class AutoArmor extends Module implements TickListener {
 
@@ -48,7 +48,7 @@ public final class AutoArmor extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.screen != null) return;
         if (!timer.hasReached(delay.getValue())) return;
 
         EquipmentSlot[]  slots  = { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET };
@@ -58,7 +58,7 @@ public final class AutoArmor extends Module implements TickListener {
             if (!guards[s].getValue()) continue;
 
             EquipmentSlot slot    = slots[s];
-            ItemStack     current = mc.player.getEquippedStack(slot);
+            ItemStack     current = mc.player.getItemBySlot(slot);
             int betterInvIdx      = findBetter(slot, current);
             if (betterInvIdx == -1) continue;
 
@@ -78,9 +78,9 @@ public final class AutoArmor extends Module implements TickListener {
                     ? betterInvIdx + 36
                     : betterInvIdx;
 
-            mc.interactionManager.clickSlot(
-                    mc.player.playerScreenHandler.syncId,
-                    handlerSlot, 0, SlotActionType.QUICK_MOVE, mc.player);
+            mc.gameMode.handleInventoryMouseClick(
+                    mc.player.inventoryMenu.containerId,
+                    handlerSlot, 0, ContainerInput.QUICK_MOVE, mc.player);
 
             timer.reset();
             return;
@@ -98,10 +98,10 @@ public final class AutoArmor extends Module implements TickListener {
         int bestProt    = currentProt;
 
         for (int i = 0; i < 36; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
 
-            var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+            var equippable = stack.get(DataComponents.EQUIPPABLE);
             if (equippable == null || equippable.slot() != slot) continue;
 
             int prot = protection(stack);
@@ -119,13 +119,13 @@ public final class AutoArmor extends Module implements TickListener {
     private int protection(ItemStack stack) {
         if (stack.isEmpty()) return 0;
 
-        var modifiers = stack.get(DataComponentTypes.ATTRIBUTE_MODIFIERS);
+        var modifiers = stack.get(DataComponents.ATTRIBUTE_MODIFIERS);
         if (modifiers != null) {
             int total = 0;
             for (var entry : modifiers.modifiers()) {
-                if (entry.attribute().value() == EntityAttributes.ARMOR.value()) {
-                    EntityAttributeModifier mod = entry.modifier();
-                    total += (int) mod.value();
+                if (entry.attribute().value() == Attributes.ARMOR.value()) {
+                    AttributeModifier mod = entry.modifier();
+                    total += (int) mod.amount();
                 }
             }
             if (total > 0) return total;

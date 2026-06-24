@@ -8,15 +8,8 @@ buildscript {
 }
 
 plugins {
-    id 'fabric-loom' version '1.16.1'
+    id 'net.fabricmc.fabric-loom' version '1.16.2'
     id 'maven-publish'
-}
-
-loom {
-    mixin {
-        useLegacyMixinAp = true
-        defaultRefmapName = "rocky-refmap.json"
-    }
 }
 
 version = project.mod_version
@@ -35,13 +28,13 @@ configurations {
 }
 
 dependencies {
-    // To change the versions see the gradle.properties file
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    mappings "net.fabricmc:yarn:${project.yarn_mappings}:v2"
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
     implementation 'org.projectlombok:lombok:1.18.46'
     annotationProcessor('org.projectlombok:lombok:1.18.46')
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
 
     compileOnly files("lib/annotations-1.0.6.jar")
 }
@@ -59,21 +52,16 @@ processResources {
     }
 }
 
-def targetJavaVersion = 21
 tasks.withType(JavaCompile).configureEach {
     it.options.encoding = "UTF-8"
-    if (targetJavaVersion >= 10 || JavaVersion.current().isJava10Compatible()) {
-        it.options.release.set(targetJavaVersion)
-        it.options.compilerArgs.addAll(['--add-modules', 'jdk.attach'])
-    }
+    it.options.release = 25
 }
 
 java {
-    def javaVersion = JavaVersion.toVersion(targetJavaVersion)
-    if (JavaVersion.current() < javaVersion) {
-        toolchain.languageVersion = JavaLanguageVersion.of(targetJavaVersion)
-    }
     withSourcesJar()
+
+    sourceCompatibility = JavaVersion.VERSION_25
+    targetCompatibility = JavaVersion.VERSION_25
 }
 
 jar {
@@ -81,12 +69,10 @@ jar {
         rename { "${it}_${project.archives_base_name}" }
     }
 
-    // Include JARs from lib/ directory in the final JAR
     from {
         configurations.shadow.collect { it.isDirectory() ? it : zipTree(it) }
     }
 
-    // Avoid duplicating META-INF files when merging libraries
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
     manifest {
@@ -101,22 +87,19 @@ jar {
     }
 }
 
-task obfuscate(type: proguard.gradle.ProGuardTask, dependsOn: remapJar) {
-    def inputJar  = remapJar.archiveFile.get().asFile
+task obfuscate(type: proguard.gradle.ProGuardTask, dependsOn: jar) {
+    def inputJar  = jar.archiveFile.get().asFile
     def outputJar = file("${buildDir}/libs/${archives_base_name}-${version}-obf.jar")
 
     injars(inputJar)
     outjars(outputJar)
 
-    // Java runtime library
     def javaHome = System.getProperty('java.home')
     libraryjars("${javaHome}/jmods/java.base.jmod", filter: '!**.jar,!module-info.class')
     libraryjars("${javaHome}/jmods/java.desktop.jmod", filter: '!**.jar,!module-info.class')
 
     configuration('proguard.pro')
 
-    // Minecraft and Fabric jars from loom's cache (deferred to execution time
-    // so Fabric Loom can finish setting up its MinecraftProvider first)
     doFirst {
         configurations.compileClasspath.each { File f ->
             if (f.exists() && f.name.endsWith('.jar')) {

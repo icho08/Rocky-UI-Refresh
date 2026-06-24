@@ -36,7 +36,7 @@ public final class TimeChanger extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.world == null) return;
+        if (mc.level == null) return;
 
         WeatherMode w = weather.getMode();
         if (w == WeatherMode.NORMAL) return;
@@ -45,7 +45,7 @@ public final class TimeChanger extends Module implements TickListener {
         float rain    = (w == WeatherMode.CLEAR) ? 0f : 1f;
         float thunder = (w == WeatherMode.THUNDER) ? 1f : 0f;
 
-        Object world = mc.world;
+        Object world = mc.level;
         setFloat(world, rain,    "rainGradient", "rain", "precipitation", "rainLevel");
         setFloat(world, rain,    "rainGradientPrev", "rainPrev", "prevRain", "prevPrecipitation");
         setFloat(world, thunder, "thunderGradient", "thunder", "thunderLevel");

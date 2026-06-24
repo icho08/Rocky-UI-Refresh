@@ -10,8 +10,8 @@ import dev.i726.rocky.module.setting.KeybindSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.item.BlockItem;
-import net.minecraft.util.hit.HitResult;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.phys.HitResult;
 import org.lwjgl.glfw.GLFW;
 
 public final class DragClick extends Module implements TickListener {
@@ -46,10 +46,10 @@ public final class DragClick extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.currentScreen != null)
+        if (mc.player == null || mc.screen != null)
             return;
 
-        boolean keyPressed = GLFW.glfwGetKey(mc.getWindow().getHandle(), dragKey.getKey()) == GLFW.GLFW_PRESS;
+        boolean keyPressed = GLFW.glfwGetKey(mc.getWindow().handle(), dragKey.getKey()) == GLFW.GLFW_PRESS;
         
         if (keyPressed && !isDragging) {
             isDragging = true;
@@ -65,11 +65,11 @@ public final class DragClick extends Module implements TickListener {
     }
 
     private void performDragClick() {
-        if (onlyBlocks.getValue() && !(mc.player.getMainHandStack().getItem() instanceof BlockItem))
+        if (onlyBlocks.getValue() && !(mc.player.getMainHandItem().getItem() instanceof BlockItem))
             return;
 
-        if (mc.crosshairTarget != null && mc.crosshairTarget.getType() == HitResult.Type.BLOCK) {
-            ((MinecraftClientAccessor) mc).invokeDoItemUse();
+        if (mc.hitResult != null && mc.hitResult.getType() == HitResult.Type.BLOCK) {
+            ((MinecraftClientAccessor) mc).invokeStartUseItem();
         }
     }
 }

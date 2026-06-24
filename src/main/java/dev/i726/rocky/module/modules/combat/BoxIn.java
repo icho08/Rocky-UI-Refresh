@@ -10,19 +10,18 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
 import dev.i726.rocky.utils.RotationUtils;
 import dev.i726.rocky.utils.rotation.Rotation;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public class BoxIn extends Module implements PlayerTickListener {
 
@@ -67,7 +66,7 @@ public class BoxIn extends Module implements PlayerTickListener {
 
     @Override
     public void onEnable() {
-        if (mc.player == null || mc.world == null) { setEnabled(false); return; }
+        if (mc.player == null || mc.level == null) { setEnabled(false); return; }
 
         buildQueue();
 
@@ -102,10 +101,10 @@ public class BoxIn extends Module implements PlayerTickListener {
 
     private void buildQueue() {
         placeQueue.clear();
-        BlockPos   p      = mc.player.getBlockPos();
-        Direction  facing = mc.player.getHorizontalFacing();
+        BlockPos   p      = mc.player.blockPosition();
+        Direction  facing = mc.player.getDirection();
 
-        if (floor.getValue()) placeQueue.add(p.down());
+        if (floor.getValue()) placeQueue.add(p.below());
 
         if (feet.getValue()) {
             addSide(p, Direction.NORTH, facing);
@@ -114,28 +113,28 @@ public class BoxIn extends Module implements PlayerTickListener {
             addSide(p, Direction.WEST,  facing);
         }
         if (head.getValue()) {
-            BlockPos h = p.up();
+            BlockPos h = p.above();
             addSide(h, Direction.NORTH, facing);
             addSide(h, Direction.EAST,  facing);
             addSide(h, Direction.SOUTH, facing);
             addSide(h, Direction.WEST,  facing);
         }
-        if (roof.getValue()) placeQueue.add(p.up(2));
+        if (roof.getValue()) placeQueue.add(p.above(2));
     }
 
     private void addSide(BlockPos base, Direction dir, Direction facing) {
         if (skipFacing.getValue() && dir == facing) return;
-        placeQueue.add(base.offset(dir));
+        placeQueue.add(base.relative(dir));
     }
 
     @Override
     public void onPlayerTick() {
-        if (mc.player == null || mc.world == null) { setEnabled(false); return; }
+        if (mc.player == null || mc.level == null) { setEnabled(false); return; }
 
         // Remove positions that are already filled
         placeQueue.removeIf(pos ->
-                !mc.world.getBlockState(pos).isReplaceable()
-                && mc.world.getBlockState(pos).isSolidBlock(mc.world, pos));
+                !mc.level.getBlockState(pos).canBeReplaced()
+                && mc.level.getBlockState(pos).isRedstoneConductor(mc.level, pos));
 
         if (placeQueue.isEmpty()) {
             if (disableAfter.getValue()) setEnabled(false);
@@ -143,8 +142,8 @@ public class BoxIn extends Module implements PlayerTickListener {
         }
 
         // Verify we still have the right block
-        if (mc.player.getInventory().getStack(mc.player.getInventory().getSelectedSlot()).isEmpty()
-                || !(mc.player.getInventory().getStack(mc.player.getInventory().getSelectedSlot()).getItem() instanceof BlockItem)) {
+        if (mc.player.getInventory().getItem(mc.player.getInventory().getSelectedSlot()).isEmpty()
+                || !(mc.player.getInventory().getItem(mc.player.getInventory().getSelectedSlot()).getItem() instanceof BlockItem)) {
             // Our slot ran out — find a new one
             blockSlot = findBlockSlot();
             if (blockSlot == -1) { setEnabled(false); return; }
@@ -161,7 +160,7 @@ public class BoxIn extends Module implements PlayerTickListener {
             BlockPos pos = placeQueue.get(i);
 
             // Skip already-occupied positions
-            if (!mc.world.getBlockState(pos).isReplaceable()) {
+            if (!mc.level.getBlockState(pos).canBeReplaced()) {
                 placeQueue.remove(i);
                 i--;
                 continue;
@@ -187,30 +186,30 @@ public class BoxIn extends Module implements PlayerTickListener {
         };
 
         for (Direction dir : priorityOrder) {
-            BlockPos  neighbour = pos.offset(dir);
+            BlockPos  neighbour = pos.relative(dir);
             Direction placeSide = dir.getOpposite(); // face of neighbour we click on
 
             // Neighbour must exist and be a real solid block (not air, not replaceable)
-            if (mc.world.getBlockState(neighbour).isAir()) continue;
-            if (mc.world.getBlockState(neighbour).isReplaceable()) continue;
+            if (mc.level.getBlockState(neighbour).isAir()) continue;
+            if (mc.level.getBlockState(neighbour).canBeReplaced()) continue;
 
             // Build hit vector at the center of the clicked face
-            Vec3d hitVec = new Vec3d(
-                neighbour.getX() + 0.5 + placeSide.getOffsetX() * 0.4,
-                neighbour.getY() + 0.5 + placeSide.getOffsetY() * 0.4,
-                neighbour.getZ() + 0.5 + placeSide.getOffsetZ() * 0.4
+            Vec3 hitVec = new Vec3(
+                neighbour.getX() + 0.5 + placeSide.getStepX() * 0.4,
+                neighbour.getY() + 0.5 + placeSide.getStepY() * 0.4,
+                neighbour.getZ() + 0.5 + placeSide.getStepZ() * 0.4
             );
 
             if (rotate.getValue()) {
                 Rotation rotation = RotationUtils.getDirection(mc.player, hitVec);
-                mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
+                mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
                         (float) rotation.yaw(), (float) rotation.pitch(),
-                        mc.player.isOnGround(), false));
+                        mc.player.onGround(), false));
             }
 
             BlockHitResult hit = new BlockHitResult(hitVec, placeSide, neighbour, false);
-            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
             return true;
         }
         return false;
@@ -224,12 +223,12 @@ public class BoxIn extends Module implements PlayerTickListener {
 
     private int findBlockSlot() {
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             if (!(stack.getItem() instanceof BlockItem bi)) continue;
             Block b = bi.getBlock();
             if (blockType.isMode(BlockType.OBSIDIAN)    && b == Blocks.OBSIDIAN)    return i;
             if (blockType.isMode(BlockType.ENDER_CHEST) && b == Blocks.ENDER_CHEST) return i;
-            if (blockType.isMode(BlockType.WOOL) && b.getTranslationKey().contains("wool")) return i;
+            if (blockType.isMode(BlockType.WOOL) && b.getDescriptionId().contains("wool")) return i;
             if (blockType.isMode(BlockType.ANY))                                    return i;
         }
         return -1;

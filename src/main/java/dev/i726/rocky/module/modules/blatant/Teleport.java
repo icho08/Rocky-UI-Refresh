@@ -6,10 +6,10 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 public final class Teleport extends Module implements TickListener {
 
@@ -47,18 +47,18 @@ public final class Teleport extends Module implements TickListener {
         fired = true;
 
         if (toTarget.getValue()) {
-            HitResult hit = mc.crosshairTarget;
+            HitResult hit = mc.hitResult;
             if (hit instanceof BlockHitResult bhr) {
                 BlockPos bp = bhr.getBlockPos();
-                mc.player.setPosition(bp.getX() + 0.5, bp.getY() + 1.0, bp.getZ() + 0.5);
+                mc.player.setPos(bp.getX() + 0.5, bp.getY() + 1.0, bp.getZ() + 0.5);
             }
         } else {
-            Vec3d look = mc.player.getRotationVector().normalize().multiply(distance.getValue());
-            Vec3d pos  = mc.player.getEntityPos().add(look);
-            mc.player.setPosition(pos.x, pos.y, pos.z);
+            Vec3 look = mc.player.getLookAngle().normalize().scale(distance.getValue());
+            Vec3 pos  = mc.player.position().add(look);
+            mc.player.setPos(pos.x, pos.y, pos.z);
         }
 
-        mc.player.setVelocity(Vec3d.ZERO);
+        mc.player.setDeltaMovement(Vec3.ZERO);
         // Auto-disable after firing
         eventManager.remove(TickListener.class, this);
         setEnabledStatus(false);

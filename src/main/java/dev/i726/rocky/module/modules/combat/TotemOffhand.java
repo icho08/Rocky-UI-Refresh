@@ -8,10 +8,10 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
-import net.minecraft.item.Items;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.world.item.Items;
 
 public final class TotemOffhand extends Module implements TickListener {
     private final NumberSetting switchDelay = new NumberSetting(EncryptedString.of("Switch Delay"), 0, 5, 0, 1);
@@ -44,10 +44,10 @@ public final class TotemOffhand extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if(mc.currentScreen != null)
+        if(mc.screen != null)
             return;
 
-        if(mc.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING)
+        if(mc.player.getOffhandItem().getItem() != Items.TOTEM_OF_UNDYING)
             active = true;
 
         if(active) {
@@ -66,7 +66,7 @@ public final class TotemOffhand extends Module implements TickListener {
                 }
 
                 if (!sent) {
-                    mc.getNetworkHandler().getConnection().send(new PlayerActionC2SPacket(PlayerActionC2SPacket.Action.SWAP_ITEM_WITH_OFFHAND, BlockPos.ORIGIN, Direction.DOWN));
+                    mc.getConnection().getConnection().send(new ServerboundPlayerActionPacket(ServerboundPlayerActionPacket.Action.SWAP_ITEM_WITH_OFFHAND, BlockPos.ZERO, Direction.DOWN));
                     sent = true;
                     return;
                 }

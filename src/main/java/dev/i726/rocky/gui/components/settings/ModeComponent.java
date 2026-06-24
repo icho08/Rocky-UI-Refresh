@@ -2,8 +2,8 @@ package dev.i726.rocky.gui.components.settings;
 
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.setting.ModeSetting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class ModeComponent extends SettingComponent {
 
@@ -19,15 +19,15 @@ public class ModeComponent extends SettingComponent {
     }
 
     @Override
-    public void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
         ctx.fill(x, y, x + width, y + 14, GuiTheme.settingBg());
 
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 setting.getName().toString(), x + 8, y + 3, GuiTheme.textSecondary(), false);
 
         String modeName = formatName(setting.getMode().name());
-        int modeW = MinecraftClient.getInstance().textRenderer.getWidth(modeName);
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        int modeW = Minecraft.getInstance().font.width(modeName);
+        ctx.text(Minecraft.getInstance().font,
                 modeName, x + width - modeW - 6, y + 3, GuiTheme.textAccent(), false);
 
         queueTooltipIfHovered(setting, x, y, width, 14, mouseX, mouseY);

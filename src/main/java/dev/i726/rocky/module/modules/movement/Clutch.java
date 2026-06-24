@@ -8,22 +8,22 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
 import dev.i726.rocky.utils.MouseSimulation;
-import net.minecraft.block.AirBlock;
-import net.minecraft.block.FluidBlock;
-import net.minecraft.client.network.ClientCommonNetworkHandler;
-import net.minecraft.item.BlockItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.ClientConnection;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 
 import java.lang.reflect.Field;
+import net.minecraft.client.multiplayer.ClientCommonPacketListenerImpl;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.AirBlock;
+import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Clutch — saves you from falling by silently rotating toward the nearest
@@ -101,16 +101,16 @@ public final class Clutch extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
 
-        if (mc.player.isOnGround()) {
+        if (mc.player.onGround()) {
             tryRestoreSlot();
             return;
         }
 
-        if (onSneak.getValue() && !mc.player.isSneaking()) return;
+        if (onSneak.getValue() && !mc.player.isShiftKeyDown()) return;
 
-        double vy = mc.player.getVelocity().y;
+        double vy = mc.player.getDeltaMovement().y;
         if (vy >= -fallSpeed.getValue()) return;
 
         if (onlyVoid.getValue() && hasGroundBelow((int) voidCheck.getValue())) return;
@@ -129,37 +129,37 @@ public final class Clutch extends Module implements TickListener {
         // Only bail if the player is already INSIDE a solid block (shouldn't happen normally).
         // We intentionally do NOT bail when foot.down() is solid — that's exactly when we
         // want to clutch (ground is one block below and the player is still falling).
-        BlockPos foot = mc.player.getBlockPos();
+        BlockPos foot = mc.player.blockPosition();
         if (isSolid(foot)) { tryRestoreSlot(); return; }
 
         // Scan downward up to 4 levels for the first solid surface we can click.
         // Priority: directly below foot, then one further, etc.
         BlockHitResult hit = null;
         for (int dy = 0; dy <= 3; dy++) {
-            hit = buildPlaceHit(foot.down(dy));
+            hit = buildPlaceHit(foot.below(dy));
             if (hit != null) break;
         }
         if (hit == null) return;
 
         // ── Silent rotation + placement ───────────────────────────────────────
-        Vec3d   hitVec     = hit.getPos();
-        Vec3d   eye        = mc.player.getEyePos();
+        Vec3   hitVec     = hit.getLocation();
+        Vec3   eye        = mc.player.getEyePosition();
         float[] look       = calcLook(eye, hitVec);
         float   blockYaw   = look[0];
         float   blockPitch = look[1];
-        boolean onGround   = mc.player.isOnGround();
+        boolean onGround   = mc.player.onGround();
         boolean hCol       = mc.player.horizontalCollision;
 
-        ClientConnection conn = getConnection();
+        Connection conn = getConnection();
         if (conn == null) return;
 
         placing = true;
         try {
-            conn.send(new PlayerMoveC2SPacket.LookAndOnGround(blockYaw, blockPitch, onGround, hCol));
+            conn.send(new ServerboundMovePlayerPacket.Rot(blockYaw, blockPitch, onGround, hCol));
 
             if (clickSimulation.getValue()) MouseSimulation.mouseClick(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
-            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-            mc.player.swingHand(Hand.MAIN_HAND);
+            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+            mc.player.swing(InteractionHand.MAIN_HAND);
         } finally {
             placing = false;
         }
@@ -175,35 +175,35 @@ public final class Clutch extends Module implements TickListener {
     }
 
     private boolean holdingBlock() {
-        return mc.player.getMainHandStack().getItem() instanceof BlockItem;
+        return mc.player.getMainHandItem().getItem() instanceof BlockItem;
     }
 
     private int findBlockInHotbar() {
         int setting = blockSlot.getValueInt();
         if (setting >= 1 && setting <= 9) {
             int idx = setting - 1;
-            ItemStack stack = mc.player.getInventory().getStack(idx);
+            ItemStack stack = mc.player.getInventory().getItem(idx);
             return (!stack.isEmpty() && stack.getItem() instanceof BlockItem) ? idx : -1;
         }
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() instanceof BlockItem) return i;
+            if (mc.player.getInventory().getItem(i).getItem() instanceof BlockItem) return i;
         }
         return -1;
     }
 
     private boolean hasGroundBelow(int depth) {
-        BlockPos foot = mc.player.getBlockPos();
+        BlockPos foot = mc.player.blockPosition();
         for (int i = 1; i <= depth; i++) {
-            if (isSolid(foot.down(i))) return true;
+            if (isSolid(foot.below(i))) return true;
         }
         return false;
     }
 
     private boolean isSolid(BlockPos pos) {
-        var state = mc.world.getBlockState(pos);
+        var state = mc.level.getBlockState(pos);
         return !(state.getBlock() instanceof AirBlock)
-                && !(state.getBlock() instanceof FluidBlock)
-                && !state.isReplaceable();
+                && !(state.getBlock() instanceof LiquidBlock)
+                && !state.canBeReplaced();
     }
 
     /**
@@ -217,36 +217,36 @@ public final class Clutch extends Module implements TickListener {
             Direction.WEST, Direction.EAST, Direction.UP
         };
         for (Direction dir : priority) {
-            BlockPos nb = pos.offset(dir);
+            BlockPos nb = pos.relative(dir);
             if (!isSolid(nb)) continue;
             Direction face = dir.getOpposite();
-            Vec3d hitVec = new Vec3d(
-                    nb.getX() + 0.5 + face.getOffsetX() * 0.3,
-                    nb.getY() + 0.5 + face.getOffsetY() * 0.3,
-                    nb.getZ() + 0.5 + face.getOffsetZ() * 0.3);
+            Vec3 hitVec = new Vec3(
+                    nb.getX() + 0.5 + face.getStepX() * 0.3,
+                    nb.getY() + 0.5 + face.getStepY() * 0.3,
+                    nb.getZ() + 0.5 + face.getStepZ() * 0.3);
             return new BlockHitResult(hitVec, face, nb, false);
         }
         return null;
     }
 
-    private static float[] calcLook(Vec3d from, Vec3d to) {
+    private static float[] calcLook(Vec3 from, Vec3 to) {
         double dx = to.x - from.x;
         double dy = to.y - from.y;
         double dz = to.z - from.z;
         double hDist = Math.sqrt(dx * dx + dz * dz);
         float yaw   = (float) Math.toDegrees(Math.atan2(-dx, dz));
         float pitch = (float) Math.toDegrees(-Math.atan2(dy, hDist));
-        return new float[]{ yaw, MathHelper.clamp(pitch, -90f, 90f) };
+        return new float[]{ yaw, Mth.clamp(pitch, -90f, 90f) };
     }
 
-    private ClientConnection getConnection() {
+    private Connection getConnection() {
         try {
-            Class<?> cls = ClientCommonNetworkHandler.class;
+            Class<?> cls = ClientCommonPacketListenerImpl.class;
             while (cls != null) {
                 for (Field f : cls.getDeclaredFields()) {
-                    if (ClientConnection.class.isAssignableFrom(f.getType())) {
+                    if (Connection.class.isAssignableFrom(f.getType())) {
                         f.setAccessible(true);
-                        return (ClientConnection) f.get(mc.getNetworkHandler());
+                        return (Connection) f.get(mc.getConnection());
                     }
                 }
                 cls = cls.getSuperclass();

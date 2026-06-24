@@ -2,10 +2,6 @@ package dev.i726.rocky.managers;
 
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.hit.EntityHitResult;
-
 import java.io.IOException;
 import java.lang.reflect.Type;
 import java.nio.file.Files;
@@ -15,6 +11,9 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.EntityHitResult;
 
 import static dev.i726.rocky.Rocky.mc;
 
@@ -30,17 +29,17 @@ public final class FriendManager {
         load();
     }
 
-    public void addFriend(PlayerEntity player) {
+    public void addFriend(Player player) {
         friends.add(player.getName().getString());
         save();
     }
 
-    public void removeFriend(PlayerEntity player) {
+    public void removeFriend(Player player) {
         friends.remove(player.getName().getString());
         save();
     }
 
-    public boolean isFriend(PlayerEntity player) {
+    public boolean isFriend(Player player) {
         return friends.contains(player.getName().getString());
     }
 
@@ -53,9 +52,9 @@ public final class FriendManager {
     }
 
     public boolean isAimingOverFriend() {
-        if (mc.crosshairTarget instanceof EntityHitResult hitResult) {
+        if (mc.hitResult instanceof EntityHitResult hitResult) {
             Entity entity = hitResult.getEntity();
-            if (entity instanceof PlayerEntity player) {
+            if (entity instanceof Player player) {
                 return isFriend(player);
             }
         }

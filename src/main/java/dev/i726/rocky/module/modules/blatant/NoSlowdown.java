@@ -5,7 +5,7 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 public final class NoSlowdown extends Module implements TickListener {
 
@@ -36,20 +36,20 @@ public final class NoSlowdown extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        Vec3d vel = mc.player.getVelocity();
+        Vec3 vel = mc.player.getDeltaMovement();
 
-        if (soulsand.getValue() && mc.player.isOnGround()) {
+        if (soulsand.getValue() && mc.player.onGround()) {
             double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
             if (hSpeed > 0 && hSpeed < 0.18) {
                 double factor = 0.18 / hSpeed;
-                mc.player.setVelocity(vel.x * factor, vel.y, vel.z * factor);
+                mc.player.setDeltaMovement(vel.x * factor, vel.y, vel.z * factor);
             }
         }
 
-        if (slime.getValue() && mc.player.isOnGround() && vel.y > 0) {
-            mc.player.setVelocity(vel.x, 0, vel.z);
+        if (slime.getValue() && mc.player.onGround() && vel.y > 0) {
+            mc.player.setDeltaMovement(vel.x, 0, vel.z);
         }
     }
 }

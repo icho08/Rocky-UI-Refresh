@@ -13,10 +13,9 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Random;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Applies human-like imperfections and packet-level randomisation to
@@ -66,7 +65,7 @@ public final class BypassAssist extends Module implements TickListener {
     private final Random rng        = new Random();
     private int  flagTicks          = 0;
     private int  noiseTick          = 0;
-    private Vec3d prevVelocity      = null;
+    private Vec3 prevVelocity      = null;
     private double prevY            = Double.NaN;
 
     // Smoothed rotation offset for rotation noise
@@ -120,14 +119,14 @@ public final class BypassAssist extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
-        if (mc.getNetworkHandler() == null) return;
+        if (mc.player == null || mc.level == null) return;
+        if (mc.getConnection() == null) return;
 
         double currentY = mc.player.getY();
 
         // ── 1. Flag detection ─────────────────────────────────────────────────
         if (flagDetect.getValue()) {
-            Vec3d vel = mc.player.getVelocity();
+            Vec3 vel = mc.player.getDeltaMovement();
             if (prevVelocity != null) {
                 double dh = Math.sqrt(
                         Math.pow(vel.x - prevVelocity.x, 2) +
@@ -135,7 +134,7 @@ public final class BypassAssist extends Module implements TickListener {
 
                 boolean steppingUp = !Double.isNaN(prevY) && (currentY - prevY) > 0.05 && (currentY - prevY) < 1.5;
 
-                if (dh > 0.4 && !mc.player.isOnGround() && !steppingUp) {
+                if (dh > 0.4 && !mc.player.onGround() && !steppingUp) {
                     triggerFlagResponse();
                 }
             }
@@ -153,24 +152,24 @@ public final class BypassAssist extends Module implements TickListener {
         }
 
         // ── 2. Rotation noise — applied every tick while moving ───────────────
-        if (rotationNoise.getValue() && mc.player.isOnGround() && mc.options.forwardKey.isPressed()) {
+        if (rotationNoise.getValue() && mc.player.onGround() && mc.options.keyUp.isDown()) {
             double amp = noiseAmplitude() * 0.5;
             rotNoiseYaw   = rotNoiseYaw   * 0.6f + (float)((rng.nextDouble() - 0.5) * amp);
             rotNoisePitch = rotNoisePitch * 0.6f + (float)((rng.nextDouble() - 0.5) * amp * 0.5);
 
-            float newYaw   = mc.player.getYaw()   + rotNoiseYaw;
-            float newPitch = net.minecraft.util.math.MathHelper.clamp(
-                    mc.player.getPitch() + rotNoisePitch, -90f, 90f);
+            float newYaw   = mc.player.yRot()   + rotNoiseYaw;
+            float newPitch = net.minecraft.util.Mth.clamp(
+                    mc.player.xRot() + rotNoisePitch, -90f, 90f);
 
-            mc.getNetworkHandler().sendPacket(
-                    new net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket.Full(
+            mc.getConnection().send(
+                    new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.PosRot(
                             mc.player.getX(), mc.player.getY(), mc.player.getZ(),
                             newYaw, newPitch,
-                            mc.player.isOnGround(), mc.player.horizontalCollision));
+                            mc.player.onGround(), mc.player.horizontalCollision));
         }
 
         // ── 3. Motion noise (while moving on the ground) ──────────────────────
-        if (motionNoise.getValue() && mc.player.isOnGround()) {
+        if (motionNoise.getValue() && mc.player.onGround()) {
             noiseTick++;
             if (noiseTick >= noiseInterval.getValueInt()) {
                 noiseTick = 0;
@@ -229,17 +228,17 @@ public final class BypassAssist extends Module implements TickListener {
     // ── Motion noise packet ───────────────────────────────────────────────────
 
     private void sendNoisePacket() {
-        if (mc.player == null || mc.getNetworkHandler() == null) return;
-        if (mc.options.forwardKey.isPressed()) {
+        if (mc.player == null || mc.getConnection() == null) return;
+        if (mc.options.keyUp.isDown()) {
             double amp = noiseAmplitude();
             double nx  = (rng.nextDouble() - 0.5) * amp;
             double nz  = (rng.nextDouble() - 0.5) * amp;
-            mc.getNetworkHandler().sendPacket(
-                    new PlayerMoveC2SPacket.PositionAndOnGround(
+            mc.getConnection().send(
+                    new ServerboundMovePlayerPacket.Pos(
                             mc.player.getX() + nx,
                             mc.player.getY(),
                             mc.player.getZ() + nz,
-                            mc.player.isOnGround(),
+                            mc.player.onGround(),
                             mc.player.horizontalCollision));
         }
     }

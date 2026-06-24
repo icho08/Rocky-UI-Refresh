@@ -2,9 +2,8 @@ package dev.i726.rocky.event.events;
 
 import dev.i726.rocky.event.CancellableEvent;
 import dev.i726.rocky.event.Listener;
-import net.minecraft.network.packet.Packet;
-
 import java.util.ArrayList;
+import net.minecraft.network.protocol.Packet;
 
 
 public interface PacketSendListener extends Listener {
@@ -12,9 +11,9 @@ public interface PacketSendListener extends Listener {
 
 	class PacketSendEvent extends CancellableEvent<PacketSendListener> {
 		public Packet packet;
-		public final net.minecraft.network.ClientConnection connection;
+		public final net.minecraft.network.Connection connection;
 
-		public PacketSendEvent(Packet packet, net.minecraft.network.ClientConnection connection) {
+		public PacketSendEvent(Packet packet, net.minecraft.network.Connection connection) {
 			this.packet = packet;
 			this.connection = connection;
 		}

@@ -3,20 +3,20 @@ package dev.i726.rocky.mixin;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.module.modules.render.NoParticles;
 import net.minecraft.client.particle.Particle;
-import net.minecraft.client.particle.ParticleManager;
-import net.minecraft.particle.ParticleEffect;
-import net.minecraft.particle.ParticleTypes;
+import net.minecraft.client.particle.ParticleEngine;
+import net.minecraft.core.particles.ParticleOptions;
+import net.minecraft.core.particles.ParticleTypes;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(ParticleManager.class)
+@Mixin(ParticleEngine.class)
 public class ParticleManagerMixin {
 
-    @Inject(method = "addParticle(Lnet/minecraft/particle/ParticleEffect;DDDDDD)Lnet/minecraft/client/particle/Particle;",
+    @Inject(method = "createParticle(Lnet/minecraft/core/particles/ParticleOptions;DDDDDD)Lnet/minecraft/client/particle/Particle;",
             at = @At("HEAD"), cancellable = true)
-    private <T extends ParticleEffect> void onAddParticle(T effect,
+    private <T extends ParticleOptions> void onAddParticle(T effect,
                                                            double x, double y, double z,
                                                            double vx, double vy, double vz,
                                                            CallbackInfoReturnable<Particle> cir) {
@@ -34,7 +34,7 @@ public class ParticleManagerMixin {
         }
     }
 
-    private boolean isCombatParticle(ParticleEffect effect) {
+    private boolean isCombatParticle(ParticleOptions effect) {
         return effect.getType() == ParticleTypes.CRIT
                 || effect.getType() == ParticleTypes.SWEEP_ATTACK
                 || effect.getType() == ParticleTypes.DAMAGE_INDICATOR

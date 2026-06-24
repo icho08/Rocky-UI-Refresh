@@ -6,17 +6,17 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.entity.attribute.EntityAttributeModifier;
-import net.minecraft.entity.attribute.EntityAttributes;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.resources.Identifier;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.phys.Vec3;
 
 public final class Speed extends Module implements TickListener {
 
     public enum Mode { Boost, SetSpeed }
 
-    private static final Identifier SPEED_ID = Identifier.of("rocky", "blatant_speed");
+    private static final Identifier SPEED_ID = Identifier.fromNamespaceAndPath("rocky", "blatant_speed");
 
     private final ModeSetting<Mode> mode = new ModeSetting<>(EncryptedString.of("Mode"), Mode.Boost, Mode.class)
             .setDescription(EncryptedString.of("Boost = multiply velocity, SetSpeed = set fixed move speed"));
@@ -49,37 +49,37 @@ public final class Speed extends Module implements TickListener {
         if (mc.player == null) return;
 
         if (mode.isMode(Mode.SetSpeed)) {
-            var attr = mc.player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
+            var attr = mc.player.getAttribute(Attributes.MOVEMENT_SPEED);
             if (attr == null) return;
             double base   = attr.getBaseValue();
             double target = base * multiplier.getValue();
             double needed = target - base;
             boolean hasMod = attr.getModifier(SPEED_ID) != null;
             if (!hasMod) {
-                attr.addTemporaryModifier(new EntityAttributeModifier(SPEED_ID, needed, EntityAttributeModifier.Operation.ADD_VALUE));
+                attr.addTransientModifier(new AttributeModifier(SPEED_ID, needed, AttributeModifier.Operation.ADD_VALUE));
             } else {
-                double cur = attr.getModifier(SPEED_ID).value();
+                double cur = attr.getModifier(SPEED_ID).amount();
                 if (Math.abs(cur - needed) > 0.0001) {
                     attr.removeModifier(SPEED_ID);
-                    attr.addTemporaryModifier(new EntityAttributeModifier(SPEED_ID, needed, EntityAttributeModifier.Operation.ADD_VALUE));
+                    attr.addTransientModifier(new AttributeModifier(SPEED_ID, needed, AttributeModifier.Operation.ADD_VALUE));
                 }
             }
         } else {
             removeModifier();
-            if (!mc.player.isOnGround()) return;
-            Vec3d vel = mc.player.getVelocity();
+            if (!mc.player.onGround()) return;
+            Vec3 vel = mc.player.getDeltaMovement();
             double hSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
             if (hSpeed > 0.01) {
-                float yaw = mc.player.getYaw() * ((float) Math.PI / 180f);
+                float yaw = mc.player.yRot() * ((float) Math.PI / 180f);
                 double boost = multiplier.getValue() * 0.05;
-                mc.player.addVelocity(-MathHelper.sin(yaw) * boost, 0, MathHelper.cos(yaw) * boost);
+                mc.player.push(-Mth.sin(yaw) * boost, 0, Mth.cos(yaw) * boost);
             }
         }
     }
 
     private void removeModifier() {
         if (mc != null && mc.player != null) {
-            var attr = mc.player.getAttributeInstance(EntityAttributes.MOVEMENT_SPEED);
+            var attr = mc.player.getAttribute(Attributes.MOVEMENT_SPEED);
             if (attr != null) attr.removeModifier(SPEED_ID);
         }
     }

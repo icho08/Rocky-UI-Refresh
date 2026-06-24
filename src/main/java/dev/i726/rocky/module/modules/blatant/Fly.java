@@ -6,8 +6,8 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.Vec3;
 
 public final class Fly extends Module implements TickListener {
 
@@ -33,7 +33,7 @@ public final class Fly extends Module implements TickListener {
     public void onEnable() {
         eventManager.add(TickListener.class, this);
         if (mc.player != null) {
-            mc.player.getAbilities().allowFlying = true;
+            mc.player.getAbilities().mayfly = true;
             mc.player.getAbilities().flying = true;
         }
         super.onEnable();
@@ -43,7 +43,7 @@ public final class Fly extends Module implements TickListener {
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
         if (mc.player != null) {
-            mc.player.getAbilities().allowFlying = false;
+            mc.player.getAbilities().mayfly = false;
             mc.player.getAbilities().flying = false;
         }
         super.onDisable();
@@ -55,22 +55,22 @@ public final class Fly extends Module implements TickListener {
 
         // Always clear fall damage while flying
         mc.player.fallDistance = 0f;
-        mc.player.getAbilities().allowFlying = true;
+        mc.player.getAbilities().mayfly = true;
         mc.player.getAbilities().flying = true;
 
         if (mode.isMode(Mode.Velocity)) {
-            float yaw = mc.player.getYaw() * ((float) Math.PI / 180f);
+            float yaw = mc.player.yRot() * ((float) Math.PI / 180f);
             double velX = 0, velY = 0, velZ = 0;
-            var input = mc.player.input.playerInput;
+            var input = mc.player.input.keyPresses;
 
-            if (input.forward())  { velX -= MathHelper.sin(yaw) * speed.getValue(); velZ += MathHelper.cos(yaw) * speed.getValue(); }
-            if (input.backward()) { velX += MathHelper.sin(yaw) * speed.getValue(); velZ -= MathHelper.cos(yaw) * speed.getValue(); }
-            if (input.left())     { velX -= MathHelper.cos(yaw) * speed.getValue(); velZ -= MathHelper.sin(yaw) * speed.getValue(); }
-            if (input.right())    { velX += MathHelper.cos(yaw) * speed.getValue(); velZ += MathHelper.sin(yaw) * speed.getValue(); }
+            if (input.forward())  { velX -= Mth.sin(yaw) * speed.getValue(); velZ += Mth.cos(yaw) * speed.getValue(); }
+            if (input.backward()) { velX += Mth.sin(yaw) * speed.getValue(); velZ -= Mth.cos(yaw) * speed.getValue(); }
+            if (input.left())     { velX -= Mth.cos(yaw) * speed.getValue(); velZ -= Mth.sin(yaw) * speed.getValue(); }
+            if (input.right())    { velX += Mth.cos(yaw) * speed.getValue(); velZ += Mth.sin(yaw) * speed.getValue(); }
             if (input.jump())     velY =  vertSpeed.getValue();
-            if (input.sneak())    velY = -vertSpeed.getValue();
+            if (input.shift())    velY = -vertSpeed.getValue();
 
-            mc.player.setVelocity(new Vec3d(velX, velY, velZ));
+            mc.player.setDeltaMovement(new Vec3(velX, velY, velZ));
         }
         // Vanilla mode: built-in creative flight handles movement via the ability flags above.
     }

@@ -8,18 +8,16 @@ import dev.i726.rocky.gui.ClickGuiScreen;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.SelfDestruct;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.projectile.ProjectileUtil;
-import net.minecraft.item.BlockItem;
-import net.minecraft.text.Text;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.client.Minecraft;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import org.lwjgl.glfw.GLFW;
 import org.lwjgl.glfw.GLFWKeyCallbackI;
 
@@ -51,14 +49,14 @@ public final class AgentTarget {
                 int attempts = 0;
                 while (attempts < 100) {
                     try {
-                        if (MinecraftClient.getInstance() != null
-                                && MinecraftClient.getInstance().getWindow() != null) break;
+                        if (Minecraft.getInstance() != null
+                                && Minecraft.getInstance().getWindow() != null) break;
                     } catch (Throwable ignored) {}
                     Thread.sleep(500);
                     attempts++;
                 }
 
-                MinecraftClient mc = MinecraftClient.getInstance();
+                Minecraft mc = Minecraft.getInstance();
                 if (mc == null) {
                     System.err.println("[Rocky] Bootstrap: MinecraftClient still null after timeout.");
                     return;
@@ -111,7 +109,7 @@ public final class AgentTarget {
      *
      * Guarded by FABRIC_BRIDGE_REGISTERED so re-injection doesn't double-register.
      */
-    private static void setupFabricBridge(MinecraftClient mc) {
+    private static void setupFabricBridge(Minecraft mc) {
         if (!FABRIC_BRIDGE_REGISTERED.compareAndSet(false, true)) {
             System.out.println("[Rocky] Fabric bridge already registered — skipping.");
             return;
@@ -128,17 +126,9 @@ public final class AgentTarget {
             }
         });
 
-        // ── HUD overlay (2D) ────────────────────────────────────────────────────
-        HudRenderCallback.EVENT.register((context, tickCounter) -> {
-            if (Rocky.INSTANCE == null) return;
-            try {
-                EventManager.fire(new HudListener.HudEvent(context, tickCounter.getTickProgress(true)));
-            } catch (Throwable ignored) {}
-        });
-
         // ── Keyboard (GUI toggle, module keybinds) ──────────────────────────────
         // Chain onto the existing GLFW key callback so nothing is lost.
-        long windowHandle = mc.getWindow().getHandle();
+        long windowHandle = mc.getWindow().handle();
         GLFWKeyCallbackI[] chain = new GLFWKeyCallbackI[1];
         GLFWKeyCallbackI newKeyCallback = (window, key, scancode, action, mods) -> {
             if (Rocky.INSTANCE != null && action != GLFW.GLFW_RELEASE) {
@@ -156,16 +146,16 @@ public final class AgentTarget {
         new Thread(() -> {
             try {
                 while (!SelfDestruct.destruct) {
-                    MinecraftClient mc = MinecraftClient.getInstance();
+                    Minecraft mc = Minecraft.getInstance();
                     if (mc != null && mc.getWindow() != null && Rocky.INSTANCE != null && Rocky.INSTANCE.getModuleManager() != null) {
-                        long handle = mc.getWindow().getHandle();
+                        long handle = mc.getWindow().handle();
 
                         // 1. GUI TOGGLE
                         boolean rshift = GLFW.glfwGetKey(handle, GLFW.GLFW_KEY_RIGHT_SHIFT) == 1;
                         if (rshift && !KEY_STATES.getOrDefault(GLFW.GLFW_KEY_RIGHT_SHIFT, false)) {
                             mc.execute(() -> {
                                 if (!SelfDestruct.destruct && Rocky.INSTANCE != null) {
-                                    if (mc.currentScreen instanceof ClickGuiScreen) mc.setScreen(null);
+                                    if (mc.screen instanceof ClickGuiScreen) mc.setScreen(null);
                                     else mc.setScreen(new ClickGuiScreen());
                                 }
                             });
@@ -173,7 +163,7 @@ public final class AgentTarget {
                         KEY_STATES.put(GLFW.GLFW_KEY_RIGHT_SHIFT, rshift);
 
                         // 2. MODULE TOGGLES
-                        if (mc.player != null && mc.currentScreen == null) {
+                        if (mc.player != null && mc.screen == null) {
                             for (Module module : Rocky.INSTANCE.getModuleManager().getModules()) {
                                 int key = module.getKey();
                                 if (key <= 0 || key == GLFW.GLFW_KEY_RIGHT_SHIFT) continue;
@@ -199,11 +189,11 @@ public final class AgentTarget {
         }, "Rocky-HyperEngine").start();
     }
 
-    private static void runHyperEngine(MinecraftClient mc) {
+    private static void runHyperEngine(Minecraft mc) {
         // SPRINT
         Module sprint = Rocky.INSTANCE.getModuleManager().getModuleByName("Sprint");
         if (sprint != null && sprint.isEnabled()) {
-            if (mc.player.input != null && mc.player.input.playerInput.forward()) {
+            if (mc.player.input != null && mc.player.input.keyPresses.forward()) {
                 mc.player.setSprinting(true);
             }
         }
@@ -212,11 +202,11 @@ public final class AgentTarget {
         Module triggerBot = Rocky.INSTANCE.getModuleManager().getModuleByName("TriggerBot");
         if (triggerBot != null && triggerBot.isEnabled()) {
             Entity target = manualRaycast(mc, 3.0); // 3 blocks reach
-            if (target != null && target.isAlive() && mc.player.getAttackCooldownProgress(0.0f) >= 0.95f) {
+            if (target != null && target.isAlive() && mc.player.getAttackStrengthScale(0.0f) >= 0.95f) {
                 mc.execute(() -> {
-                    if (mc.interactionManager != null && !SelfDestruct.destruct) {
-                        mc.interactionManager.attackEntity(mc.player, target);
-                        mc.player.swingHand(Hand.MAIN_HAND);
+                    if (mc.gameMode != null && !SelfDestruct.destruct) {
+                        mc.gameMode.attack(mc.player, target);
+                        mc.player.swing(InteractionHand.MAIN_HAND);
                     }
                 });
             }
@@ -227,20 +217,20 @@ public final class AgentTarget {
         if (smartBridge != null && smartBridge.isEnabled()) {
             if (bridgeCooldown > 0) bridgeCooldown--;
             
-            net.minecraft.util.math.BlockPos below = net.minecraft.util.math.BlockPos.ofFloored(mc.player.getX(), mc.player.getY() - 1, mc.player.getZ());
-            if (mc.world.getBlockState(below).isAir() && mc.player.isOnGround()) {
-                mc.options.sneakKey.setPressed(true);
-                if (bridgeCooldown <= 0 && mc.player.getMainHandStack().getItem() instanceof BlockItem) {
+            net.minecraft.core.BlockPos below = net.minecraft.core.BlockPos.containing(mc.player.getX(), mc.player.getY() - 1, mc.player.getZ());
+            if (mc.level.getBlockState(below).isAir() && mc.player.onGround()) {
+                mc.options.keyShift.setDown(true);
+                if (bridgeCooldown <= 0 && mc.player.getMainHandItem().getItem() instanceof BlockItem) {
                     mc.execute(() -> {
-                        if (mc.interactionManager != null && mc.crosshairTarget instanceof BlockHitResult bhr) {
-                            mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, bhr);
-                            mc.player.swingHand(Hand.MAIN_HAND);
+                        if (mc.gameMode != null && mc.hitResult instanceof BlockHitResult bhr) {
+                            mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, bhr);
+                            mc.player.swing(InteractionHand.MAIN_HAND);
                             bridgeCooldown = 3;
                         }
                     });
                 }
-            } else if (mc.options.sneakKey.isPressed() && GLFW.glfwGetKey(mc.getWindow().getHandle(), GLFW.GLFW_KEY_LEFT_SHIFT) != 1) {
-                mc.options.sneakKey.setPressed(false);
+            } else if (mc.options.keyShift.isDown() && GLFW.glfwGetKey(mc.getWindow().handle(), GLFW.GLFW_KEY_LEFT_SHIFT) != 1) {
+                mc.options.keyShift.setDown(false);
             }
         }
 
@@ -248,21 +238,21 @@ public final class AgentTarget {
         Module velocity = Rocky.INSTANCE.getModuleManager().getModuleByName("Velocity");
         if (velocity != null && velocity.isEnabled()) {
             if (mc.player.hurtTime > 0) {
-                mc.player.setVelocity(mc.player.getVelocity().x * 0.1, mc.player.getVelocity().y, mc.player.getVelocity().z * 0.1);
+                mc.player.setDeltaMovement(mc.player.getDeltaMovement().x * 0.1, mc.player.getDeltaMovement().y, mc.player.getDeltaMovement().z * 0.1);
             }
         }
     }
 
-    private static Entity manualRaycast(MinecraftClient mc, double reach) {
+    private static Entity manualRaycast(Minecraft mc, double reach) {
         Entity player = mc.player;
-        if (player == null || mc.world == null) return null;
+        if (player == null || mc.level == null) return null;
 
-        Vec3d start = player.getEyePos();
-        Vec3d direction = player.getRotationVec(1.0F);
-        Vec3d end = start.add(direction.x * reach, direction.y * reach, direction.z * reach);
-        Box box = player.getBoundingBox().stretch(direction.multiply(reach)).expand(1.0, 1.0, 1.0);
+        Vec3 start = player.getEyePosition();
+        Vec3 direction = player.getViewVector(1.0F);
+        Vec3 end = start.add(direction.x * reach, direction.y * reach, direction.z * reach);
+        AABB box = player.getBoundingBox().expandTowards(direction.scale(reach)).inflate(1.0, 1.0, 1.0);
         
-        EntityHitResult hit = ProjectileUtil.raycast(player, start, end, box, (entity) -> !entity.isSpectator() && entity.canHit(), reach * reach);
+        EntityHitResult hit = ProjectileUtil.getEntityHitResult(player, start, end, box, (entity) -> !entity.isSpectator() && entity.isPickable(), reach * reach);
         
         if (hit != null && hit.getType() == HitResult.Type.ENTITY) {
             return hit.getEntity();

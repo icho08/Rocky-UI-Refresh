@@ -1,13 +1,13 @@
 package dev.i726.rocky.gui.components.settings;
 
 import dev.i726.rocky.module.setting.Setting;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public abstract class SettingComponent {
 
     public abstract int getHeight();
 
-    public abstract void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta);
+    public abstract void render(GuiGraphicsExtractor ctx, int x, int y, int width, int mouseX, int mouseY, float delta);
 
     protected void queueTooltipIfHovered(Setting<?> setting, int x, int y, int width, int height, int mouseX, int mouseY) {
         if (mouseX >= x && mouseX < x + width && mouseY >= y && mouseY < y + height) {

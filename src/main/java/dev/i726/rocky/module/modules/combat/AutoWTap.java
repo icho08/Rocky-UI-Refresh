@@ -9,12 +9,11 @@ import dev.i726.rocky.module.setting.MinMaxSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.network.packet.c2s.play.ClientCommandC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Random;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.Vec3;
 
 public final class AutoWTap extends Module implements PacketSendListener, HudListener {
 
@@ -57,10 +56,10 @@ public final class AutoWTap extends Module implements PacketSendListener, HudLis
     @Override
     public void onDisable() {
         if (isWTapping) {
-            mc.options.forwardKey.setPressed(true);
+            mc.options.keyUp.setDown(true);
             if (sprintPackets.getValue() && mc.player != null && mc.player.isSprinting()) {
-                mc.getNetworkHandler().sendPacket(new ClientCommandC2SPacket(
-                        mc.player, ClientCommandC2SPacket.Mode.START_SPRINTING));
+                mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                        mc.player, ServerboundPlayerCommandPacket.Action.START_SPRINTING));
             }
         }
         eventManager.remove(PacketSendListener.class, this);
@@ -70,20 +69,20 @@ public final class AutoWTap extends Module implements PacketSendListener, HudLis
 
     @Override
     public void onRenderHud(HudEvent event) {
-        if (mc.player == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.screen != null) return;
 
-        if (!shouldWTap() || !mc.options.forwardKey.isPressed()) {
+        if (!shouldWTap() || !mc.options.keyUp.isDown()) {
             isWTapping = false;
             return;
         }
 
         if (isWTapping && wtapTimer.delay(currentDelay)) {
             // Re-press W
-            mc.options.forwardKey.setPressed(true);
+            mc.options.keyUp.setDown(true);
             // Re-start sprint on server
             if (sprintPackets.getValue()) {
-                mc.getNetworkHandler().sendPacket(new ClientCommandC2SPacket(
-                        mc.player, ClientCommandC2SPacket.Mode.START_SPRINTING));
+                mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                        mc.player, ServerboundPlayerCommandPacket.Action.START_SPRINTING));
             }
             isWTapping   = false;
             currentDelay = delay.getRandomValueInt();
@@ -91,20 +90,20 @@ public final class AutoWTap extends Module implements PacketSendListener, HudLis
     }
 
     private boolean shouldWTap() {
-        return mc.player != null && (mc.player.isOnGround() || inAir.getValue());
+        return mc.player != null && (mc.player.onGround() || inAir.getValue());
     }
 
     @Override
     public void onPacketSend(PacketSendEvent event) {
-        if (!(event.packet instanceof PlayerInteractEntityC2SPacket packet)) return;
+        if (!(event.packet instanceof ServerboundInteractPacket packet)) return;
 
-        packet.handle(new PlayerInteractEntityC2SPacket.Handler() {
-            @Override public void interact(Hand hand) {}
-            @Override public void interactAt(Hand hand, Vec3d pos) {}
+        packet.dispatch(new ServerboundInteractPacket.Handler() {
+            @Override public void onInteraction(InteractionHand hand) {}
+            @Override public void onInteraction(InteractionHand hand, Vec3 pos) {}
 
             @Override
-            public void attack() {
-                if (!shouldWTap() || !mc.options.forwardKey.isPressed()) return;
+            public void onAttack() {
+                if (!shouldWTap() || !mc.options.keyUp.isDown()) return;
                 if (requireSprint.getValue() && !mc.player.isSprinting()) return;
 
                 int c = chance.getValueInt();
@@ -113,10 +112,10 @@ public final class AutoWTap extends Module implements PacketSendListener, HudLis
                 currentDelay = delay.getRandomValueInt();
 
                 // Release W and tell the server we stopped sprinting
-                mc.options.forwardKey.setPressed(false);
+                mc.options.keyUp.setDown(false);
                 if (sprintPackets.getValue()) {
-                    mc.getNetworkHandler().sendPacket(new ClientCommandC2SPacket(
-                            mc.player, ClientCommandC2SPacket.Mode.STOP_SPRINTING));
+                    mc.getConnection().send(new ServerboundPlayerCommandPacket(
+                            mc.player, ServerboundPlayerCommandPacket.Action.STOP_SPRINTING));
                 }
                 wtapTimer.reset();
                 isWTapping = true;

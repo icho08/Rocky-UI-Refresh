@@ -2,12 +2,11 @@ package dev.i726.rocky.gui;
 
 import dev.i726.rocky.module.modules.render.HUD;
 import dev.i726.rocky.utils.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.Click;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.text.Text;
-
 import java.awt.Color;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
+import net.minecraft.network.chat.Component;
 
 /**
  * HUD layout editor — opened by pressing the "HUD Editor Key" keybind (default: Numpad 0).
@@ -21,7 +20,7 @@ public final class HudEditorScreen extends Screen {
     private double lastMouseX, lastMouseY;
 
     public HudEditorScreen() {
-        super(Text.literal("HUD Editor"));
+        super(Component.literal("HUD Editor"));
     }
 
     // ── Default positions (computed from current screen size) ─────────────
@@ -51,13 +50,13 @@ public final class HudEditorScreen extends Screen {
     // ── Render ────────────────────────────────────────────────────────────
 
     @Override
-    public void render(DrawContext ctx, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int mouseX, int mouseY, float delta) {
         ctx.fill(0, 0, width, height, GuiTheme.rgba(0, 0, 0, 160));
 
-        ctx.drawCenteredTextWithShadow(textRenderer,
+        ctx.centeredText(font,
                 "HUD Layout Editor  —  drag panels to reposition",
                 width / 2, 6, GuiTheme.textPrimary());
-        ctx.drawCenteredTextWithShadow(textRenderer,
+        ctx.centeredText(font,
                 "ESC to save & close", width / 2, 18, GuiTheme.textSecondary());
 
         // Reset-all button
@@ -67,7 +66,7 @@ public final class HudEditorScreen extends Screen {
                           && mouseY >= rbY && mouseY <= rbY + rbH;
         ctx.fill(rbX, rbY, rbX + rbW, rbY + rbH,
                 hoverReset ? GuiTheme.rgba(220, 60, 60, 220) : GuiTheme.rgba(160, 40, 40, 180));
-        ctx.drawCenteredTextWithShadow(textRenderer, "Reset All",
+        ctx.centeredText(font, "Reset All",
                 rbX + rbW / 2, rbY + 5, 0xFFFFFFFF);
 
         // Panel handles
@@ -89,17 +88,17 @@ public final class HudEditorScreen extends Screen {
             ctx.fill(px, py, px + 3, py + ph, GuiTheme.accentInt());
 
             String label = HUD.PANEL_NAMES[id];
-            TextRenderer.drawString(label, ctx, px + 9, py + ph / 2 - 4, GuiTheme.textPrimary());
+            TextRenderer.text(label, ctx, px + 9, py + ph / 2 - 4, GuiTheme.textPrimary());
 
             String pos = px + ", " + py;
             int posW = TextRenderer.getWidth(pos);
-            ctx.drawText(textRenderer, pos,
+            ctx.text(font, pos,
                     px + pw - posW - 6, py + ph / 2 - 4,
                     GuiTheme.textSecondary(), false);
         }
 
         if (dragPanel >= 0) {
-            ctx.drawCenteredTextWithShadow(textRenderer,
+            ctx.centeredText(font,
                     "Dragging: " + HUD.PANEL_NAMES[dragPanel],
                     width / 2, height - 48, GuiTheme.accentInt());
         }
@@ -108,7 +107,7 @@ public final class HudEditorScreen extends Screen {
     // ── Mouse events — MC 1.21 Click API ─────────────────────────────────
 
     @Override
-    public boolean mouseClicked(Click click, boolean canDoubleClick) {
+    public boolean mouseClicked(MouseButtonEvent click, boolean canDoubleClick) {
         double mx = click.x(), my = click.y();
 
         // Reset-all button
@@ -139,7 +138,7 @@ public final class HudEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseDragged(Click click, double deltaX, double deltaY) {
+    public boolean mouseDragged(MouseButtonEvent click, double deltaX, double deltaY) {
         if (dragPanel >= 0) {
             lastMouseX = click.x();
             lastMouseY = click.y();
@@ -151,7 +150,7 @@ public final class HudEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseReleased(Click click) {
+    public boolean mouseReleased(MouseButtonEvent click) {
         dragPanel = -1;
         return super.mouseReleased(click);
     }
@@ -162,7 +161,7 @@ public final class HudEditorScreen extends Screen {
     }
 
     @Override
-    public boolean shouldPause() {
+    public boolean isPauseScreen() {
         return false;
     }
 }

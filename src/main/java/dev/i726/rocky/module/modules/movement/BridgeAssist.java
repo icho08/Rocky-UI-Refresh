@@ -6,7 +6,7 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 public final class BridgeAssist extends Module implements TickListener {
     private final NumberSetting edgeDistance = new NumberSetting(EncryptedString.of("Edge Distance"), 0.05, 0.5, 0.25, 0.01)
@@ -37,15 +37,15 @@ public final class BridgeAssist extends Module implements TickListener {
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
-        mc.options.sneakKey.setPressed(false);
+        mc.options.keyShift.setDown(false);
     }
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        if (onlyForward.getValue() && !mc.options.forwardKey.isPressed()) {
-            mc.options.sneakKey.setPressed(false);
+        if (onlyForward.getValue() && !mc.options.keyUp.isDown()) {
+            mc.options.keyShift.setDown(false);
             return;
         }
 
@@ -56,18 +56,18 @@ public final class BridgeAssist extends Module implements TickListener {
             holdClock--;
             shouldSneak = true;
         }
-        mc.options.sneakKey.setPressed(shouldSneak);
+        mc.options.keyShift.setDown(shouldSneak);
     }
 
     private boolean isNearEdge() {
         double x = mc.player.getX();
         double z = mc.player.getZ();
-        double vx = mc.player.getVelocity().x;
-        double vz = mc.player.getVelocity().z;
+        double vx = mc.player.getDeltaMovement().x;
+        double vz = mc.player.getDeltaMovement().z;
 
         // Check current position
-        BlockPos currentBelow = BlockPos.ofFloored(x, mc.player.getY() - 1, z);
-        if (mc.world.getBlockState(currentBelow).isAir() && hasMinFallHeight(currentBelow)) {
+        BlockPos currentBelow = BlockPos.containing(x, mc.player.getY() - 1, z);
+        if (mc.level.getBlockState(currentBelow).isAir() && hasMinFallHeight(currentBelow)) {
             return true;
         }
 
@@ -82,8 +82,8 @@ public final class BridgeAssist extends Module implements TickListener {
 
         double edge = edgeDistance.getValue();
         if (distToEdgeX <= edge || distToEdgeZ <= edge) {
-            BlockPos nextBelow = BlockPos.ofFloored(nextX, mc.player.getY() - 1, nextZ);
-            return mc.world.getBlockState(nextBelow).isAir() && hasMinFallHeight(nextBelow);
+            BlockPos nextBelow = BlockPos.containing(nextX, mc.player.getY() - 1, nextZ);
+            return mc.level.getBlockState(nextBelow).isAir() && hasMinFallHeight(nextBelow);
         }
 
         return false;
@@ -94,8 +94,8 @@ public final class BridgeAssist extends Module implements TickListener {
         BlockPos checkPos = pos;
         int min = minHeight.getValueInt();
 
-        while (fallHeight < min && mc.world.getBlockState(checkPos).isAir()) {
-            checkPos = checkPos.down();
+        while (fallHeight < min && mc.level.getBlockState(checkPos).isAir()) {
+            checkPos = checkPos.below();
             fallHeight++;
         }
 

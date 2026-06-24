@@ -7,8 +7,8 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.KeybindSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.item.Items;
-import net.minecraft.util.Hand;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Items;
 import org.lwjgl.glfw.GLFW;
 
 public final class AutoFireball extends Module implements TickListener {
@@ -40,10 +40,10 @@ public final class AutoFireball extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.currentScreen != null)
+        if (mc.player == null || mc.screen != null)
             return;
 
-        boolean keyPressed = GLFW.glfwGetKey(mc.getWindow().getHandle(), fireKey.getKey()) == GLFW.GLFW_PRESS;
+        boolean keyPressed = GLFW.glfwGetKey(mc.getWindow().handle(), fireKey.getKey()) == GLFW.GLFW_PRESS;
         
         if (keyPressed && !wasPressed) {
             throwFireball();
@@ -54,20 +54,20 @@ public final class AutoFireball extends Module implements TickListener {
 
     private void throwFireball() {
         // Check if already holding fire charge
-        if (mc.player.getMainHandStack().getItem() == Items.FIRE_CHARGE) {
-            ((MinecraftClientAccessor) mc).invokeDoItemUse();
+        if (mc.player.getMainHandItem().getItem() == Items.FIRE_CHARGE) {
+            ((MinecraftClientAccessor) mc).invokeStartUseItem();
             return;
         }
-        if (mc.player.getOffHandStack().getItem() == Items.FIRE_CHARGE) {
-            mc.interactionManager.interactItem(mc.player, Hand.OFF_HAND);
+        if (mc.player.getOffhandItem().getItem() == Items.FIRE_CHARGE) {
+            mc.gameMode.useItem(mc.player, InteractionHand.OFF_HAND);
             return;
         }
         
         // Find fire charge in inventory and switch to it
         for (int i = 0; i < 9; i++) {
-            if (mc.player.getInventory().getStack(i).getItem() == Items.FIRE_CHARGE) {
+            if (mc.player.getInventory().getItem(i).getItem() == Items.FIRE_CHARGE) {
                 mc.player.getInventory().setSelectedSlot(i);
-                ((MinecraftClientAccessor) mc).invokeDoItemUse();
+                ((MinecraftClientAccessor) mc).invokeStartUseItem();
                 return;
             }
         }

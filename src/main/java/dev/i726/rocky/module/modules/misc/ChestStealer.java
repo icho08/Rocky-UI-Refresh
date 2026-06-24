@@ -9,20 +9,25 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
 import java.util.HashMap;
 import java.util.Map;
-import net.minecraft.block.entity.*;
-import net.minecraft.client.gui.screen.ingame.GenericContainerScreen;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.world.level.block.entity.*;
+import net.minecraft.client.gui.screens.inventory.ContainerScreen;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
+import net.minecraft.world.level.block.entity.TrappedChestBlockEntity;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 public final class ChestStealer extends Module implements TickListener {
 
@@ -90,13 +95,13 @@ public final class ChestStealer extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         // ── Auto-open: find and open a nearby storage block ──────────────────
         // Purge expired looted-chest entries so we can revisit after cooldown.
         lootedChests.entrySet().removeIf(e -> System.currentTimeMillis() - e.getValue() > LOOTED_COOLDOWN_MS);
 
-        if (autoOpen.getValue() && !(mc.currentScreen instanceof GenericContainerScreen)) {
+        if (autoOpen.getValue() && !(mc.screen instanceof ContainerScreen)) {
             if (openTimer.hasReached(500)) {
                 BlockPos nearest = findNearestStorage();
                 if (nearest != null) {
@@ -109,15 +114,15 @@ public final class ChestStealer extends Module implements TickListener {
         }
 
         // ── Steal from the open chest screen ─────────────────────────────────
-        if (!(mc.currentScreen instanceof GenericContainerScreen)) return;
+        if (!(mc.screen instanceof ContainerScreen)) return;
         if (!timer.hasReached(nextDelay)) return;
 
-        GenericContainerScreenHandler handler = (GenericContainerScreenHandler) mc.player.currentScreenHandler;
-        int containerSize = handler.getRows() * 9;
+        ChestMenu handler = (ChestMenu) mc.player.containerMenu;
+        int containerSize = handler.getRowCount() * 9;
 
         if (stackFirst.getValue()) {
             for (int i = 0; i < containerSize; i++) {
-                ItemStack stack = handler.getSlot(i).getStack();
+                ItemStack stack = handler.getSlot(i).getItem();
                 if (stack.isEmpty()) continue;
                 if (ignoreTools.getValue() && isToolOrArmor(stack)) continue;
                 if (hasMatchingStack(stack)) {
@@ -128,7 +133,7 @@ public final class ChestStealer extends Module implements TickListener {
         }
 
         for (int i = 0; i < containerSize; i++) {
-            ItemStack stack = handler.getSlot(i).getStack();
+            ItemStack stack = handler.getSlot(i).getItem();
             if (stack.isEmpty()) continue;
             if (ignoreTools.getValue() && isToolOrArmor(stack)) continue;
             clickSlot(handler, i);
@@ -141,13 +146,13 @@ public final class ChestStealer extends Module implements TickListener {
             lootedChests.put(currentOpenedPos, System.currentTimeMillis());
             currentOpenedPos = null;
         }
-        if (closeWhenDone.getValue()) mc.player.closeHandledScreen();
+        if (closeWhenDone.getValue()) mc.player.closeContainer();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
-    private void clickSlot(GenericContainerScreenHandler handler, int slot) {
-        mc.interactionManager.clickSlot(handler.syncId, slot, 0, SlotActionType.QUICK_MOVE, mc.player);
+    private void clickSlot(ChestMenu handler, int slot) {
+        mc.gameMode.handleInventoryMouseClick(handler.containerId, slot, 0, ContainerInput.QUICK_MOVE, mc.player);
         timer.reset();
         rollDelay();
     }
@@ -159,7 +164,7 @@ public final class ChestStealer extends Module implements TickListener {
     /** Scans nearby loaded chunks for the nearest openable storage block,
      *  skipping any chest that was recently fully looted by us. */
     private BlockPos findNearestStorage() {
-        Vec3d eye    = mc.player.getEyePos();
+        Vec3 eye    = mc.player.getEyePosition();
         double maxR  = autoOpenRange.getValue();
         BlockPos best     = null;
         double   bestDist = Double.MAX_VALUE;
@@ -169,15 +174,15 @@ public final class ChestStealer extends Module implements TickListener {
 
         for (int cx = playerCX - 1; cx <= playerCX + 1; cx++) {
             for (int cz = playerCZ - 1; cz <= playerCZ + 1; cz++) {
-                WorldChunk chunk = mc.world.getChunkManager().getWorldChunk(cx, cz);
+                LevelChunk chunk = mc.level.getChunkSource().getChunkNow(cx, cz);
                 if (chunk == null) continue;
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
                     if (!isStorageBlock(be)) continue;
-                    if (lootedChests.containsKey(be.getPos())) continue; // skip recently looted
-                    double d = eye.distanceTo(Vec3d.ofCenter(be.getPos()));
+                    if (lootedChests.containsKey(be.getBlockPos())) continue; // skip recently looted
+                    double d = eye.distanceTo(Vec3.atCenterOf(be.getBlockPos()));
                     if (d <= maxR && d < bestDist) {
                         bestDist = d;
-                        best     = be.getPos();
+                        best     = be.getBlockPos();
                     }
                 }
             }
@@ -196,9 +201,9 @@ public final class ChestStealer extends Module implements TickListener {
      *  Computes the correct hit face from the player's eye position so
      *  the server-side geometry check always passes. */
     private void openStorage(BlockPos pos) {
-        Vec3d eye    = mc.player.getEyePos();
-        Vec3d center = Vec3d.ofCenter(pos);
-        Vec3d delta  = eye.subtract(center);
+        Vec3 eye    = mc.player.getEyePosition();
+        Vec3 center = Vec3.atCenterOf(pos);
+        Vec3 delta  = eye.subtract(center);
 
         double ax = Math.abs(delta.x), ay = Math.abs(delta.y), az = Math.abs(delta.z);
         Direction face;
@@ -206,22 +211,22 @@ public final class ChestStealer extends Module implements TickListener {
         else if (ax >= az)        face = delta.x >= 0 ? Direction.EAST  : Direction.WEST;
         else                      face = delta.z >= 0 ? Direction.SOUTH : Direction.NORTH;
 
-        Vec3d hitVec = center.add(face.getOffsetX() * 0.5, face.getOffsetY() * 0.5, face.getOffsetZ() * 0.5);
+        Vec3 hitVec = center.add(face.getStepX() * 0.5, face.getStepY() * 0.5, face.getStepZ() * 0.5);
         BlockHitResult hit = new BlockHitResult(hitVec, face, pos, false);
-        mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
+        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
     }
 
     private boolean hasMatchingStack(ItemStack target) {
         for (int i = 0; i < 36; i++) {
-            ItemStack inv = mc.player.getInventory().getStack(i);
-            if (!inv.isEmpty() && ItemStack.areItemsEqual(inv, target) && inv.getCount() < inv.getMaxCount())
+            ItemStack inv = mc.player.getInventory().getItem(i);
+            if (!inv.isEmpty() && ItemStack.isSameItem(inv, target) && inv.getCount() < inv.getMaxStackSize())
                 return true;
         }
         return false;
     }
 
     private boolean isToolOrArmor(ItemStack stack) {
-        var equippable = stack.get(DataComponentTypes.EQUIPPABLE);
+        var equippable = stack.get(DataComponents.EQUIPPABLE);
         if (equippable != null) {
             EquipmentSlot s = equippable.slot();
             if (s == EquipmentSlot.HEAD || s == EquipmentSlot.CHEST
@@ -229,10 +234,10 @@ public final class ChestStealer extends Module implements TickListener {
                 return true;
             }
         }
-        return stack.isIn(ItemTags.PICKAXES)
-                || stack.isIn(ItemTags.SHOVELS)
-                || stack.isIn(ItemTags.AXES)
-                || stack.isIn(ItemTags.HOES)
-                || stack.isIn(ItemTags.SWORDS);
+        return stack.is(ItemTags.PICKAXES)
+                || stack.is(ItemTags.SHOVELS)
+                || stack.is(ItemTags.AXES)
+                || stack.is(ItemTags.HOES)
+                || stack.is(ItemTags.SWORDS);
     }
 }

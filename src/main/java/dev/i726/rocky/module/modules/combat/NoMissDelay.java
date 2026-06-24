@@ -7,11 +7,10 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.item.AxeItem;
-import net.minecraft.item.TridentItem;
-import net.minecraft.util.hit.HitResult;
-
 import java.util.Random;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.TridentItem;
+import net.minecraft.world.phys.HitResult;
 
 public final class NoMissDelay extends Module implements AttackListener {
 
@@ -69,7 +68,7 @@ public final class NoMissDelay extends Module implements AttackListener {
 
     private boolean isValidWeapon() {
         if (mc.player == null) return false;
-        var item = mc.player.getMainHandStack().getItem();
+        var item = mc.player.getMainHandItem().getItem();
         return dev.i726.rocky.utils.WorldUtils.isSword(item)
                 || item instanceof AxeItem
                 || item instanceof TridentItem;
@@ -85,18 +84,18 @@ public final class NoMissDelay extends Module implements AttackListener {
 
     private boolean isMoving() {
         if (mc.player == null) return false;
-        double vx = mc.player.getVelocity().x;
-        double vz = mc.player.getVelocity().z;
+        double vx = mc.player.getDeltaMovement().x;
+        double vz = mc.player.getDeltaMovement().z;
         return vx * vx + vz * vz > 0.005;
     }
 
     @Override
     public void onAttack(AttackEvent event) {
-        if (mc.player == null || mc.crosshairTarget == null) return;
+        if (mc.player == null || mc.hitResult == null) return;
         if (onlyWeapon.getValue() && !isValidWeapon()) return;
         if (requireMoving.getValue() && !isMoving()) return;
 
-        if (!shouldBlock(mc.crosshairTarget.getType())) return;
+        if (!shouldBlock(mc.hitResult.getType())) return;
 
         // Occasionally let a miss through to appear human
         int p = passChance.getValueInt();

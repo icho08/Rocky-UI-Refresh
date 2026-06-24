@@ -2,19 +2,15 @@ package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.utils.CrystalUtils;
 import dev.i726.rocky.utils.RenderUtils;
-import net.minecraft.block.Block;
-import net.minecraft.block.BlockState;
-import net.minecraft.block.Blocks;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.EndCrystalItem;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.ItemUsageContext;
-import net.minecraft.item.Items;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.world.RaycastContext;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.EndCrystalItem;
+import net.minecraft.world.item.context.UseOnContext;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
@@ -27,12 +23,12 @@ import static dev.i726.rocky.Rocky.mc;
 public class EndCrystalItemMixin {
 
     @Unique
-    private Vec3d getPlayerLookVec(PlayerEntity p) {
+    private Vec3 getPlayerLookVec(Player p) {
         return RenderUtils.getPlayerLookVec(p);
     }
 
     @Unique
-    private Vec3d getClientLookVec() {
+    private Vec3 getClientLookVec() {
         assert mc.player != null;
         return getPlayerLookVec(mc.player);
     }
@@ -44,18 +40,18 @@ public class EndCrystalItemMixin {
 
     @Unique
     private BlockState getBlockState(BlockPos p) {
-        return mc.world.getBlockState(p);
+        return mc.level.getBlockState(p);
     }
 
     @Unique
     private boolean canPlaceCrystalServer(BlockPos blockPos) {
-        BlockState blockState = mc.world.getBlockState(blockPos);
-        if (!blockState.isOf(Blocks.OBSIDIAN) && !blockState.isOf(Blocks.BEDROCK))
+        BlockState blockState = mc.level.getBlockState(blockPos);
+        if (!blockState.is(Blocks.OBSIDIAN) && !blockState.is(Blocks.BEDROCK))
             return false;
         return CrystalUtils.canPlaceCrystalClientAssumeObsidian(blockPos);
     }
 
-    @Inject(method = "useOnBlock", at = @At("HEAD"))
-    private void onUse(ItemUsageContext context, CallbackInfoReturnable<ActionResult> cir) {
+    @Inject(method = "useOn", at = @At("HEAD"))
+    private void onUse(UseOnContext context, CallbackInfoReturnable<InteractionResult> cir) {
     }
 }

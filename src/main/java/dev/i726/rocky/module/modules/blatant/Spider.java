@@ -5,7 +5,7 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 public final class Spider extends Module implements TickListener {
 
@@ -34,11 +34,11 @@ public final class Spider extends Module implements TickListener {
     @Override
     public void onTick() {
         if (mc.player == null) return;
-        if (mc.player.isOnGround()) return;
+        if (mc.player.onGround()) return;
 
         if (mc.player.horizontalCollision) {
-            Vec3d vel = mc.player.getVelocity();
-            mc.player.setVelocity(vel.x, climbSpeed.getValue(), vel.z);
+            Vec3 vel = mc.player.getDeltaMovement();
+            mc.player.setDeltaMovement(vel.x, climbSpeed.getValue(), vel.z);
         }
     }
 }

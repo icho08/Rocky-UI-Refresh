@@ -3,7 +3,7 @@
   "minVersion": "0.8",
   "package": "dev.i726.rocky.mixin",
   "refmap": "rocky-refmap.json",
-  "compatibilityLevel": "JAVA_21",
+  "compatibilityLevel": "JAVA_25",
   "mixins": [
     "FabricLoaderMixin",
     "ClientConnectionMixin",

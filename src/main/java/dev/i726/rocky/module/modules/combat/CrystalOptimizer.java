@@ -10,17 +10,16 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
 import dev.i726.rocky.utils.WorldUtils;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.decoration.EndCrystalEntity;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
-import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Random;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.boss.enderdragon.EndCrystal;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 
 public final class CrystalOptimizer extends Module implements PacketSendListener {
         private final NumberSetting chance = new NumberSetting(EncryptedString.of("Kill Chance %"), 0, 100, 100, 1)
@@ -62,29 +61,29 @@ public final class CrystalOptimizer extends Module implements PacketSendListener
 
         @Override
         public void onPacketSend(PacketSendEvent event) {
-                if (!(event.packet instanceof PlayerInteractEntityC2SPacket interactPacket)) return;
+                if (!(event.packet instanceof ServerboundInteractPacket interactPacket)) return;
 
-                interactPacket.handle(new PlayerInteractEntityC2SPacket.Handler() {
+                interactPacket.dispatch(new ServerboundInteractPacket.Handler() {
                         @Override
-                        public void interact(Hand hand) {}
-
-                        @Override
-                        public void interactAt(Hand hand, Vec3d pos) {}
+                        public void onInteraction(InteractionHand hand) {}
 
                         @Override
-                        public void attack() {
-                                if (mc.crosshairTarget == null) return;
-                                if (mc.crosshairTarget.getType() != HitResult.Type.ENTITY) return;
-                                if (!(mc.crosshairTarget instanceof EntityHitResult hit)) return;
-                                if (!(hit.getEntity() instanceof EndCrystalEntity)) return;
+                        public void onInteraction(InteractionHand hand, Vec3 pos) {}
+
+                        @Override
+                        public void onAttack() {
+                                if (mc.hitResult == null) return;
+                                if (mc.hitResult.getType() != HitResult.Type.ENTITY) return;
+                                if (!(mc.hitResult instanceof EntityHitResult hit)) return;
+                                if (!(hit.getEntity() instanceof EndCrystal)) return;
 
                                 // Reach gate
                                 if (mc.player.distanceTo(hit.getEntity()) > maxReach.getValue()) return;
 
                                 // Original "tool/strength/no-weakness" gate
-                                StatusEffectInstance weakness = mc.player.getStatusEffect(StatusEffects.WEAKNESS);
-                                StatusEffectInstance strength = mc.player.getStatusEffect(StatusEffects.STRENGTH);
-                                boolean toolOk  = !requireWeapon.getValue() || WorldUtils.isTool(mc.player.getMainHandStack());
+                                MobEffectInstance weakness = mc.player.getEffect(MobEffects.WEAKNESS);
+                                MobEffectInstance strength = mc.player.getEffect(MobEffects.STRENGTH);
+                                boolean toolOk  = !requireWeapon.getValue() || WorldUtils.isTool(mc.player.getMainHandItem());
                                 boolean strOver = requireStrength.getValue() && weakness != null && strength != null && strength.getAmplifier() > weakness.getAmplifier();
                                 if (!(weakness == null || strOver || toolOk)) return;
 
@@ -105,7 +104,7 @@ public final class CrystalOptimizer extends Module implements PacketSendListener
 
                                 hit.getEntity().discard();
                                 hit.getEntity().setRemoved(Entity.RemovalReason.KILLED);
-                                hit.getEntity().onRemoved();
+                                hit.getEntity().onClientRemoval();
                         }
                 });
         }

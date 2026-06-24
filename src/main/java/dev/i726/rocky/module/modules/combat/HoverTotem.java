@@ -8,10 +8,10 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.item.Items;
-import net.minecraft.screen.slot.Slot;
-import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.inventory.Slot;
+import net.minecraft.world.item.Items;
 
 public final class HoverTotem extends Module implements TickListener {
 	private final NumberSetting delay = new NumberSetting(EncryptedString.of("Delay"), 0, 10, 1, 1)
@@ -50,13 +50,13 @@ public final class HoverTotem extends Module implements TickListener {
 
 	@Override
 	public void onTick() {
-		if (!(mc.currentScreen instanceof InventoryScreen inv) || mc.player == null) {
+		if (!(mc.screen instanceof InventoryScreen inv) || mc.player == null) {
 			delayClock = 0;
 			return;
 		}
 
-		Slot hoveredSlot = ((HandledScreenMixin) inv).getFocusedSlot();
-		if (hoveredSlot == null || hoveredSlot.getStack().getItem() != Items.TOTEM_OF_UNDYING) {
+		Slot hoveredSlot = ((HandledScreenMixin) inv).getHoveredSlot();
+		if (hoveredSlot == null || hoveredSlot.getItem().getItem() != Items.TOTEM_OF_UNDYING) {
 			return;
 		}
 
@@ -71,12 +71,12 @@ public final class HoverTotem extends Module implements TickListener {
 			return;
 		}
 
-		int slotIndex = hoveredSlot.getIndex();
+		int slotIndex = hoveredSlot.getContainerSlot();
 		if (slotIndex > 35) return; // Invalid slot
 
 		// Priority 1: Offhand (most important for survival)
-		if (!mc.player.getOffHandStack().isOf(Items.TOTEM_OF_UNDYING)) {
-			mc.interactionManager.clickSlot(inv.getScreenHandler().syncId, slotIndex, 40, SlotActionType.SWAP, mc.player);
+		if (!mc.player.getOffhandItem().is(Items.TOTEM_OF_UNDYING)) {
+			mc.gameMode.handleInventoryMouseClick(inv.getMenu().containerId, slotIndex, 40, ContainerInput.SWAP, mc.player);
 			delayClock = delay.getValueInt();
 			return;
 		}
@@ -84,11 +84,11 @@ public final class HoverTotem extends Module implements TickListener {
 		// Priority 2: Main hand slot if enabled
 		if (mainHand.getValue()) {
 			int targetSlot = totemSlot.getValueInt() - 1;
-			boolean slotEmpty = mc.player.getInventory().getStack(targetSlot).isEmpty();
-			boolean hasTotem = mc.player.getInventory().getStack(targetSlot).getItem() == Items.TOTEM_OF_UNDYING;
+			boolean slotEmpty = mc.player.getInventory().getItem(targetSlot).isEmpty();
+			boolean hasTotem = mc.player.getInventory().getItem(targetSlot).getItem() == Items.TOTEM_OF_UNDYING;
 			
 			if (!hasTotem && (!onlyEmpty.getValue() || slotEmpty)) {
-				mc.interactionManager.clickSlot(inv.getScreenHandler().syncId, slotIndex, targetSlot, SlotActionType.SWAP, mc.player);
+				mc.gameMode.handleInventoryMouseClick(inv.getMenu().containerId, slotIndex, targetSlot, ContainerInput.SWAP, mc.player);
 				delayClock = delay.getValueInt();
 			}
 		}

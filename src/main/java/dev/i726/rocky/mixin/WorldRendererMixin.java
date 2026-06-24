@@ -2,12 +2,12 @@ package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.GameRenderListener;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.RenderTickCounter;
-import net.minecraft.client.render.WorldRenderer;
-import net.minecraft.client.util.ObjectAllocator;
-import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.client.Camera;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.renderer.LevelRenderer;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
+import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
+import com.mojang.blaze3d.vertex.PoseStack;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector4f;
@@ -16,11 +16,11 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(WorldRenderer.class)
+@Mixin(LevelRenderer.class)
 public class WorldRendererMixin {
 
-    @Inject(method = "render", at = @At("TAIL"))
-    private void onRender(ObjectAllocator allocator, RenderTickCounter tickCounter, boolean renderBlockOutline,
+    @Inject(method = "renderLevel", at = @At("TAIL"))
+    private void onRender(GraphicsResourceAllocator allocator, DeltaTracker tickCounter, boolean renderBlockOutline,
                           Camera camera, Matrix4f matrix4f, Matrix4f matrix4f2, Matrix4f matrix4f3,
                           GpuBufferSlice gpuBufferSlice, Vector4f vector4f, boolean bl, CallbackInfo ci) {
         /*
@@ -35,13 +35,13 @@ public class WorldRendererMixin {
          * the inverse rotation so that world objects stay anchored in place as
          * the player looks around, rather than rotating with the mouse.
          */
-        MatrixStack matrices = new MatrixStack();
-        Quaternionf viewRot = new Quaternionf(camera.getRotation()).conjugate();
-        matrices.peek().getPositionMatrix().rotate(viewRot);
+        PoseStack matrices = new PoseStack();
+        Quaternionf viewRot = new Quaternionf(camera.rotation()).conjugate();
+        matrices.last().pose().rotate(viewRot);
 
-        EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getTickProgress(true)));
+        EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getGameTimeDeltaPartialTick(true)));
 
-        net.minecraft.client.MinecraftClient.getInstance()
-                .getBufferBuilders().getEntityVertexConsumers().draw();
+        net.minecraft.client.Minecraft.getInstance()
+                .renderBuffers().bufferSource().endBatch();
     }
 }

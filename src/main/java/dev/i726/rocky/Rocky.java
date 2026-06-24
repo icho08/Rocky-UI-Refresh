@@ -7,12 +7,11 @@ import dev.i726.rocky.managers.FriendManager;
 import dev.i726.rocky.module.ModuleManager;
 import dev.i726.rocky.managers.ProfileManager;
 import dev.i726.rocky.utils.rotation.RotatorManager;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.Screen;
-
 import java.io.File;
 import java.io.IOException;
 import java.net.*;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 
 @SuppressWarnings("all")
 public final class Rocky {
@@ -22,7 +21,7 @@ public final class Rocky {
         public EventManager eventManager;
         public FriendManager friendManager;
         public CombatManager combatManager;
-        public static MinecraftClient mc;
+        public static Minecraft mc;
         public String version = " v1.0";
         public static boolean BETA;
         public static Rocky INSTANCE;
@@ -47,7 +46,7 @@ public final class Rocky {
                 this.setLastModified();
 
                 this.guiInitialized = false;
-                mc = MinecraftClient.getInstance();
+                mc = Minecraft.getInstance();
         }
 
         public ProfileManager getProfileManager() {

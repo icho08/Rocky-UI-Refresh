@@ -5,11 +5,10 @@ import dev.i726.rocky.gui.components.settings.*;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.RenderUtils;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class ModuleRow {
 
@@ -48,7 +47,7 @@ public class ModuleRow {
         return components.stream().mapToInt(SettingComponent::getHeight).sum();
     }
 
-    public void render(DrawContext ctx, int absX, int absY, int panelWidth, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int absX, int absY, int panelWidth, int mouseX, int mouseY, float delta) {
         boolean hovering = mouseX >= absX && mouseX < absX + panelWidth
                         && mouseY >= absY && mouseY < absY + BASE_HEIGHT;
 
@@ -72,12 +71,12 @@ public class ModuleRow {
 
         int nameColor = hovering ? GuiTheme.textPrimary()
                 : GuiTheme.withAlpha(GuiTheme.textPrimary(), 200);
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 module.getName().toString(), absX + 8, absY + 5, nameColor, false);
 
         if (!components.isEmpty()) {
             String arrow = expanded ? "-" : "+";
-            ctx.drawText(MinecraftClient.getInstance().textRenderer,
+            ctx.text(Minecraft.getInstance().font,
                     arrow, absX + panelWidth - 40, absY + 5, GuiTheme.textSecondary(), false);
         }
 
@@ -105,7 +104,7 @@ public class ModuleRow {
         }
     }
 
-    private void drawSwitch(DrawContext ctx, int x, int y, float anim) {
+    private void drawSwitch(GuiGraphicsExtractor ctx, int x, int y, float anim) {
         int trackColor = GuiTheme.lerpColor(GuiTheme.toggleOff(), GuiTheme.toggleOn(), anim);
         ctx.fill(x + 1, y,     x + 21, y + 10, trackColor);
         ctx.fill(x,     y + 1, x + 22, y + 9,  trackColor);

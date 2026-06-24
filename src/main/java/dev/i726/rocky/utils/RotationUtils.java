@@ -1,40 +1,43 @@
 package dev.i726.rocky.utils;
 
 import dev.i726.rocky.utils.rotation.Rotation;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.util.Mth;
+import net.minecraft.world.phys.*;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 import static dev.i726.rocky.Rocky.mc;
 
 public final class RotationUtils {
 
-	public static Vec3d getEyesPos(PlayerEntity player) {
-		return player.getEyePos();
+	public static Vec3 getEyesPos(Player player) {
+		return player.getEyePosition();
 	}
 
 	public static BlockPos getCameraBlockPos() {
-		return mc.gameRenderer.getCamera().getBlockPos();
+		return mc.gameRenderer.getMainCamera().blockPosition();
 	}
 
 	public static BlockPos getEyesBlockPos() {
 		return new BlockPos((int) getEyesPos(mc.player).x, (int) getEyesPos(mc.player).y, (int) getEyesPos(mc.player).z);
 	}
 
-	public static Vec3d getPlayerLookVec(float yaw, float pitch) {
+	public static Vec3 getPlayerLookVec(float yaw, float pitch) {
 		float f = pitch * 0.017453292F;
 		float g = -yaw * 0.017453292F;
 
-		float h = MathHelper.cos(g);
-		float i = MathHelper.sin(g);
-		float j = MathHelper.cos(f);
-		float k = MathHelper.sin(f);
+		float h = Mth.cos(g);
+		float i = Mth.sin(g);
+		float j = Mth.cos(f);
+		float k = Mth.sin(f);
 
-		return new Vec3d((i * j), (-k), (h * j));
+		return new Vec3((i * j), (-k), (h * j));
 	}
 
-	public static Vec3d getPlayerLookVec(PlayerEntity player) {
-		return getPlayerLookVec(player.getYaw(), player.getPitch());
+	public static Vec3 getPlayerLookVec(Player player) {
+		return getPlayerLookVec(player.yRot(), player.xRot());
 	}
 
 	public static Rotation getDiff(Rotation rotation1, Rotation rotation2) {
@@ -46,8 +49,8 @@ public final class RotationUtils {
 
 	public static Rotation getSmoothRotation(Rotation from, Rotation to, double speed) {
 		return new Rotation(
-				MathHelper.lerpAngleDegrees((float) speed, (float) from.yaw(), (float) to.yaw()),
-				MathHelper.lerpAngleDegrees((float) speed, (float) from.pitch(), (float) to.pitch())
+				Mth.rotLerp((float) speed, (float) from.yaw(), (float) to.yaw()),
+				Mth.rotLerp((float) speed, (float) from.pitch(), (float) to.pitch())
 		);
 	}
 
@@ -57,30 +60,30 @@ public final class RotationUtils {
 		return diff.yaw() + diff.pitch();
 	}
 
-	public static Vec3d getClientLookVec() {
+	public static Vec3 getClientLookVec() {
 		return getPlayerLookVec(mc.player);
 	}
 
-	public static Rotation getDirection(Vec3d from, Vec3d to) {
+	public static Rotation getDirection(Vec3 from, Vec3 to) {
 		double dx = to.x - from.x,
 				dy = to.y - from.y,
 				dz = to.z - from.z,
-				dist = MathHelper.sqrt((float) (dx * dx + dz * dz));
+				dist = Mth.sqrt((float) (dx * dx + dz * dz));
 
-		return new Rotation(MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(dz, dx)) - 90.0), -MathHelper.wrapDegrees(Math.toDegrees(Math.atan2(dy, dist))));
+		return new Rotation(Mth.wrapDegrees(Math.toDegrees(Math.atan2(dz, dx)) - 90.0), -Mth.wrapDegrees(Math.toDegrees(Math.atan2(dy, dist))));
 	}
 
-	public static Rotation getDirection(Entity entity, Vec3d vec) {
-		Vec3d eyes = entity instanceof PlayerEntity player ? getEyesPos(player) : entity.getEntityPos();
+	public static Rotation getDirection(Entity entity, Vec3 vec) {
+		Vec3 eyes = entity instanceof Player player ? getEyesPos(player) : entity.position();
 		return getDirection(eyes, vec);
 	}
 
 	public static double getAngleToRotation(Rotation rotation) {
-		double currentYaw = MathHelper.wrapDegrees(mc.player.getYaw());
-		double currentPitch = MathHelper.wrapDegrees(mc.player.getPitch());
+		double currentYaw = Mth.wrapDegrees(mc.player.yRot());
+		double currentPitch = Mth.wrapDegrees(mc.player.xRot());
 
-		double diffYaw = MathHelper.wrapDegrees(currentYaw - rotation.yaw());
-		double diffPitch = MathHelper.wrapDegrees(currentPitch - rotation.pitch());
+		double diffYaw = Mth.wrapDegrees(currentYaw - rotation.yaw());
+		double diffPitch = Mth.wrapDegrees(currentPitch - rotation.pitch());
 
 		return Math.sqrt(diffYaw * diffYaw + diffPitch * diffPitch);
 	}

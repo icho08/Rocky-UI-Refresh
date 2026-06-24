@@ -10,8 +10,7 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.MaceItem;
+import net.minecraft.world.item.MaceItem;
 
 public final class HitSwap extends Module implements AttackListener, PostAttackListener, TickListener {
     public enum SwapMode {
@@ -88,13 +87,13 @@ public final class HitSwap extends Module implements AttackListener, PostAttackL
                 // "sword+axe combo" means: sword for sustain, axe for shield-break.
                 // If already holding the axe (or something else), skip.
                 if (dev.i726.rocky.utils.WorldUtils.isSword(
-                        mc.player.getInventory().getStack(currentSlot).getItem())) {
+                        mc.player.getInventory().getItem(currentSlot).getItem())) {
                     slot = InventoryUtils.getAxeSlot();
                 }
             }
             case Mace -> {
                 for (int i = 0; i < 9; i++) {
-                    if (mc.player.getInventory().getStack(i).getItem() instanceof MaceItem) {
+                    if (mc.player.getInventory().getItem(i).getItem() instanceof MaceItem) {
                         slot = i;
                         break;
                     }

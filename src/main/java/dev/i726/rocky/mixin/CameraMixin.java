@@ -2,7 +2,7 @@ package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.CameraUpdateListener;
-import net.minecraft.client.render.Camera;
+import net.minecraft.client.Camera;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.ModifyArgs;

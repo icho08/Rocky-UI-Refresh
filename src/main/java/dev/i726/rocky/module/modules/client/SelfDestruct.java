@@ -63,7 +63,7 @@ public final class SelfDestruct extends Module implements ButtonListener {
 
                 Rocky.INSTANCE.getProfileManager().saveProfile("default");
 
-                if (mc.currentScreen instanceof ClickGuiScreen) {
+                if (mc.screen instanceof ClickGuiScreen) {
                         Rocky.INSTANCE.guiInitialized = false;
                         mc.execute(() -> mc.setScreen(null));
                 }

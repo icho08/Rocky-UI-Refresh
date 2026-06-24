@@ -5,7 +5,7 @@ import dev.i726.rocky.module.Category;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.gui.screen.DeathScreen;
+import net.minecraft.client.gui.screens.DeathScreen;
 
 public final class AutoRespawn extends Module implements TickListener {
 
@@ -31,8 +31,8 @@ public final class AutoRespawn extends Module implements TickListener {
         @Override
         public void onTick() {
                 if (mc.player == null) return;
-                if (mc.currentScreen instanceof DeathScreen) {
-                        mc.player.requestRespawn();
+                if (mc.screen instanceof DeathScreen) {
+                        mc.player.respawn();
                         mc.setScreen(null);
                 }
         }

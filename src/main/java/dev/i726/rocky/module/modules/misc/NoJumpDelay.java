@@ -53,18 +53,18 @@ public final class NoJumpDelay extends Module implements TickListener {
         @Override
         public void onTick() {
                 if (mc.player == null) return;
-                if (mc.currentScreen != null) return;
+                if (mc.screen != null) return;
 
                 if (clock > 0) { clock--; return; }
 
-                if (!mc.player.isOnGround()) return;
+                if (!mc.player.onGround()) return;
 
-                if (GLFW.glfwGetKey(mc.getWindow().getHandle(), GLFW.GLFW_KEY_SPACE) != GLFW.GLFW_PRESS)
+                if (GLFW.glfwGetKey(mc.getWindow().handle(), GLFW.GLFW_KEY_SPACE) != GLFW.GLFW_PRESS)
                         return;
 
                 if (requireMoving.getValue()) {
-                        double vx = mc.player.getVelocity().x;
-                        double vz = mc.player.getVelocity().z;
+                        double vx = mc.player.getDeltaMovement().x;
+                        double vz = mc.player.getDeltaMovement().z;
                         if (vx * vx + vz * vz < 0.005) return;
                 }
 
@@ -75,8 +75,8 @@ public final class NoJumpDelay extends Module implements TickListener {
                         return;
                 }
 
-                mc.options.jumpKey.setPressed(false);
-                mc.player.jump();
+                mc.options.keyJump.setDown(false);
+                mc.player.jumpFromGround();
                 clock = cooldown.getRandomValueInt();
         }
 }

@@ -2,9 +2,8 @@ package dev.i726.rocky.event.events;
 
 import dev.i726.rocky.event.Event;
 import dev.i726.rocky.event.Listener;
-import net.minecraft.entity.Entity;
-
 import java.util.ArrayList;
+import net.minecraft.world.entity.Entity;
 
 public interface PostAttackListener extends Listener {
 	void onPostAttack(PostAttackEvent event);

@@ -42,7 +42,7 @@ public final class AntiAFK extends Module implements TickListener {
     @Override
     public void onDisable() {
         eventManager.remove(TickListener.class, this);
-        if (mc.options != null) mc.options.sneakKey.setPressed(false);
+        if (mc.options != null) mc.options.keyShift.setDown(false);
         super.onDisable();
     }
 
@@ -57,18 +57,18 @@ public final class AntiAFK extends Module implements TickListener {
             float delta = rotateRandom.getValue()
                     ? (float) (Math.random() * 360)
                     : 45f;
-            mc.player.setYaw(mc.player.getYaw() + delta);
+            mc.player.setYRot(mc.player.yRot() + delta);
 
         } else if (m == Mode.Jump) {
-            if (mc.player.isOnGround()) mc.player.jump();
+            if (mc.player.onGround()) mc.player.jumpFromGround();
 
         } else if (m == Mode.Sneak) {
             sneakToggle = !sneakToggle;
-            mc.options.sneakKey.setPressed(sneakToggle);
+            mc.options.keyShift.setDown(sneakToggle);
         }
 
-        if (chat.getValue() && mc.player.networkHandler != null) {
-            mc.player.networkHandler.sendChatMessage(".");
+        if (chat.getValue() && mc.player.connection != null) {
+            mc.player.connection.sendChat(".");
         }
     }
 }

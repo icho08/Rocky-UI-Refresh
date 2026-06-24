@@ -1,19 +1,18 @@
 package dev.i726.rocky.event.events;
 
+import com.mojang.blaze3d.vertex.PoseStack;
 import dev.i726.rocky.event.Event;
 import dev.i726.rocky.event.Listener;
-import net.minecraft.client.util.math.MatrixStack;
-
 import java.util.ArrayList;
 
 public interface GameRenderListener extends Listener {
 	void onGameRender(GameRenderEvent event);
 
 	class GameRenderEvent extends Event<GameRenderListener> {
-		public MatrixStack matrices;
+		public PoseStack matrices;
 		public float delta;
 
-		public GameRenderEvent(MatrixStack matrices, float delta) {
+		public GameRenderEvent(PoseStack matrices, float delta) {
 			this.matrices = matrices;
 			this.delta = delta;
 		}

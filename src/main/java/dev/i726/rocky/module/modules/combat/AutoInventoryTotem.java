@@ -8,9 +8,9 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
-import net.minecraft.client.gui.screen.ingame.InventoryScreen;
-import net.minecraft.item.Items;
-import net.minecraft.screen.slot.SlotActionType;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.world.item.Items;
 
 public final class AutoInventoryTotem extends Module implements TickListener {
 	private final NumberSetting delay = new NumberSetting(EncryptedString.of("Delay"), 0, 10, 1, 1);
@@ -42,17 +42,17 @@ public final class AutoInventoryTotem extends Module implements TickListener {
 	@Override
 	public void onDisable() {
 		eventManager.remove(TickListener.class, this);
-		if (mc.currentScreen instanceof InventoryScreen) {
-			mc.currentScreen.close();
+		if (mc.screen instanceof InventoryScreen) {
+			mc.screen.onClose();
 		}
 		super.onDisable();
 	}
 
 	private boolean needsTotems() {
-		boolean offhandEmpty = mc.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING;
+		boolean offhandEmpty = mc.player.getOffhandItem().getItem() != Items.TOTEM_OF_UNDYING;
 		boolean mainHandEmpty = !mainHand.getValue() || 
-			(mc.player.getMainHandStack().isEmpty() || 
-			(forceTotem.getValue() && mc.player.getMainHandStack().getItem() != Items.TOTEM_OF_UNDYING));
+			(mc.player.getMainHandItem().isEmpty() || 
+			(forceTotem.getValue() && mc.player.getMainHandItem().getItem() != Items.TOTEM_OF_UNDYING));
 		
 		return offhandEmpty || (mainHand.getValue() && mainHandEmpty);
 	}
@@ -63,24 +63,24 @@ public final class AutoInventoryTotem extends Module implements TickListener {
 
 	@Override
 	public void onTick() {
-		if (mc.player == null || mc.world == null) return;
+		if (mc.player == null || mc.level == null) return;
 
 		needsTotem = needsTotems() && getTotemCount() > 0;
 
 		// Auto open inventory if needed
-		if (needsTotem && autoOpen.getValue() && !(mc.currentScreen instanceof InventoryScreen)) {
+		if (needsTotem && autoOpen.getValue() && !(mc.screen instanceof InventoryScreen)) {
 			mc.setScreen(new InventoryScreen(mc.player));
 			return;
 		}
 
 		// Only work when inventory is open
-		if (!(mc.currentScreen instanceof InventoryScreen)) {
+		if (!(mc.screen instanceof InventoryScreen)) {
 			delayClock = 0;
 			return;
 		}
 
 		// Don't auto-close if player manually opened inventory
-		if (!autoOpen.getValue() && mc.currentScreen instanceof InventoryScreen) {
+		if (!autoOpen.getValue() && mc.screen instanceof InventoryScreen) {
 			// Still equip totems but don't auto-close
 		}
 
@@ -91,12 +91,12 @@ public final class AutoInventoryTotem extends Module implements TickListener {
 		}
 
 		// Equip totem in offhand first (priority)
-		if (mc.player.getOffHandStack().getItem() != Items.TOTEM_OF_UNDYING) {
+		if (mc.player.getOffhandItem().getItem() != Items.TOTEM_OF_UNDYING) {
 			int totemSlot = InventoryUtils.findTotemSlot();
 			if (totemSlot != -1) {
-				mc.interactionManager.clickSlot(
-					((InventoryScreen) mc.currentScreen).getScreenHandler().syncId,
-					totemSlot, 40, SlotActionType.SWAP, mc.player
+				mc.gameMode.handleInventoryMouseClick(
+					((InventoryScreen) mc.screen).getMenu().containerId,
+					totemSlot, 40, ContainerInput.SWAP, mc.player
 				);
 				delayClock = 0;
 				return;
@@ -105,15 +105,15 @@ public final class AutoInventoryTotem extends Module implements TickListener {
 
 		// Equip totem in main hand if enabled
 		if (mainHand.getValue()) {
-			boolean shouldEquipMain = mc.player.getMainHandStack().isEmpty() || 
-				(forceTotem.getValue() && mc.player.getMainHandStack().getItem() != Items.TOTEM_OF_UNDYING);
+			boolean shouldEquipMain = mc.player.getMainHandItem().isEmpty() || 
+				(forceTotem.getValue() && mc.player.getMainHandItem().getItem() != Items.TOTEM_OF_UNDYING);
 			
 			if (shouldEquipMain) {
 				int totemSlot = InventoryUtils.findTotemSlot();
 				if (totemSlot != -1) {
-					mc.interactionManager.clickSlot(
-						((InventoryScreen) mc.currentScreen).getScreenHandler().syncId,
-						totemSlot, mc.player.getInventory().getSelectedSlot(), SlotActionType.SWAP, mc.player
+					mc.gameMode.handleInventoryMouseClick(
+						((InventoryScreen) mc.screen).getMenu().containerId,
+						totemSlot, mc.player.getInventory().getSelectedSlot(), ContainerInput.SWAP, mc.player
 					);
 					delayClock = 0;
 					return;

@@ -5,7 +5,7 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.world.phys.Vec3;
 
 public final class Jesus extends Module implements TickListener {
 
@@ -33,15 +33,15 @@ public final class Jesus extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        boolean inWater = mc.player.isTouchingWater();
+        boolean inWater = mc.player.isInWater();
         boolean inLava  = mc.player.isInLava();
 
         if (!inWater && !(lava.getValue() && inLava)) return;
 
-        Vec3d vel = mc.player.getVelocity();
-        boolean jumping = mc.player.input.playerInput.jump();
+        Vec3 vel = mc.player.getDeltaMovement();
+        boolean jumping = mc.player.input.keyPresses.jump();
 
         if (jumping) {
             // Let the player swim up intentionally — don't fight it
@@ -52,7 +52,7 @@ public final class Jesus extends Module implements TickListener {
         // 0.12 is just above the 0.10 fluid resistance threshold so the player
         // rises one step per tick until their feet are above the fluid block.
         if (vel.y <= 0.0) {
-            mc.player.setVelocity(vel.x, 0.12, vel.z);
+            mc.player.setDeltaMovement(vel.x, 0.12, vel.z);
         }
 
         mc.player.fallDistance = 0f;

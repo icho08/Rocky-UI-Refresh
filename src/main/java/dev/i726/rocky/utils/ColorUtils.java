@@ -1,9 +1,7 @@
 package dev.i726.rocky.utils;
 import dev.i726.rocky.gui.GuiTheme;
-
-import net.minecraft.util.math.MathHelper;
-
 import java.awt.*;
+import net.minecraft.util.Mth;
 
 public final class ColorUtils {
         public static Color getBreathingRGBColor(int increment, int alpha) {
@@ -36,11 +34,11 @@ public final class ColorUtils {
         }
         
         public static Color interpolateColor(Color color1, Color color2, float factor) {
-                factor = MathHelper.clamp(factor, 0f, 1f);
-                int r = (int) MathHelper.lerp(factor, color1.getRed(), color2.getRed());
-                int g = (int) MathHelper.lerp(factor, color1.getGreen(), color2.getGreen());
-                int b = (int) MathHelper.lerp(factor, color1.getBlue(), color2.getBlue());
-                int a = (int) MathHelper.lerp(factor, color1.getAlpha(), color2.getAlpha());
+                factor = Mth.clamp(factor, 0f, 1f);
+                int r = (int) Mth.lerpInt(factor, color1.getRed(), color2.getRed());
+                int g = (int) Mth.lerpInt(factor, color1.getGreen(), color2.getGreen());
+                int b = (int) Mth.lerpInt(factor, color1.getBlue(), color2.getBlue());
+                int a = (int) Mth.lerpInt(factor, color1.getAlpha(), color2.getAlpha());
                 return new Color(r, g, b, a);
         }
         

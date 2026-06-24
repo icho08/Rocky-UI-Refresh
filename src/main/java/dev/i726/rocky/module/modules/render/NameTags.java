@@ -10,17 +10,17 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.network.PlayerListEntry;
-import net.minecraft.client.render.Camera;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.Camera;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.multiplayer.PlayerInfo;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Two-phase nametag rendering.
@@ -93,34 +93,34 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
     @Override
     public void onGameRender(GameRenderEvent event) {
         pendingTags.clear();
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        Camera cam    = mc.gameRenderer.getCamera();
-        Vec3d  camPos = cam.getPos();
-        int    winW   = mc.getWindow().getScaledWidth();
-        int    winH   = mc.getWindow().getScaledHeight();
+        Camera cam    = mc.gameRenderer.getMainCamera();
+        Vec3  camPos = cam.position();
+        int    winW   = mc.getWindow().getGuiScaledWidth();
+        int    winH   = mc.getWindow().getGuiScaledHeight();
         float  maxD   = (float) maxDist.getValue();
 
         // event.matrices.peek().getPositionMatrix() is the view-rotation matrix
         // (conjugate of camera.getRotation() applied to an identity MatrixStack).
         // Transforming a camera-relative world vector with it yields eye space.
-        Matrix4f viewRot = event.matrices.peek().getPositionMatrix();
+        Matrix4f viewRot = event.matrices.last().pose();
 
         // FOV from player settings — used for the perspective divide.
-        double fovYRad     = Math.toRadians(mc.options.getFov().getValue());
+        double fovYRad     = Math.toRadians(mc.options.fov().get());
         double tanHalfFovY = Math.tan(fovYRad / 2.0);
         double aspect      = (double) winW / winH;
 
-        for (var entity : mc.world.getEntities()) {
-            if (!(entity instanceof PlayerEntity target)) continue;
+        for (var entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof Player target)) continue;
             if (target == mc.player) continue;
 
             float dist = target.distanceTo(mc.player);
             if (dist > maxD) continue;
 
-            Vec3d lerp = target.getLerpedPos(event.delta);
+            Vec3 lerp = target.getPosition(event.delta);
             float rx = (float)(lerp.x - camPos.x);
-            float ry = (float)(lerp.y + target.getHeight() + 0.35 - camPos.y);
+            float ry = (float)(lerp.y + target.getBbHeight() + 0.35 - camPos.y);
             float rz = (float)(lerp.z - camPos.z);
 
             // Transform to eye space using the view-rotation matrix.
@@ -142,15 +142,15 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
             int screenX = (int)((ndcX + 1f) * 0.5f * winW);
             int screenY = (int)((1f - ndcY) * 0.5f * winH);   // Y flipped: NDC +Y = top
 
-            boolean isFriend = Rocky.INSTANCE.getFriendManager().isFriend(target.getUuidAsString());
+            boolean isFriend = Rocky.INSTANCE.getFriendManager().isFriend(target.getStringUUID());
 
             StringBuilder sb = new StringBuilder(target.getName().getString());
             if (showHealth.getValue()) {
                 float hp = Math.min(target.getHealth() + target.getAbsorptionAmount(), 20f);
                 sb.append(" §c").append(Math.round(hp)).append("hp");
             }
-            if (showPing.getValue() && mc.getNetworkHandler() != null) {
-                PlayerListEntry entry = mc.getNetworkHandler().getPlayerListEntry(target.getUuid());
+            if (showPing.getValue() && mc.getConnection() != null) {
+                PlayerInfo entry = mc.getConnection().getPlayerInfo(target.getUUID());
                 if (entry != null) sb.append(" §7").append(entry.getLatency()).append("ms");
             }
             if (showDistance.getValue()) {
@@ -165,12 +165,12 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
 
     @Override
     public void onRenderHud(HudEvent event) {
-        DrawContext ctx = event.context;
+        GuiGraphicsExtractor ctx = event.context;
         for (TagData tag : pendingTags) {
             int textW = TextRenderer.getWidth(tag.label);
             int padX  = 5, padY = 3;
             int bw    = textW + padX * 2;
-            int bh    = mc.textRenderer.fontHeight + padY * 2;
+            int bh    = mc.font.lineHeight + padY * 2;
             int bx    = tag.screenX - bw / 2;
             int by    = tag.screenY - bh;
 
@@ -184,7 +184,7 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
 
             int col = tag.isFriend && friendColor.getValue()
                     ? GuiTheme.rgba(34, 197, 94, 255) : GuiTheme.textPrimary();
-            TextRenderer.drawString(tag.label, ctx, bx + padX, by + padY, col);
+            TextRenderer.text(tag.label, ctx, bx + padX, by + padY, col);
         }
     }
 }

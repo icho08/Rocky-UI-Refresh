@@ -3,19 +3,17 @@ package dev.i726.rocky.module;
 import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.module.setting.Setting;
-
-import net.minecraft.client.MinecraftClient;
-
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import net.minecraft.client.Minecraft;
 
 public abstract class Module implements Serializable {
         private final List<Setting<?>> settings = new ArrayList<>();
         public final EventManager eventManager = Rocky.INSTANCE.eventManager;
-        protected MinecraftClient mc;
+        protected Minecraft mc;
         private CharSequence name;
         private CharSequence description;
         private boolean enabled;
@@ -44,8 +42,8 @@ public abstract class Module implements Serializable {
         }
 
         public void toggle() {
-                if (mc == null) mc = MinecraftClient.getInstance();
-                if (Rocky.mc == null) Rocky.mc = MinecraftClient.getInstance();
+                if (mc == null) mc = Minecraft.getInstance();
+                if (Rocky.mc == null) Rocky.mc = Minecraft.getInstance();
                 enabled = !enabled;
                 if (enabled) {
                         dev.i726.rocky.utils.NotificationManager.success(
@@ -115,8 +113,8 @@ public abstract class Module implements Serializable {
         }
 
         public void setEnabled(boolean enabled) {
-                if (mc == null) mc = MinecraftClient.getInstance();
-                if (Rocky.mc == null) Rocky.mc = MinecraftClient.getInstance();
+                if (mc == null) mc = Minecraft.getInstance();
+                if (Rocky.mc == null) Rocky.mc = Minecraft.getInstance();
                 this.enabled = enabled;
                 if (enabled)
                         onEnable();

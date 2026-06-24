@@ -1,17 +1,16 @@
 package dev.i726.rocky.utils;
 
 import dev.i726.rocky.gui.GuiTheme;
-import net.minecraft.client.gui.DrawContext;
-
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
  * Lightweight in-game toast notifications.
  * Call {@link #push(String, String, Type)} to show a toast.
- * Call {@link #render(DrawContext, int)} from the HUD listener each frame.
+ * Call {@link #render(GuiGraphicsExtractor, int)} from the HUD listener each frame.
  */
 public final class NotificationManager {
 
@@ -39,7 +38,7 @@ public final class NotificationManager {
     public static void warn(String title, String body)    { push(title, body, Type.WARNING); }
 
     /** Called from HUD every frame. {@code screenH} = scaled window height. */
-    public static void render(DrawContext ctx, int screenH) {
+    public static void render(GuiGraphicsExtractor ctx, int screenH) {
         synchronized (toasts) {
             long now = System.currentTimeMillis();
             Iterator<Toast> it = toasts.iterator();
@@ -72,7 +71,7 @@ public final class NotificationManager {
         return 1f;
     }
 
-    private static void renderToast(DrawContext ctx, Toast t, int x, int y, float alpha) {
+    private static void renderToast(GuiGraphicsExtractor ctx, Toast t, int x, int y, float alpha) {
         int a = (int)(alpha * 255);
         if (a <= 0) return;
 
@@ -105,12 +104,12 @@ public final class NotificationManager {
 
         // Title
         int tx = x + PADDING + 3;
-        TextRenderer.drawString(t.title, ctx, tx, y + PADDING,
+        TextRenderer.text(t.title, ctx, tx, y + PADDING,
                 GuiTheme.rgba(typeColor.getRed(), typeColor.getGreen(), typeColor.getBlue(), a));
 
         // Body
         if (!t.body.isEmpty()) {
-            TextRenderer.drawString(t.body, ctx, tx, y + PADDING + 13,
+            TextRenderer.text(t.body, ctx, tx, y + PADDING + 13,
                     withAlpha(GuiTheme.textSecondary(), a));
         }
     }

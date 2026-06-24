@@ -5,8 +5,8 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
 
 public final class Strafe extends Module implements TickListener {
 
@@ -52,7 +52,7 @@ public final class Strafe extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
 
         LivingEntity target = getNearestPlayer();
         if (target == null) return;
@@ -78,18 +78,18 @@ public final class Strafe extends Module implements TickListener {
         };
 
         // Build perpendicular velocity vector relative to look direction
-        double yawRad = Math.toRadians(mc.player.getYaw() + (cw ? 90.0 : -90.0));
+        double yawRad = Math.toRadians(mc.player.yRot() + (cw ? 90.0 : -90.0));
         double vx = -Math.sin(yawRad) * speed.getValue();
         double vz =  Math.cos(yawRad) * speed.getValue();
 
-        mc.player.addVelocity(vx, 0, vz);
+        mc.player.push(vx, 0, vz);
     }
 
     private LivingEntity getNearestPlayer() {
         LivingEntity nearest = null;
         double nearestDist = Double.MAX_VALUE;
-        for (var entity : mc.world.getEntities()) {
-            if (!(entity instanceof PlayerEntity p)) continue;
+        for (var entity : mc.level.entitiesForRendering()) {
+            if (!(entity instanceof Player p)) continue;
             if (p == mc.player) continue;
             double dist = p.distanceTo(mc.player);
             if (dist < nearestDist) {

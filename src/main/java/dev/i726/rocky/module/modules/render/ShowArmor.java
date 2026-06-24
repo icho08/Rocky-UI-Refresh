@@ -7,17 +7,17 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.render.Camera;
-import net.minecraft.entity.EquipmentSlot;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.math.Vec3d;
 import org.joml.Matrix4f;
 import org.joml.Vector4f;
 
 import java.util.ArrayList;
 import java.util.List;
+import net.minecraft.client.Camera;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.world.entity.EquipmentSlot;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Two-phase armor display rendering (mirrors the NameTags pattern).
@@ -82,30 +82,30 @@ public final class ShowArmor extends Module implements GameRenderListener, HudLi
     @Override
     public void onGameRender(GameRenderEvent event) {
         pending.clear();
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
-        Camera cam    = mc.gameRenderer.getCamera();
-        Vec3d  camPos = cam.getPos();
-        int    winW   = mc.getWindow().getScaledWidth();
-        int    winH   = mc.getWindow().getScaledHeight();
+        Camera cam    = mc.gameRenderer.getMainCamera();
+        Vec3  camPos = cam.position();
+        int    winW   = mc.getWindow().getGuiScaledWidth();
+        int    winH   = mc.getWindow().getGuiScaledHeight();
         float  maxD   = (float) range.getValue();
 
-        Matrix4f viewRot = event.matrices.peek().getPositionMatrix();
+        Matrix4f viewRot = event.matrices.last().pose();
 
-        double fovYRad     = Math.toRadians(mc.options.getFov().getValue());
+        double fovYRad     = Math.toRadians(mc.options.fov().get());
         double tanHalfFovY = Math.tan(fovYRad / 2.0);
         double aspect      = (double) winW / winH;
 
-        for (PlayerEntity player : mc.world.getPlayers()) {
+        for (Player player : mc.level.players()) {
             if (player == mc.player || !player.isAlive()) continue;
             if (mc.player.distanceTo(player) > maxD) continue;
 
             String text = buildArmorText(player);
             if (text.isEmpty()) continue;
 
-            Vec3d lerp = player.getLerpedPos(event.delta);
+            Vec3 lerp = player.getPosition(event.delta);
             float rx = (float)(lerp.x - camPos.x);
-            float ry = (float)(lerp.y + player.getHeight() + 0.35 - camPos.y);
+            float ry = (float)(lerp.y + player.getBbHeight() + 0.35 - camPos.y);
             float rz = (float)(lerp.z - camPos.z);
 
             Vector4f eye = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
@@ -131,33 +131,33 @@ public final class ShowArmor extends Module implements GameRenderListener, HudLi
 
     @Override
     public void onRenderHud(HudEvent event) {
-        DrawContext ctx = event.context;
+        GuiGraphicsExtractor ctx = event.context;
         for (ArmorData data : pending) {
             int color = (colorWarning.getValue() && data.lowDurability) ? 0xFFFF4444 : 0xFFE5E7EB;
-            int tw = mc.textRenderer.getWidth(data.text);
+            int tw = mc.font.width(data.text);
             int tx = data.screenX - tw / 2;
-            int ty = data.screenY - mc.textRenderer.fontHeight;
+            int ty = data.screenY - mc.font.lineHeight;
 
-            ctx.fill(tx - 2, ty - 1, tx + tw + 2, ty + mc.textRenderer.fontHeight + 1, 0x80000000);
-            ctx.drawText(mc.textRenderer, data.text, tx, ty, color, false);
+            ctx.fill(tx - 2, ty - 1, tx + tw + 2, ty + mc.font.lineHeight + 1, 0x80000000);
+            ctx.text(mc.font, data.text, tx, ty, color, false);
         }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
 
-    private String buildArmorText(PlayerEntity player) {
+    private String buildArmorText(Player player) {
         EquipmentSlot[] slots  = { EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET };
         String[]        labels = { "H", "C", "L", "B" };
         StringBuilder sb = new StringBuilder();
 
         for (int i = 0; i < slots.length; i++) {
-            ItemStack stack = player.getEquippedStack(slots[i]);
+            ItemStack stack = player.getItemBySlot(slots[i]);
             if (stack.isEmpty()) continue;
             if (sb.length() > 0) sb.append(' ');
             if (showPiece.getValue()) sb.append(labels[i]).append(':');
             if (showDurability.getValue()) {
-                if (stack.isDamageable()) {
-                    sb.append(stack.getMaxDamage() - stack.getDamage());
+                if (stack.isDamageableItem()) {
+                    sb.append(stack.getMaxDamage() - stack.getDamageValue());
                 } else {
                     sb.append('∞');
                 }
@@ -166,11 +166,11 @@ public final class ShowArmor extends Module implements GameRenderListener, HudLi
         return sb.toString();
     }
 
-    private boolean hasLowDurability(PlayerEntity player) {
+    private boolean hasLowDurability(Player player) {
         for (EquipmentSlot slot : new EquipmentSlot[]{ EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET }) {
-            ItemStack s = player.getEquippedStack(slot);
-            if (s.isEmpty() || !s.isDamageable()) continue;
-            double ratio = (double)(s.getMaxDamage() - s.getDamage()) / s.getMaxDamage();
+            ItemStack s = player.getItemBySlot(slot);
+            if (s.isEmpty() || !s.isDamageableItem()) continue;
+            double ratio = (double)(s.getMaxDamage() - s.getDamageValue()) / s.getMaxDamage();
             if (ratio < 0.10) return true;
         }
         return false;

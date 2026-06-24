@@ -4,11 +4,10 @@ import dev.i726.rocky.event.events.PacketReceiveListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.network.packet.Packet;
-import net.minecraft.network.packet.c2s.common.ResourcePackStatusC2SPacket;
-import net.minecraft.network.packet.s2c.common.ResourcePackSendS2CPacket;
-
 import java.util.UUID;
+import net.minecraft.network.protocol.Packet;
+import net.minecraft.network.protocol.common.ClientboundResourcePackPushPacket;
+import net.minecraft.network.protocol.common.ServerboundResourcePackPacket;
 
 public class PackSpoof extends Module implements PacketReceiveListener {
     public PackSpoof() {
@@ -30,23 +29,23 @@ public class PackSpoof extends Module implements PacketReceiveListener {
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (mc.getNetworkHandler() == null || mc.player == null) return;
+        if (mc.getConnection() == null || mc.player == null) return;
         
         Packet<?> packet = event.packet;
-        if (packet instanceof ResourcePackSendS2CPacket resourcePack) {
+        if (packet instanceof ClientboundResourcePackPushPacket resourcePack) {
             event.cancel();
             
-            UUID playerId = mc.player.getUuid();
+            UUID playerId = mc.player.getUUID();
             UUID packId = resourcePack.id();
             
             // Send acceptance with slight delay for realism
             new Thread(() -> {
                 try {
                     Thread.sleep(50 + (long)(Math.random() * 100));
-                    mc.getNetworkHandler().sendPacket(new ResourcePackStatusC2SPacket(packId, ResourcePackStatusC2SPacket.Status.ACCEPTED));
+                    mc.getConnection().send(new ServerboundResourcePackPacket(packId, ServerboundResourcePackPacket.Action.ACCEPTED));
                     
                     Thread.sleep(100 + (long)(Math.random() * 200));
-                    mc.getNetworkHandler().sendPacket(new ResourcePackStatusC2SPacket(packId, ResourcePackStatusC2SPacket.Status.SUCCESSFULLY_LOADED));
+                    mc.getConnection().send(new ServerboundResourcePackPacket(packId, ServerboundResourcePackPacket.Action.SUCCESSFULLY_LOADED));
                 } catch (InterruptedException ignored) {}
             }).start();
         }

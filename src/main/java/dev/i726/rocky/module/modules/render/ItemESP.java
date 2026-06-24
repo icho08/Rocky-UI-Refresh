@@ -9,12 +9,11 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.RenderUtils;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.ItemEntity;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-
 import java.awt.Color;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 
 public final class ItemESP extends Module implements GameRenderListener {
 
@@ -64,7 +63,7 @@ public final class ItemESP extends Module implements GameRenderListener {
 
     @Override
     public void onGameRender(GameRenderEvent event) {
-        if (mc == null || mc.world == null || mc.player == null) return;
+        if (mc == null || mc.level == null || mc.player == null) return;
 
         Color accent = GuiTheme.accent();
         int fA = (int) fillOpacity.getValue();
@@ -78,14 +77,14 @@ public final class ItemESP extends Module implements GameRenderListener {
         boolean drawTracer = currentMode == EspMode.Tracer || currentMode == EspMode.Both;
         float tickDelta = event.delta;
 
-        for (Entity entity : mc.world.getEntities()) {
+        for (Entity entity : mc.level.entitiesForRendering()) {
             if (!(entity instanceof ItemEntity)) continue;
-            if (mc.player.squaredDistanceTo(entity) > rangeSq) continue;
+            if (mc.player.distanceToSqr(entity) > rangeSq) continue;
 
-            Vec3d lerpedPos = entity.getLerpedPos(tickDelta);
-            float hw = entity.getWidth() / 2f;
-            float h = entity.getHeight();
-            Box box = new Box(
+            Vec3 lerpedPos = entity.getPosition(tickDelta);
+            float hw = entity.getBbWidth() / 2f;
+            float h = entity.getBbHeight();
+            AABB box = new AABB(
                     lerpedPos.x - hw, lerpedPos.y,      lerpedPos.z - hw,
                     lerpedPos.x + hw, lerpedPos.y + h,  lerpedPos.z + hw
             );

@@ -6,9 +6,8 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-
 import java.lang.reflect.Field;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 
 /**
  * NoFall — prevents fall damage by spoofing the onGround flag.
@@ -66,18 +65,18 @@ public final class NoFall extends Module implements PacketSendListener {
     public void onPacketSend(PacketSendEvent event) {
         // Recursion guard — our replacement send must not loop
         if (bypassing) return;
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
 
         // Reset per-fall state when the player lands
-        if (mc.player.isOnGround()) {
+        if (mc.player.onGround()) {
             sentThisFall = false;
             return;
         }
 
-        if (mc.player.isInFluid()) return;
-        if (mc.player.getVelocity().y >= 0) return;  // ascending
+        if (mc.player.isInLiquid()) return;
+        if (mc.player.getDeltaMovement().y >= 0) return;  // ascending
         if (mc.player.fallDistance < minDist.getValueFloat()) return;
-        if (!(event.packet instanceof PlayerMoveC2SPacket pkt)) return;
+        if (!(event.packet instanceof ServerboundMovePlayerPacket pkt)) return;
 
         switch (mode.getMode()) {
             case Packet -> handlePacketMode(event, pkt);
@@ -91,8 +90,8 @@ public final class NoFall extends Module implements PacketSendListener {
      * Cancel the original packet and resend an identical one with onGround=true.
      * Reads the packet fields via reflection so we don't need accessor mixins.
      */
-    private void handlePacketMode(PacketSendEvent event, PlayerMoveC2SPacket pkt) {
-        PlayerMoveC2SPacket replacement = buildGroundPacket(pkt);
+    private void handlePacketMode(PacketSendEvent event, ServerboundMovePlayerPacket pkt) {
+        ServerboundMovePlayerPacket replacement = buildGroundPacket(pkt);
         if (replacement == null) return;
 
         event.cancel();
@@ -119,7 +118,7 @@ public final class NoFall extends Module implements PacketSendListener {
         bypassing = true;
         try {
             event.connection.send(
-                new PlayerMoveC2SPacket.OnGroundOnly(true, mc.player.horizontalCollision));
+                new ServerboundMovePlayerPacket.StatusOnly(true, mc.player.horizontalCollision));
         } finally {
             bypassing = false;
         }
@@ -131,27 +130,27 @@ public final class NoFall extends Module implements PacketSendListener {
      * Reads fields from {@code pkt} via reflection and constructs a replacement
      * packet with onGround forced to true, preserving all other values.
      */
-    private static PlayerMoveC2SPacket buildGroundPacket(PlayerMoveC2SPacket pkt) {
+    private static ServerboundMovePlayerPacket buildGroundPacket(ServerboundMovePlayerPacket pkt) {
         try {
             boolean changesPosition = readBool(pkt, "changesPosition");
             boolean changesLook     = readBool(pkt, "changesLook");
             boolean hCol            = readBool(pkt, "horizontalCollision");
 
             if (changesPosition && changesLook) {
-                return new PlayerMoveC2SPacket.Full(
+                return new ServerboundMovePlayerPacket.PosRot(
                         readDouble(pkt, "x"), readDouble(pkt, "y"), readDouble(pkt, "z"),
                         readFloat(pkt, "yaw"), readFloat(pkt, "pitch"),
                         true, hCol);
             } else if (changesPosition) {
-                return new PlayerMoveC2SPacket.PositionAndOnGround(
+                return new ServerboundMovePlayerPacket.Pos(
                         readDouble(pkt, "x"), readDouble(pkt, "y"), readDouble(pkt, "z"),
                         true, hCol);
             } else if (changesLook) {
-                return new PlayerMoveC2SPacket.LookAndOnGround(
+                return new ServerboundMovePlayerPacket.Rot(
                         readFloat(pkt, "yaw"), readFloat(pkt, "pitch"),
                         true, hCol);
             } else {
-                return new PlayerMoveC2SPacket.OnGroundOnly(true, hCol);
+                return new ServerboundMovePlayerPacket.StatusOnly(true, hCol);
             }
         } catch (Exception e) {
             return null;

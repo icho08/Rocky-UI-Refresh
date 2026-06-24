@@ -53,7 +53,7 @@ public final class Fullbright extends Module implements TickListener {
 
     private void cacheField() {
         if (optionValueField != null) return;
-        Object opt = mc.options.getGamma();
+        Object opt = mc.options.gamma();
         // Try field names used by Fabric-mapped OptionInstance in 1.21
         for (String name : new String[]{"value", "currentValue", "field_24658", "field_26082"}) {
             for (Class<?> c = opt.getClass(); c != null; c = c.getSuperclass()) {
@@ -69,7 +69,7 @@ public final class Fullbright extends Module implements TickListener {
 
     private double readGamma() {
         try {
-            return mc.options.getGamma().getValue();
+            return mc.options.gamma().get();
         } catch (Exception e) {
             return 1.0;
         }
@@ -80,13 +80,13 @@ public final class Fullbright extends Module implements TickListener {
         // Try reflection first to bypass the [0,1] validator clamping
         if (optionValueField != null) {
             try {
-                optionValueField.set(mc.options.getGamma(), value);
+                optionValueField.set(mc.options.gamma(), value);
                 return;
             } catch (Exception ignored) {}
         }
         // Fallback: clamp to valid range (still useful at 1.0 max)
         try {
-            mc.options.getGamma().setValue(Math.min(1.0, value));
+            mc.options.gamma().set(Math.min(1.0, value));
         } catch (Exception ignored) {}
     }
 }

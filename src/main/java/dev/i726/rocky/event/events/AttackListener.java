@@ -2,9 +2,8 @@ package dev.i726.rocky.event.events;
 
 import dev.i726.rocky.event.CancellableEvent;
 import dev.i726.rocky.event.Listener;
-import net.minecraft.entity.Entity;
-
 import java.util.ArrayList;
+import net.minecraft.world.entity.Entity;
 
 public interface AttackListener extends Listener {
 	void onAttack(AttackEvent event);

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "rocky",
-  "version": "b1.1+1.21.10",
+  "version": "${version}+${minecraft_version}",
   "name": "Rocky",
   "description": "Rocky Minecraft Ghost Client",
   "authors": [
@@ -23,7 +23,7 @@
   ],
   "depends": {
     "fabricloader": ">=${loader_version}",
-    "fabric": "*",
-    "minecraft": "~1.21.10"
+    "fabric-api": "*",
+    "minecraft": "~26.1.2"
   }
 }

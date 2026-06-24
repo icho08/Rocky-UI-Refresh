@@ -11,14 +11,17 @@ import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
 import dev.i726.rocky.utils.WorldUtils;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.*;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.hit.EntityHitResult;
-import net.minecraft.util.hit.HitResult;
-import net.minecraft.util.math.MathHelper;
+import net.minecraft.world.item.*;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.util.Mth;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.MaceItem;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.HitResult;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.Random;
@@ -87,7 +90,7 @@ public final class TriggerBot extends Module implements TickListener {
 
     private void rerollDelay() {
         if (mc.player == null) return;
-        Item item = mc.player.getMainHandStack().getItem();
+        Item item = mc.player.getMainHandItem().getItem();
         currentDelay = (item instanceof AxeItem) ? axeDelay.getRandomValueInt() : swordDelay.getRandomValueInt();
     }
 
@@ -99,7 +102,7 @@ public final class TriggerBot extends Module implements TickListener {
         if (mc.player == null || target == null) return false;
 
         // Use eye-to-entity-centre distance, same reference point the server uses
-        double dist = mc.player.getEyePos().distanceTo(target.getEyePos());
+        double dist = mc.player.getEyePosition().distanceTo(target.getEyePosition());
         // Allow Reach module to extend TBot's hit window when it is enabled
         double reachLimit = maxReach.getValue();
         Reach reachMod = Rocky.INSTANCE.getModuleManager().getModule(Reach.class);
@@ -133,43 +136,43 @@ public final class TriggerBot extends Module implements TickListener {
         float pitchJ = (random.nextFloat() * 2f - 1f) * jitterPitch.getRandomValueFloat();
         if (yawJ == 0f && pitchJ == 0f) return;
 
-        mc.player.setYaw(mc.player.getYaw() + yawJ);
-        mc.player.setPitch(MathHelper.clamp(mc.player.getPitch() + pitchJ, -90, 90));
+        mc.player.setYRot(mc.player.yRot() + yawJ);
+        mc.player.setXRot(Mth.clamp(mc.player.xRot() + pitchJ, -90, 90));
 
-        if (mc.getNetworkHandler() != null) {
-            mc.getNetworkHandler().sendPacket(new PlayerMoveC2SPacket.LookAndOnGround(
-                    mc.player.getYaw(), mc.player.getPitch(), mc.player.isOnGround(), false));
+        if (mc.getConnection() != null) {
+            mc.getConnection().send(new ServerboundMovePlayerPacket.Rot(
+                    mc.player.yRot(), mc.player.xRot(), mc.player.onGround(), false));
         }
     }
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
-        if (!inScreen.getValue() && mc.currentScreen != null) return;
+        if (mc.player == null || mc.level == null) return;
+        if (!inScreen.getValue() && mc.screen != null) return;
         if (Rocky.INSTANCE.getModuleManager().getModule(Friends.class).antiAttack.getValue()
                 && Rocky.INSTANCE.getFriendManager().isAimingOverFriend()) return;
 
         if (!whileUse.getValue() && (mc.player.isUsingItem() || mc.player.isBlocking())) return;
 
         if (weaponOnly.getValue()) {
-            Item held = mc.player.getMainHandStack().getItem();
+            Item held = mc.player.getMainHandItem().getItem();
             if (!(WorldUtils.isSword(held) || held instanceof AxeItem || held instanceof MaceItem)) return;
         }
 
-        if (!(mc.crosshairTarget instanceof EntityHitResult hit && hit.getType() == HitResult.Type.ENTITY)) return;
+        if (!(mc.hitResult instanceof EntityHitResult hit && hit.getType() == HitResult.Type.ENTITY)) return;
 
         Entity entity = hit.getEntity();
         if (entity == null) return;
 
-        if (sticky.getValue() && (mc.player.getAttacking() == null || entity != mc.player.getAttacking())) return;
-        if (!(entity instanceof PlayerEntity || allEntities.getValue())) return;
+        if (sticky.getValue() && (mc.player.getLastHurtMob() == null || entity != mc.player.getLastHurtMob())) return;
+        if (!(entity instanceof Player || allEntities.getValue())) return;
 
-        if (ignoreNpcs.getValue() && entity instanceof PlayerEntity pt && mc.getNetworkHandler() != null) {
-            var entry = mc.getNetworkHandler().getPlayerListEntry(pt.getUuid());
+        if (ignoreNpcs.getValue() && entity instanceof Player pt && mc.getConnection() != null) {
+            var entry = mc.getConnection().getPlayerInfo(pt.getUUID());
             if (entry == null || entry.getLatency() <= 0) return;
         }
 
-        if (entity instanceof PlayerEntity player && checkShield.getValue()
+        if (entity instanceof Player player && checkShield.getValue()
                 && player.isBlocking() && !WorldUtils.isShieldFacingAway(player)) return;
 
         if (!timer.delay(currentDelay)) return;

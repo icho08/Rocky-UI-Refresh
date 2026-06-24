@@ -1,9 +1,8 @@
 package dev.i726.rocky.event.events;
 
+import com.mojang.blaze3d.platform.Window;
 import dev.i726.rocky.event.Event;
 import dev.i726.rocky.event.Listener;
-import net.minecraft.client.util.Window;
-
 import java.util.ArrayList;
 
 public interface ResolutionListener extends Listener {

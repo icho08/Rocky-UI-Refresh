@@ -1,13 +1,13 @@
 package dev.i726.rocky.module.modules.misc;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import dev.i726.rocky.event.events.TickListener;
 import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 
 public final class InvMove extends Module implements TickListener {
 
@@ -37,41 +37,41 @@ public final class InvMove extends Module implements TickListener {
         eventManager.remove(TickListener.class, this);
         // Release all keys when disabling to avoid stuck movement
         if (mc.player != null) {
-            mc.options.forwardKey.setPressed(false);
-            mc.options.backKey.setPressed(false);
-            mc.options.leftKey.setPressed(false);
-            mc.options.rightKey.setPressed(false);
-            mc.options.jumpKey.setPressed(false);
-            mc.options.sneakKey.setPressed(false);
+            mc.options.keyUp.setDown(false);
+            mc.options.keyDown.setDown(false);
+            mc.options.keyLeft.setDown(false);
+            mc.options.keyRight.setDown(false);
+            mc.options.keyJump.setDown(false);
+            mc.options.keyShift.setDown(false);
         }
         super.onDisable();
     }
 
     @Override
     public void onTick() {
-        if (mc.player == null || !(mc.currentScreen instanceof HandledScreen<?>)) return;
+        if (mc.player == null || !(mc.screen instanceof AbstractContainerScreen<?>)) return;
 
         var win = mc.getWindow();
 
-        mc.options.forwardKey.setPressed(isDown(mc.options.forwardKey, win));
-        mc.options.backKey.setPressed(isDown(mc.options.backKey, win));
-        mc.options.leftKey.setPressed(isDown(mc.options.leftKey, win));
-        mc.options.rightKey.setPressed(isDown(mc.options.rightKey, win));
-        mc.options.sneakKey.setPressed(isDown(mc.options.sneakKey, win));
+        mc.options.keyUp.setDown(isDown(mc.options.keyUp, win));
+        mc.options.keyDown.setDown(isDown(mc.options.keyDown, win));
+        mc.options.keyLeft.setDown(isDown(mc.options.keyLeft, win));
+        mc.options.keyRight.setDown(isDown(mc.options.keyRight, win));
+        mc.options.keyShift.setDown(isDown(mc.options.keyShift, win));
 
         if (jump.getValue()) {
-            mc.options.jumpKey.setPressed(isDown(mc.options.jumpKey, win));
+            mc.options.keyJump.setDown(isDown(mc.options.keyJump, win));
         }
 
-        if (sprint.getValue() && isDown(mc.options.forwardKey, win)) {
+        if (sprint.getValue() && isDown(mc.options.keyUp, win)) {
             mc.player.setSprinting(true);
         }
     }
 
-    private static boolean isDown(KeyBinding kb, net.minecraft.client.util.Window win) {
+    private static boolean isDown(KeyMapping kb, com.mojang.blaze3d.platform.Window win) {
         try {
-            InputUtil.Key k = InputUtil.fromTranslationKey(kb.getBoundKeyTranslationKey());
-            return InputUtil.isKeyPressed(win, k.getCode());
+            InputConstants.Key k = InputConstants.getKey(kb.saveString());
+            return InputConstants.isKeyDown(win, k.getValue());
         } catch (Exception e) {
             return false;
         }

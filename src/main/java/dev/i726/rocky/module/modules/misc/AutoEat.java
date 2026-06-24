@@ -6,9 +6,8 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.item.ItemStack;
-import net.minecraft.util.Hand;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.ItemStack;
 
 public final class AutoEat extends Module implements TickListener {
 
@@ -52,8 +51,8 @@ public final class AutoEat extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null) return;
-        if (mc.currentScreen != null) { releaseKey(); return; }
+        if (mc.player == null || mc.level == null) return;
+        if (mc.screen != null) { releaseKey(); return; }
 
         // Damage detection for combat cooldown
         float health = mc.player.getHealth();
@@ -64,7 +63,7 @@ public final class AutoEat extends Module implements TickListener {
         lastHealth = health;
 
         // Determine whether we actually need to eat
-        int foodLevel = mc.player.getHungerManager().getFoodLevel();
+        int foodLevel = mc.player.getFoodData().getFoodLevel();
         boolean needsFood = foodLevel <= hungerThreshold.getValueInt();
 
         if (!needsFood || (stopInCombat.getValue() && combatCooldown > 0)) {
@@ -74,7 +73,7 @@ public final class AutoEat extends Module implements TickListener {
 
         // Don't interrupt if we're already using an item (like attacking or holding a sword)
         // only switch if we are NOT holding down the attack key or another important key
-        if (mc.options.attackKey.isPressed() || mc.player.isUsingItem()) {
+        if (mc.options.keyAttack.isDown() || mc.player.isUsingItem()) {
             return;
         }
 
@@ -88,13 +87,13 @@ public final class AutoEat extends Module implements TickListener {
         }
 
         // Begin eating
-        mc.options.useKey.setPressed(true);
+        mc.options.keyUse.setDown(true);
         wasEating = true;
     }
 
     private void releaseKey() {
         if (wasEating) {
-            mc.options.useKey.setPressed(false);
+            mc.options.keyUse.setDown(false);
             wasEating = false;
         }
     }
@@ -104,8 +103,8 @@ public final class AutoEat extends Module implements TickListener {
         float bestScore = -1f;
 
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
-            var food = stack.get(DataComponentTypes.FOOD);
+            ItemStack stack = mc.player.getInventory().getItem(i);
+            var food = stack.get(DataComponents.FOOD);
             if (food == null) continue;
 
             float score = preferBestFood.getValue()

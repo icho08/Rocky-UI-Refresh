@@ -1,25 +1,25 @@
 package dev.i726.rocky.mixin;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.Mouse;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.MouseHandler;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.gen.Accessor;
 import org.spongepowered.asm.mixin.gen.Invoker;
 
-@Mixin(MinecraftClient.class)
+@Mixin(Minecraft.class)
 public interface MinecraftClientAccessor {
         @Accessor
-        Mouse getMouse();
+        MouseHandler getMouseHandler();
 
         @Invoker
-        void invokeDoItemUse();
+        void invokeStartUseItem();
 
         @Invoker
-        boolean invokeDoAttack();
+        boolean invokeStartAttack();
 
-        @Accessor("itemUseCooldown")
+        @Accessor("rightClickDelay")
         void setItemUseCooldown(int cooldown);
 
-        @Accessor("attackCooldown")
+        @Accessor("missTime")
         void setAttackCooldown(int cooldown);
 }

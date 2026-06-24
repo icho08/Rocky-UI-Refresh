@@ -2,8 +2,8 @@ package dev.i726.rocky.gui.components.settings;
 
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.setting.BooleanSetting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class BooleanComponent extends SettingComponent {
 
@@ -19,10 +19,10 @@ public class BooleanComponent extends SettingComponent {
     }
 
     @Override
-    public void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
         ctx.fill(x, y, x + width, y + 14, GuiTheme.settingBg());
 
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 setting.getName().toString(), x + 8, y + 3, GuiTheme.textSecondary(), false);
 
         int cbx = x + width - 16;

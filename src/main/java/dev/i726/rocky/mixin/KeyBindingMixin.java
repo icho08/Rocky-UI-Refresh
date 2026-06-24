@@ -1,30 +1,31 @@
 package dev.i726.rocky.mixin;
 
 import dev.i726.rocky.imixin.IKeyBinding;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.minecraft.client.KeyMapping;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 
 import static dev.i726.rocky.Rocky.mc;
 
-@Mixin(KeyBinding.class)
+import com.mojang.blaze3d.platform.InputConstants;
+
+@Mixin(KeyMapping.class)
 public abstract class KeyBindingMixin implements IKeyBinding {
 
 	@Shadow
-	private InputUtil.Key boundKey;
+	private InputConstants.Key key;
 
 	@Override
 	public boolean isActuallyPressed() {
-		int code = boundKey.getCode();
-		return InputUtil.isKeyPressed(mc.getWindow(), code);
+		int code = key.getValue();
+		return InputConstants.isKeyDown(mc.getWindow(), code);
 	}
 
 	@Override
 	public void resetPressed() {
-		setPressed(isActuallyPressed());
+		setDown(isActuallyPressed());
 	}
 
 	@Shadow
-	public abstract void setPressed(boolean pressed);
+	public abstract void setDown(boolean pressed);
 }

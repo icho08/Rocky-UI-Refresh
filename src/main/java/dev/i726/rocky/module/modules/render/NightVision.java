@@ -6,8 +6,8 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
 
 public final class NightVision extends Module implements TickListener {
         private final NumberSetting brightness = new NumberSetting(EncryptedString.of("Brightness"), 1, 10, 5, 1)
@@ -31,8 +31,8 @@ public final class NightVision extends Module implements TickListener {
         public void onDisable() {
                 eventManager.remove(TickListener.class, this);
                 // Remove night vision effect when disabled
-                if (mc.player != null && mc.player.hasStatusEffect(StatusEffects.NIGHT_VISION)) {
-                        mc.player.removeStatusEffect(StatusEffects.NIGHT_VISION);
+                if (mc.player != null && mc.player.hasEffect(MobEffects.NIGHT_VISION)) {
+                        mc.player.removeEffect(MobEffects.NIGHT_VISION);
                 }
                 super.onDisable();
         }
@@ -43,8 +43,8 @@ public final class NightVision extends Module implements TickListener {
 
                 // Apply night vision effect with specified brightness
                 int amplifier = brightness.getValueInt() - 1; // 0-9 range for amplifier
-                StatusEffectInstance nightVision = new StatusEffectInstance(
-                        StatusEffects.NIGHT_VISION, 
+                MobEffectInstance nightVision = new MobEffectInstance(
+                        MobEffects.NIGHT_VISION, 
                         300, // 15 seconds duration
                         amplifier, 
                         false, // not ambient
@@ -52,6 +52,6 @@ public final class NightVision extends Module implements TickListener {
                         false  // don't show icon
                 );
                 
-                mc.player.addStatusEffect(nightVision);
+                mc.player.addEffect(nightVision);
         }
 }

@@ -11,11 +11,10 @@ import dev.i726.rocky.utils.InventoryUtils;
 import dev.i726.rocky.utils.KeyUtils;
 import dev.i726.rocky.utils.MouseSimulation;
 import dev.i726.rocky.utils.WorldUtils;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.AxeItem;
-import net.minecraft.item.Items;
-import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.phys.EntityHitResult;
 import org.lwjgl.glfw.GLFW;
 
 public final class ShieldDisabler extends Module implements TickListener {
@@ -92,7 +91,7 @@ public final class ShieldDisabler extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.currentScreen != null || mc.player == null) return;
+        if (mc.screen != null || mc.player == null) return;
 
         // Keybind gate — if a key is bound, require it held
         if (activateKey.getKey() != -1 && !KeyUtils.isKeyPressed(activateKey.getKey())) {
@@ -101,14 +100,14 @@ public final class ShieldDisabler extends Module implements TickListener {
             return;
         }
 
-        if (!(mc.crosshairTarget instanceof EntityHitResult entityHit)) {
+        if (!(mc.hitResult instanceof EntityHitResult entityHit)) {
             restoreSlot();
             resetState();
             return;
         }
 
         Entity entity = entityHit.getEntity();
-        if (!(entity instanceof PlayerEntity player)) {
+        if (!(entity instanceof Player player)) {
             restoreSlot();
             resetState();
             return;

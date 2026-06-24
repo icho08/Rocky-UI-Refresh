@@ -8,15 +8,13 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.network.packet.c2s.play.PlayerInteractEntityC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.math.MathHelper;
-import net.minecraft.util.math.Vec3d;
-
 import java.util.Random;
+import net.minecraft.network.protocol.game.ServerboundInteractPacket;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * SilentAim — sends extra silent damage hits to whoever you are currently
@@ -110,10 +108,10 @@ public final class SilentAim extends Module implements TickListener, PostAttackL
     public void onPostAttack(PostAttackEvent event) {
         if (mc.player == null) return;
         Entity e = event.getTarget();
-        if (!(e instanceof PlayerEntity pe)) return;
+        if (!(e instanceof Player pe)) return;
         if (pe == mc.player) return;
         if (friendCheck.getValue()
-                && Rocky.INSTANCE.getFriendManager().isFriend(pe.getUuidAsString())) return;
+                && Rocky.INSTANCE.getFriendManager().isFriend(pe.getStringUUID())) return;
 
         // Update the lock every time the user manually hits someone
         lockedTarget = pe;
@@ -124,7 +122,7 @@ public final class SilentAim extends Module implements TickListener, PostAttackL
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
 
         // Validate the lock each tick
         if (lockedTarget == null) return;
@@ -138,7 +136,7 @@ public final class SilentAim extends Module implements TickListener, PostAttackL
         // On-click gate — clear lock when the player lifts the mouse button
         if (onClickOnly.getValue()) {
             boolean clicking = org.lwjgl.glfw.GLFW.glfwGetMouseButton(
-                    mc.getWindow().getHandle(),
+                    mc.getWindow().handle(),
                     org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_LEFT)
                     == org.lwjgl.glfw.GLFW.GLFW_PRESS;
             if (!clicking) {
@@ -154,14 +152,14 @@ public final class SilentAim extends Module implements TickListener, PostAttackL
             if (forceCrit.getValue()) {
                 switch (forceCritState) {
                     case 0 -> {
-                        if (mc.player.isOnGround()) {
-                            mc.player.jump();
+                        if (mc.player.onGround()) {
+                            mc.player.jumpFromGround();
                             forceCritState = 1;
                         }
                         return;
                     }
                     case 1 -> {
-                        if (!mc.player.isOnGround() && mc.player.getVelocity().y <= 0) {
+                        if (!mc.player.onGround() && mc.player.getDeltaMovement().y <= 0) {
                             forceCritState = 2;
                         } else {
                             return;
@@ -181,18 +179,18 @@ public final class SilentAim extends Module implements TickListener, PostAttackL
         float[] rot = calcRotation(lockedTarget);
         rot[0] += (float) (rng.nextGaussian() * 0.5);
         rot[1] += (float) (rng.nextGaussian() * 0.4);
-        mc.getNetworkHandler().sendPacket(
-                new PlayerMoveC2SPacket.LookAndOnGround(
+        mc.getConnection().send(
+                new ServerboundMovePlayerPacket.Rot(
                         rot[0], rot[1],
-                        mc.player.isOnGround(),
+                        mc.player.onGround(),
                         mc.player.horizontalCollision));
 
         // ── Silent attack packet ──────────────────────────────────────────────
         // PlayerInteractEntityC2SPacket.attack() sends the damage to the server
         // WITHOUT resetting the client-side attack cooldown and WITHOUT playing
         // the swing arm animation — entirely invisible on your screen.
-        mc.getNetworkHandler().sendPacket(
-                PlayerInteractEntityC2SPacket.attack(lockedTarget, mc.player.isSneaking()));
+        mc.getConnection().send(
+                ServerboundInteractPacket.createAttackPacket(lockedTarget, mc.player.isShiftKeyDown()));
 
         rollDelay();
         hitTimer.reset();
@@ -210,18 +208,18 @@ public final class SilentAim extends Module implements TickListener, PostAttackL
      * falling, not on ground, not in fluid, not climbing, not riding.
      */
     private boolean isCritFrame() {
-        return mc.player.getVelocity().y < 0
-                && !mc.player.isOnGround()
-                && !mc.player.isTouchingWater()
+        return mc.player.getDeltaMovement().y < 0
+                && !mc.player.onGround()
+                && !mc.player.isInWater()
                 && !mc.player.isInLava()
-                && !mc.player.isClimbing()
+                && !mc.player.onClimbable()
                 && mc.player.getVehicle() == null;
     }
 
     /** Yaw/pitch from player eye to target eye. */
     private float[] calcRotation(LivingEntity target) {
-        Vec3d eyes = mc.player.getEyePos();
-        Vec3d tgt  = target.getEyePos();
+        Vec3 eyes = mc.player.getEyePosition();
+        Vec3 tgt  = target.getEyePosition();
         double dx     = tgt.x - eyes.x;
         double dy     = tgt.y - eyes.y;
         double dz     = tgt.z - eyes.z;

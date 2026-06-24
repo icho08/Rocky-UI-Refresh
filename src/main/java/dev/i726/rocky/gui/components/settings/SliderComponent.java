@@ -2,8 +2,8 @@ package dev.i726.rocky.gui.components.settings;
 
 import dev.i726.rocky.gui.GuiTheme;
 import dev.i726.rocky.module.setting.NumberSetting;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 public class SliderComponent extends SettingComponent {
 
@@ -20,15 +20,15 @@ public class SliderComponent extends SettingComponent {
     }
 
     @Override
-    public void render(DrawContext ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
+    public void render(GuiGraphicsExtractor ctx, int x, int y, int width, int mouseX, int mouseY, float delta) {
         ctx.fill(x, y, x + width, y + 20, GuiTheme.settingBg());
 
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        ctx.text(Minecraft.getInstance().font,
                 setting.getName().toString(), x + 8, y + 2, GuiTheme.textSecondary(), false);
 
         String valStr = formatValue(setting.getValue());
-        int valW = MinecraftClient.getInstance().textRenderer.getWidth(valStr);
-        ctx.drawText(MinecraftClient.getInstance().textRenderer,
+        int valW = Minecraft.getInstance().font.width(valStr);
+        ctx.text(Minecraft.getInstance().font,
                 valStr, x + width - valW - 6, y + 2, GuiTheme.textAccent(), false);
 
         int tx = x + 8, ty = y + 13, tw = width - 16;

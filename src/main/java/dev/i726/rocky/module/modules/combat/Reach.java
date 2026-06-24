@@ -7,8 +7,8 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.hit.EntityHitResult;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.EntityHitResult;
 
 public final class Reach extends Module {
 
@@ -122,8 +122,8 @@ public final class Reach extends Module {
     private boolean targetIsPlayer() {
         if (!playersOnly.getValue()) return true;
         if (mc == null) return false;
-        return mc.crosshairTarget instanceof EntityHitResult ehr
-                && ehr.getEntity() instanceof PlayerEntity;
+        return mc.hitResult instanceof EntityHitResult ehr
+                && ehr.getEntity() instanceof Player;
     }
 
     // ── Public API (called by PlayerEntityMixin) ──────────────────────────

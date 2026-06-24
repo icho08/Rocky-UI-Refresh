@@ -9,18 +9,25 @@ import dev.i726.rocky.module.setting.ModeSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.InventoryUtils;
-import net.minecraft.block.*;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.enchantment.Enchantment;
-import net.minecraft.enchantment.EnchantmentHelper;
-import net.minecraft.enchantment.Enchantments;
-import net.minecraft.item.ItemStack;
-import net.minecraft.item.ShearsItem;
-import net.minecraft.registry.RegistryKey;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.BlockTags;
-import net.minecraft.registry.tag.ItemTags;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.*;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.tags.BlockTags;
+import net.minecraft.tags.ItemTags;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.ShearsItem;
+import net.minecraft.world.item.enchantment.Enchantment;
+import net.minecraft.world.item.enchantment.EnchantmentHelper;
+import net.minecraft.world.item.enchantment.Enchantments;
+import net.minecraft.world.level.block.BambooSaplingBlock;
+import net.minecraft.world.level.block.BambooStalkBlock;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.CropBlock;
+import net.minecraft.world.level.block.LeavesBlock;
+import net.minecraft.world.level.block.state.BlockState;
 
 public final class AutoTool extends Module implements TickListener, BlockBreakingListener {
 
@@ -89,7 +96,7 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
     public void onTick() {
         if (mc.player == null) return;
 
-        if (switchBack.getValue() && !mc.options.attackKey.isPressed() && wasPressed && previousSlot != -1) {
+        if (switchBack.getValue() && !mc.options.keyAttack.isDown() && wasPressed && previousSlot != -1) {
             InventoryUtils.swapToSlot(previousSlot);
             previousSlot = -1;
             wasPressed = false;
@@ -104,29 +111,29 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
             ticks--;
         }
 
-        wasPressed = mc.options.attackKey.isPressed();
+        wasPressed = mc.options.keyAttack.isDown();
     }
 
     @Override
     public void onBlockBreaking(BlockBreakingListener.BlockBreakingEvent event) {
-        if (mc.player == null || mc.world == null) return;
+        if (mc.player == null || mc.level == null) return;
         if (mc.player.isCreative()) return;
-        if (!mc.options.attackKey.isPressed()) return;
+        if (!mc.options.keyAttack.isDown()) return;
 
-        BlockPos pos = mc.crosshairTarget != null
-                && mc.crosshairTarget.getType() == net.minecraft.util.hit.HitResult.Type.BLOCK
-                ? ((net.minecraft.util.hit.BlockHitResult) mc.crosshairTarget).getBlockPos()
+        BlockPos pos = mc.hitResult != null
+                && mc.hitResult.getType() == net.minecraft.world.phys.HitResult.Type.BLOCK
+                ? ((net.minecraft.world.phys.BlockHitResult) mc.hitResult).getBlockPos()
                 : null;
         if (pos == null) return;
 
-        BlockState blockState = mc.world.getBlockState(pos);
-        ItemStack currentStack = mc.player.getMainHandStack();
+        BlockState blockState = mc.level.getBlockState(pos);
+        ItemStack currentStack = mc.player.getMainHandItem();
 
         double bestScore = -1;
         bestSlot = -1;
 
         for (int i = 0; i < 9; i++) {
-            ItemStack stack = mc.player.getInventory().getStack(i);
+            ItemStack stack = mc.player.getInventory().getItem(i);
             double score = getScore(stack, blockState);
             if (score > bestScore) {
                 bestScore = score;
@@ -147,7 +154,7 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
         }
 
         if (shouldStopUsing(currentStack) && isTool(currentStack)) {
-            mc.options.attackKey.setPressed(false);
+            mc.options.keyAttack.setDown(false);
             event.cancel();
         }
     }
@@ -157,10 +164,10 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
     private double getScore(ItemStack stack, BlockState state) {
         if (!isTool(stack) || shouldStopUsing(stack)) return -1;
 
-        boolean suitable = stack.isSuitableFor(state)
-                || (stack.isIn(ItemTags.SWORDS) && isBamboo(state))
+        boolean suitable = stack.isCorrectToolForDrops(state)
+                || (stack.is(ItemTags.SWORDS) && isBamboo(state))
                 || (stack.getItem() instanceof ShearsItem
-                        && (state.getBlock() instanceof LeavesBlock || state.isIn(BlockTags.WOOL)));
+                        && (state.getBlock() instanceof LeavesBlock || state.is(BlockTags.WOOL)));
 
         if (!suitable) return -1;
 
@@ -171,7 +178,7 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
         if (fortuneOres.getValue() && isFortunable(state.getBlock())
                 && enchLevel(stack, Enchantments.FORTUNE) == 0) return -1;
 
-        double score = stack.getMiningSpeedMultiplier(state) * 1000;
+        double score = stack.getDestroySpeed(state) * 1000;
 
         // Enchantment preference bonus
         if (enchantPreference.isMode(EnchantPreference.Fortune)) {
@@ -181,11 +188,11 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
         }
 
         // Sword bonus for bamboo
-        if (stack.isIn(ItemTags.SWORDS) && isBamboo(state)) {
+        if (stack.is(ItemTags.SWORDS) && isBamboo(state)) {
             score += 9000;
             try {
-                var tool = stack.get(DataComponentTypes.TOOL);
-                if (tool != null) score += tool.getSpeed(state) * 1000;
+                var tool = stack.get(DataComponents.TOOL);
+                if (tool != null) score += tool.getMiningSpeed(state) * 1000;
             } catch (Exception ignored) {}
         }
 
@@ -195,19 +202,19 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
     private boolean shouldStopUsing(ItemStack stack) {
         return antiBreak.getValue()
                 && stack.getMaxDamage() > 0
-                && (stack.getMaxDamage() - stack.getDamage()) < (stack.getMaxDamage() * breakDurability.getValue() / 100.0);
+                && (stack.getMaxDamage() - stack.getDamageValue()) < (stack.getMaxDamage() * breakDurability.getValue() / 100.0);
     }
 
     private boolean isTool(ItemStack stack) {
-        return stack.isIn(ItemTags.AXES)
-                || stack.isIn(ItemTags.HOES)
-                || stack.isIn(ItemTags.PICKAXES)
-                || stack.isIn(ItemTags.SHOVELS)
+        return stack.is(ItemTags.AXES)
+                || stack.is(ItemTags.HOES)
+                || stack.is(ItemTags.PICKAXES)
+                || stack.is(ItemTags.SHOVELS)
                 || stack.getItem() instanceof ShearsItem;
     }
 
     private boolean isBamboo(BlockState state) {
-        return state.getBlock() instanceof BambooBlock || state.getBlock() instanceof BambooShootBlock;
+        return state.getBlock() instanceof BambooStalkBlock || state.getBlock() instanceof BambooSaplingBlock;
     }
 
     private boolean isFortunable(Block block) {
@@ -224,12 +231,12 @@ public final class AutoTool extends Module implements TickListener, BlockBreakin
 
     // ── Enchantment helpers ───────────────────────────────────────────────────
 
-    private int enchLevel(ItemStack stack, RegistryKey<Enchantment> key) {
-        if (mc.world == null) return 0;
-        return mc.world.getRegistryManager()
-                .getOrThrow(RegistryKeys.ENCHANTMENT)
-                .getEntry(key.getValue())
-                .map(e -> EnchantmentHelper.getLevel(e, stack))
+    private int enchLevel(ItemStack stack, ResourceKey<Enchantment> key) {
+        if (mc.level == null) return 0;
+        return mc.level.registryAccess()
+                .lookupOrThrow(Registries.ENCHANTMENT)
+                .get(key.location())
+                .map(e -> EnchantmentHelper.getItemEnchantmentLevel(e, stack))
                 .orElse(0);
     }
 }

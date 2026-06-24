@@ -5,13 +5,12 @@ import dev.i726.rocky.module.CategoryManager;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.MinMaxSetting;
 import dev.i726.rocky.utils.EncryptedString;
-import net.minecraft.network.packet.c2s.common.KeepAliveC2SPacket;
-import net.minecraft.network.packet.s2c.common.KeepAliveS2CPacket;
-
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import net.minecraft.network.protocol.common.ClientboundKeepAlivePacket;
+import net.minecraft.network.protocol.common.ServerboundKeepAlivePacket;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public final class PingSpoof extends Module implements PacketReceiveListener {
@@ -67,7 +66,7 @@ public final class PingSpoof extends Module implements PacketReceiveListener {
 
     @Override
     public void onPacketReceive(PacketReceiveEvent event) {
-        if (!(event.packet instanceof KeepAliveS2CPacket packet)) return;
+        if (!(event.packet instanceof ClientboundKeepAlivePacket packet)) return;
         if (scheduler == null || scheduler.isShutdown()) return;
 
         long id         = packet.getId();
@@ -76,8 +75,8 @@ public final class PingSpoof extends Module implements PacketReceiveListener {
         ScheduledFuture<?>[] ref = new ScheduledFuture<?>[1];
         ref[0] = scheduler.schedule(() -> {
             try {
-                if (!isEnabled() || mc.getNetworkHandler() == null) return;
-                mc.getNetworkHandler().getConnection().send(new KeepAliveC2SPacket(id), null, false);
+                if (!isEnabled() || mc.getConnection() == null) return;
+                mc.getConnection().getConnection().send(new ServerboundKeepAlivePacket(id), null, false);
             } finally {
                 pendingTasks.remove(ref[0]);
             }

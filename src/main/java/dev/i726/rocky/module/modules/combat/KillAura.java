@@ -7,11 +7,11 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.*;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.mob.MobEntity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.network.packet.c2s.play.PlayerMoveC2SPacket;
-import net.minecraft.util.Hand;
+import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.player.Player;
 
 public final class KillAura extends Module implements TickListener {
 
@@ -79,36 +79,36 @@ public final class KillAura extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
 
         currentTarget = findTarget();
         if (currentTarget == null) return;
 
-        if (fullCooldown.getValue() && mc.player.getAttackCooldownProgress(0f) < 1f) return;
+        if (fullCooldown.getValue() && mc.player.getAttackStrengthScale(0f) < 1f) return;
         if (!attackTimer.delay(currentDelay)) return;
 
         if (!rotate.isMode(RotateMode.None)) {
             float[] rot = calcRotations(currentTarget);
             if (rotate.isMode(RotateMode.Packet)) {
-                mc.getNetworkHandler().sendPacket(
-                        new PlayerMoveC2SPacket.LookAndOnGround(
-                                rot[0], rot[1], mc.player.isOnGround(), mc.player.horizontalCollision));
+                mc.getConnection().send(
+                        new ServerboundMovePlayerPacket.Rot(
+                                rot[0], rot[1], mc.player.onGround(), mc.player.horizontalCollision));
             } else {
-                mc.player.setYaw(rot[0]);
-                mc.player.setPitch(rot[1]);
+                mc.player.setYRot(rot[0]);
+                mc.player.setXRot(rot[1]);
             }
         }
 
-        mc.interactionManager.attackEntity(mc.player, currentTarget);
-        mc.player.swingHand(Hand.MAIN_HAND);
+        mc.gameMode.attack(mc.player, currentTarget);
+        mc.player.swing(InteractionHand.MAIN_HAND);
         rerollDelay();
         attackTimer.reset();
     }
 
     private LivingEntity findTarget() {
         double r = range.getValue();
-        return mc.world.getEntitiesByClass(LivingEntity.class,
-                        mc.player.getBoundingBox().expand(r), this::isValid)
+        return mc.level.getEntitiesOfClass(LivingEntity.class,
+                        mc.player.getBoundingBox().inflate(r), this::isValid)
                 .stream()
                 .min(this::compareTargets)
                 .orElse(null);
@@ -117,13 +117,13 @@ public final class KillAura extends Module implements TickListener {
     private boolean isValid(LivingEntity e) {
         if (e == mc.player || !e.isAlive()) return false;
         if (e.distanceTo(mc.player) > range.getValue()) return false;
-        if (targets.isMode(TargetMode.Players) && !(e instanceof PlayerEntity)) return false;
-        if (targets.isMode(TargetMode.Mobs)    && !(e instanceof MobEntity)) return false;
-        if (targets.isMode(TargetMode.All)     && !(e instanceof PlayerEntity) && !(e instanceof MobEntity)) return false;
-        if (friendCheck.getValue() && e instanceof PlayerEntity p) {
-            if (Rocky.INSTANCE.getFriendManager().isFriend(p.getUuidAsString())) return false;
+        if (targets.isMode(TargetMode.Players) && !(e instanceof Player)) return false;
+        if (targets.isMode(TargetMode.Mobs)    && !(e instanceof Mob)) return false;
+        if (targets.isMode(TargetMode.All)     && !(e instanceof Player) && !(e instanceof Mob)) return false;
+        if (friendCheck.getValue() && e instanceof Player p) {
+            if (Rocky.INSTANCE.getFriendManager().isFriend(p.getStringUUID())) return false;
         }
-        if (!throughWalls.getValue() && !mc.player.canSee(e)) return false;
+        if (!throughWalls.getValue() && !mc.player.hasLineOfSight(e)) return false;
         return true;
     }
 
@@ -132,8 +132,8 @@ public final class KillAura extends Module implements TickListener {
             case LowestHP  -> Float.compare(a.getHealth(), b.getHealth());
             case LookingAt -> {
                 float[] pa = calcRotations(a), pb = calcRotations(b);
-                float da = angleDiff(pa[0], mc.player.getYaw()) + angleDiff(pa[1], mc.player.getPitch());
-                float db = angleDiff(pb[0], mc.player.getYaw()) + angleDiff(pb[1], mc.player.getPitch());
+                float da = angleDiff(pa[0], mc.player.yRot()) + angleDiff(pa[1], mc.player.xRot());
+                float db = angleDiff(pb[0], mc.player.yRot()) + angleDiff(pb[1], mc.player.xRot());
                 yield Float.compare(da, db);
             }
             default -> Double.compare(a.distanceTo(mc.player), b.distanceTo(mc.player));

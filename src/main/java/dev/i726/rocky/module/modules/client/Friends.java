@@ -12,14 +12,13 @@ import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.KeybindSetting;
 import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.WorldUtils;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.entity.Entity;
-import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.util.hit.EntityHitResult;
 import org.lwjgl.glfw.GLFW;
 
 import java.awt.Color;
 import java.util.List;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.phys.EntityHitResult;
 
 public final class Friends extends Module implements ButtonListener, AttackListener, HudListener {
 
@@ -75,11 +74,11 @@ public final class Friends extends Module implements ButtonListener, AttackListe
 
     @Override
     public void onButtonPress(ButtonEvent event) {
-        if (mc.player == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.screen != null) return;
         if (event.button != addFriendKey.getKey() || event.action != GLFW.GLFW_PRESS) return;
 
-        if (mc.crosshairTarget instanceof EntityHitResult hitResult
-                && hitResult.getEntity() instanceof PlayerEntity player) {
+        if (mc.hitResult instanceof EntityHitResult hitResult
+                && hitResult.getEntity() instanceof Player player) {
             if (manager.isFriend(player)) {
                 manager.removeFriend(player);
             } else {
@@ -97,16 +96,16 @@ public final class Friends extends Module implements ButtonListener, AttackListe
 
     @Override
     public void onRenderHud(HudEvent event) {
-        DrawContext ctx = event.context;
-        int screenW = mc.getWindow().getScaledWidth();
-        int screenH = mc.getWindow().getScaledHeight();
+        GuiGraphicsExtractor ctx = event.context;
+        int screenW = mc.getWindow().getGuiScaledWidth();
+        int screenH = mc.getWindow().getGuiScaledHeight();
 
         // ── Friend status notification ────────────────────────────────────────
         if (friendStatus.getValue()) {
             boolean aimingAtFriend = false;
             String friendName = "";
             if (WorldUtils.getHitResult(100) instanceof EntityHitResult hit
-                    && hit.getEntity() instanceof PlayerEntity player
+                    && hit.getEntity() instanceof Player player
                     && manager.isFriend(player)) {
                 aimingAtFriend = true;
                 friendName = player.getName().getString();
@@ -121,7 +120,7 @@ public final class Friends extends Module implements ButtonListener, AttackListe
                 int acInt = GuiTheme.accentInt();
 
                 String label = "\u2665 Friend: " + (aimingAtFriend ? lastFriendName : lastFriendName);
-                int textW = mc.textRenderer.getWidth(label);
+                int textW = mc.font.width(label);
                 int cardW = textW + 20;
                 int cardH = 20;
                 int cx = screenW / 2 - cardW / 2;
@@ -146,7 +145,7 @@ public final class Friends extends Module implements ButtonListener, AttackListe
                         GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
 
                 int textColor = GuiTheme.rgba(228, 224, 255, (int)(notifAnim * 255));
-                ctx.drawText(mc.textRenderer, label, cx + 10, cy + 6, textColor, false);
+                ctx.text(mc.font, label, cx + 10, cy + 6, textColor, false);
             }
         }
 
@@ -176,7 +175,7 @@ public final class Friends extends Module implements ButtonListener, AttackListe
                     GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 40),
                     GuiTheme.rgba(ac.getRed(), ac.getGreen(), ac.getBlue(), 0));
             ctx.fill(lx, ly, lx + 3, ly + headerH, acInt);
-            ctx.drawText(mc.textRenderer, "FRIENDS", lx + 8, ly + 5, GuiTheme.textPrimary(), false);
+            ctx.text(mc.font, "FRIENDS", lx + 8, ly + 5, GuiTheme.textPrimary(), false);
 
             // Separator
             ctx.fill(lx + 3, ly + headerH, lx + listW - 3, ly + headerH + 1, GuiTheme.separator());
@@ -185,11 +184,11 @@ public final class Friends extends Module implements ButtonListener, AttackListe
             int ry = ly + headerH + 3;
             for (String name : friendList) {
                 // Check if this friend is in the world currently
-                boolean online = mc.world != null && mc.world.getPlayers().stream()
+                boolean online = mc.level != null && mc.level.players().stream()
                         .anyMatch(p -> p.getName().getString().equals(name));
                 int nameColor = online ? acInt : GuiTheme.textSecondary();
                 String prefix = online ? "\u25CF " : "\u25CB ";
-                ctx.drawText(mc.textRenderer, prefix + name, lx + 8, ry, nameColor, false);
+                ctx.text(mc.font, prefix + name, lx + 8, ry, nameColor, false);
                 ry += rowH;
             }
         }

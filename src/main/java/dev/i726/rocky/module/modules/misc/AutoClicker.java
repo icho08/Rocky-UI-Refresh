@@ -12,11 +12,11 @@ import dev.i726.rocky.utils.EncryptedString;
 import dev.i726.rocky.utils.MathUtils;
 import dev.i726.rocky.utils.MouseSimulation;
 import dev.i726.rocky.utils.TimerUtils;
-import net.minecraft.component.DataComponentTypes;
-import net.minecraft.item.AxeItem;
-import net.minecraft.item.Item;
-import net.minecraft.item.RangedWeaponItem;
-import net.minecraft.util.hit.HitResult;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.world.item.AxeItem;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ProjectileWeaponItem;
+import net.minecraft.world.phys.HitResult;
 import org.lwjgl.glfw.GLFW;
 
 
@@ -64,10 +64,10 @@ public final class AutoClicker extends Module implements TickListener {
                 if (mc.player == null)
                         return;
 
-                if (mc.currentScreen != null)
+                if (mc.screen != null)
                         return;
 
-                if (mc.crosshairTarget == null)
+                if (mc.hitResult == null)
                         return;
 
                 if (timer.delay(delay.getValueFloat()) && chance.getValueInt() >= MathUtils.randomInt(1, 100)) {
@@ -87,32 +87,32 @@ public final class AutoClicker extends Module implements TickListener {
         }
 
         private void performRightClick() {
-                Item mainhand = mc.player.getMainHandStack().getItem();
-                Item offhand = mc.player.getOffHandStack().getItem();
+                Item mainhand = mc.player.getMainHandItem().getItem();
+                Item offhand = mc.player.getOffhandItem().getItem();
 
-                if (mainhand.getComponents().contains(DataComponentTypes.FOOD))
+                if (mainhand.components().has(DataComponents.FOOD))
                         return;
 
-                if (offhand.getComponents().contains(DataComponentTypes.FOOD))
+                if (offhand.components().has(DataComponents.FOOD))
                         return;
 
-                if (mainhand instanceof RangedWeaponItem || offhand instanceof RangedWeaponItem)
+                if (mainhand instanceof ProjectileWeaponItem || offhand instanceof ProjectileWeaponItem)
                         return;
 
-                if (onClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_RIGHT) != GLFW.GLFW_PRESS)
+                if (onClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().handle(), GLFW.GLFW_MOUSE_BUTTON_RIGHT) != GLFW.GLFW_PRESS)
                         return;
 
                 MouseSimulation.mouseClick(GLFW.GLFW_MOUSE_BUTTON_RIGHT);
 
-                ((MinecraftClientAccessor) mc).invokeDoItemUse();
+                ((MinecraftClientAccessor) mc).invokeStartUseItem();
                 timer.reset();
         }
 
         private void performLeftClick() {
-                Item mainhand = mc.player.getMainHandStack().getItem();
-                Item offhand = mc.player.getOffHandStack().getItem();
+                Item mainhand = mc.player.getMainHandItem().getItem();
+                Item offhand = mc.player.getOffhandItem().getItem();
 
-                if (mc.crosshairTarget.getType() == HitResult.Type.BLOCK)
+                if (mc.hitResult.getType() == HitResult.Type.BLOCK)
                         return;
 
                 if (mc.player.isUsingItem())
@@ -121,12 +121,12 @@ public final class AutoClicker extends Module implements TickListener {
                 if (onlyWeapon.getValue() && !(dev.i726.rocky.utils.WorldUtils.isSword(mainhand) || mainhand instanceof AxeItem))
                         return;
 
-                if (onClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().getHandle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS)
+                if (onClick.getValue() && GLFW.glfwGetMouseButton(mc.getWindow().handle(), GLFW.GLFW_MOUSE_BUTTON_LEFT) != GLFW.GLFW_PRESS)
                         return;
 
                 MouseSimulation.mouseClick(GLFW.GLFW_MOUSE_BUTTON_LEFT);
 
-                ((MinecraftClientAccessor) mc).invokeDoAttack();
+                ((MinecraftClientAccessor) mc).invokeStartAttack();
                 timer.reset();
         }
 }

@@ -6,13 +6,13 @@ import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.setting.BooleanSetting;
 import dev.i726.rocky.module.setting.NumberSetting;
 import dev.i726.rocky.utils.*;
-import net.minecraft.block.Blocks;
-import net.minecraft.item.Items;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Direction;
-import net.minecraft.util.math.Vec3d;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.Vec3;
 
 /**
  * Companion to Anchor Aura (AnchorMacro).
@@ -69,11 +69,11 @@ public final class DoubleAnchor extends Module implements TickListener {
 
     @Override
     public void onTick() {
-        if (mc.player == null || mc.world == null || mc.currentScreen != null) return;
+        if (mc.player == null || mc.level == null || mc.screen != null) return;
 
         // Must be holding a Respawn Anchor (when setting is on)
         if (onlyWhenHolding.getValue()
-                && !mc.player.getMainHandStack().isOf(Items.RESPAWN_ANCHOR)) {
+                && !mc.player.getMainHandItem().is(Items.RESPAWN_ANCHOR)) {
             delayClock = 0;
             return;
         }
@@ -101,8 +101,8 @@ public final class DoubleAnchor extends Module implements TickListener {
         if (hit == null) return;
 
         if (clickSimulation.getValue()) MouseSimulation.mouseClick(org.lwjgl.glfw.GLFW.GLFW_MOUSE_BUTTON_RIGHT);
-        mc.interactionManager.interactBlock(mc.player, Hand.MAIN_HAND, hit);
-        mc.player.swingHand(Hand.MAIN_HAND);
+        mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, hit);
+        mc.player.swing(InteractionHand.MAIN_HAND);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -110,12 +110,12 @@ public final class DoubleAnchor extends Module implements TickListener {
     /** Scans blocks near the player for a charged Respawn Anchor. */
     private BlockPos findChargedAnchor() {
         int r = (int) Math.ceil(searchRange.getValue());
-        BlockPos origin = mc.player.getBlockPos();
+        BlockPos origin = mc.player.blockPosition();
         for (int x = -r; x <= r; x++) {
             for (int y = -r; y <= r; y++) {
                 for (int z = -r; z <= r; z++) {
-                    BlockPos pos = origin.add(x, y, z);
-                    if (mc.world.getBlockState(pos).getBlock() == Blocks.RESPAWN_ANCHOR
+                    BlockPos pos = origin.offset(x, y, z);
+                    if (mc.level.getBlockState(pos).getBlock() == Blocks.RESPAWN_ANCHOR
                             && BlockUtils.isAnchorCharged(pos)) {
                         return pos;
                     }
@@ -130,20 +130,20 @@ public final class DoubleAnchor extends Module implements TickListener {
      * the player to place the second anchor into. Prefers foot level, then up/down.
      */
     private BlockPos findPlacementPos() {
-        Direction facing = mc.player.getHorizontalFacing();
-        BlockPos foot    = mc.player.getBlockPos();
+        Direction facing = mc.player.getDirection();
+        BlockPos foot    = mc.player.blockPosition();
 
         BlockPos[] candidates = {
-            foot.offset(facing),
-            foot.offset(facing).up(),
-            foot.offset(facing).down(),
-            foot.offset(facing.rotateYClockwise()),
-            foot.offset(facing.rotateYCounterclockwise()),
+            foot.relative(facing),
+            foot.relative(facing).above(),
+            foot.relative(facing).below(),
+            foot.relative(facing.getClockWise()),
+            foot.relative(facing.getCounterClockWise()),
         };
 
         for (BlockPos pos : candidates) {
-            if (!mc.world.getBlockState(pos).isReplaceable()) continue;
-            if (mc.world.getBlockState(pos).getBlock() == Blocks.RESPAWN_ANCHOR) continue;
+            if (!mc.level.getBlockState(pos).canBeReplaced()) continue;
+            if (mc.level.getBlockState(pos).getBlock() == Blocks.RESPAWN_ANCHOR) continue;
             if (hasSolidNeighbour(pos)) return pos;
         }
         return null;
@@ -151,9 +151,9 @@ public final class DoubleAnchor extends Module implements TickListener {
 
     private boolean hasSolidNeighbour(BlockPos pos) {
         for (Direction dir : Direction.values()) {
-            BlockPos nb = pos.offset(dir);
-            if (!mc.world.getBlockState(nb).isReplaceable()
-                    && mc.world.getBlockState(nb).isSolidBlock(mc.world, nb)) {
+            BlockPos nb = pos.relative(dir);
+            if (!mc.level.getBlockState(nb).canBeReplaced()
+                    && mc.level.getBlockState(nb).isRedstoneConductor(mc.level, nb)) {
                 return true;
             }
         }
@@ -162,15 +162,15 @@ public final class DoubleAnchor extends Module implements TickListener {
 
     private BlockHitResult buildPlaceHit(BlockPos pos) {
         for (Direction dir : Direction.values()) {
-            BlockPos nb = pos.offset(dir);
-            if (mc.world.getBlockState(nb).isReplaceable()) continue;
-            if (!mc.world.getBlockState(nb).isSolidBlock(mc.world, nb)) continue;
+            BlockPos nb = pos.relative(dir);
+            if (mc.level.getBlockState(nb).canBeReplaced()) continue;
+            if (!mc.level.getBlockState(nb).isRedstoneConductor(mc.level, nb)) continue;
 
             Direction side = dir.getOpposite();
-            Vec3d hitVec = new Vec3d(
-                    nb.getX() + 0.5 + side.getOffsetX() * 0.3,
-                    nb.getY() + 0.5 + side.getOffsetY() * 0.3,
-                    nb.getZ() + 0.5 + side.getOffsetZ() * 0.3
+            Vec3 hitVec = new Vec3(
+                    nb.getX() + 0.5 + side.getStepX() * 0.3,
+                    nb.getY() + 0.5 + side.getStepY() * 0.3,
+                    nb.getZ() + 0.5 + side.getStepZ() * 0.3
             );
             return new BlockHitResult(hitVec, side, nb, false);
         }

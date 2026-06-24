@@ -16,7 +16,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(EntityRenderer.class)
 public abstract class EntityRendererMixin {
 
-    @Inject(method = "submitNameTag", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "submitNameDisplay", at = @At("HEAD"), cancellable = true)
     private void onRenderLabel(EntityRenderState state, PoseStack matrices,
                                SubmitNodeCollector commandQueue,
                                CameraRenderState cameraRenderState, CallbackInfo ci) {

@@ -44,7 +44,7 @@ public class MinecraftClientMixin {
                 }
         }
 
-        @Inject(method = "resizeDisplay", at = @At("HEAD"))
+        @Inject(method = "resizeGui", at = @At("HEAD"))
         private void onResolutionChanged(CallbackInfo ci) {
                 EventManager.fire(new ResolutionListener.ResolutionEvent(this.window));
         }

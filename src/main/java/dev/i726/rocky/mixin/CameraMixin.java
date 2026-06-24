@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 @Mixin(Camera.class)
 public class CameraMixin {
         @ModifyArgs(
-                method = "update(Lnet/minecraft/client/DeltaTracker;)V",
+                method = "alignWithEntity(F)V",
                 at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Camera;setPosition(DDD)V")
         )
         private void update(Args args) {

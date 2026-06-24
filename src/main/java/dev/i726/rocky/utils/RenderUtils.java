@@ -1,10 +1,14 @@
 package dev.i726.rocky.utils;
 
+import net.minecraft.client.Camera;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import com.mojang.blaze3d.vertex.PoseStack;
+import org.joml.Matrix4f;
+import org.joml.Vector4f;
+
 import java.awt.*;
 
 import static dev.i726.rocky.Rocky.mc;
@@ -39,22 +43,112 @@ public final class RenderUtils {
 
         public static void scaledProjection() {}
 
+        /**
+         * Projects a world-space position to GUI screen coordinates.
+         *
+         * Uses the same math as NameTags (confirmed working in MC 26.1.2):
+         *   viewRot  = event.matrices.last().pose()  (conjugate of camera rotation)
+         *   fovYRad  = Math.toRadians(mc.options.fov().get())
+         *
+         * @return int[2] {screenX, screenY} in GUI-scaled pixels, or null if behind the camera.
+         */
+        public static int[] projectToScreen(Vec3 worldPos, Matrix4f viewRot, Vec3 camPos,
+                                            int winW, int winH, double tanHalfFovY, double aspect) {
+                float rx = (float)(worldPos.x - camPos.x);
+                float ry = (float)(worldPos.y - camPos.y);
+                float rz = (float)(worldPos.z - camPos.z);
+
+                Vector4f eye = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
+                if (eye.z >= -0.001f) return null;
+
+                float fwd  = -eye.z;
+                float ndcX = (float)(eye.x / (fwd * tanHalfFovY * aspect));
+                float ndcY = (float)(eye.y / (fwd * tanHalfFovY));
+
+                int sx = (int)((ndcX + 1f) * 0.5f * winW);
+                int sy = (int)((1f - ndcY) * 0.5f * winH);
+                return new int[]{ sx, sy };
+        }
+
+        /**
+         * Draws a 1-pixel wide line between two screen points using Bresenham's algorithm.
+         * Works with GuiGraphicsExtractor.fill() which only supports axis-aligned rects.
+         */
+        public static void drawLine2D(GuiGraphicsExtractor ctx, int x1, int y1, int x2, int y2, int color) {
+                int dx = Math.abs(x2 - x1);
+                int dy = Math.abs(y2 - y1);
+                int sx = x1 < x2 ? 1 : -1;
+                int sy = y1 < y2 ? 1 : -1;
+                int err = dx - dy;
+                int steps = 0;
+                // Safety cap so we never fill more than ~1000 pixels for a single line
+                int maxSteps = Math.max(dx, dy) + 1;
+                while (steps++ <= maxSteps) {
+                        ctx.fill(x1, y1, x1 + 1, y1 + 1, color);
+                        if (x1 == x2 && y1 == y2) break;
+                        int e2 = 2 * err;
+                        if (e2 > -dy) { err -= dy; x1 += sx; }
+                        if (e2 < dx)  { err += dx; y1 += sy; }
+                }
+        }
+
+        /**
+         * Draws a hollow rectangle outline using four drawLine2D calls.
+         */
+        public static void drawRect2D(GuiGraphicsExtractor ctx, int x1, int y1, int x2, int y2, int color) {
+                drawLine2D(ctx, x1, y1, x2, y1, color);
+                drawLine2D(ctx, x2, y1, x2, y2, color);
+                drawLine2D(ctx, x2, y2, x1, y2, color);
+                drawLine2D(ctx, x1, y2, x1, y1, color);
+        }
+
+        // ── Legacy 3D helpers (no-ops – RenderType.lines/debugLineStrip removed in 26.1.2) ──
+
+        public static void renderLine(PoseStack matrices, Color color, Vec3 start, Vec3 end) {
+                // Not supported in MC 26.1.2 (RenderType.debugLineStrip removed).
+                // Tracers/ESP use 2D screen-projection via GuiGraphicsExtractor instead.
+        }
+
+        public static void renderFilledBox(PoseStack matrices, double x1, double y1, double z1,
+                                           double x2, double y2, double z2, Color color) {
+                // Not supported in MC 26.1.2 (RenderType.debugFilledBox removed).
+        }
+
+        public static void drawOutlinedBox(PoseStack matrices, net.minecraft.world.phys.AABB box, Color color) {
+                // Not supported in MC 26.1.2 (RenderType.lines removed).
+        }
+
+        public static void renderBoxWithTracers(PoseStack matrices, net.minecraft.world.entity.Entity entity, Color color) {
+                // 3D box rendering not available in MC 26.1.2 — use 2D approach.
+        }
+
+        public static void drawTracer(PoseStack matrices, Vec3 end, Color color) {
+                // 3D line rendering not available in MC 26.1.2 — use 2D approach.
+        }
+
+        public static void renderCircle(org.joml.Matrix3x2fStack matrices, Color c, double originX, double originY, double rad, int segments) {
+                // No-op: full 3D/VBO circle rendering removed in MC 26.1.2
+        }
+
+        // ── 2D GUI helpers ────────────────────────────────────────────────────────
+
+        public static void setScissorRegion(GuiGraphicsExtractor context, int x, int y, int width, int height) {
+                context.enableScissor(x, y, x + width, y + height);
+        }
+
+        public static void disableScissor(GuiGraphicsExtractor context) {
+                context.disableScissor();
+        }
+
         public static void drawRoundedRect(GuiGraphicsExtractor context, float x1, float y1, float x2, float y2, float radius, int color) {
                 renderRoundedQuad(context, new Color(color, true), x1, y1, x2, y2, radius, 15);
         }
 
         public static void renderGradientRoundedQuad(GuiGraphicsExtractor context, Color c1, Color c2, double x, double y, double x2, double y2, double radius, double samples) {
-                // Bodies
                 double r = Math.min(radius, Math.min((x2 - x) / 2, (y2 - y) / 2));
-                
-                // Main body with gradient
                 context.fillGradient((int)x, (int)(y + r), (int)x2, (int)(y2 - r), c1.getRGB(), c2.getRGB());
-                
-                // Top and bottom bars
                 context.fill((int)(x + r), (int)y, (int)(x2 - r), (int)(y + r), c1.getRGB());
                 context.fill((int)(x + r), (int)(y2 - r), (int)(x2 - r), (int)y2, c2.getRGB());
-
-                // Corners (simplified for UI stability)
                 if (r > 0) {
                         renderRoundedCorner(context, c1, x + r, y + r, r, 180, samples);
                         renderRoundedCorner(context, c1, x2 - r, y + r, r, 270, samples);
@@ -86,13 +180,10 @@ public final class RenderUtils {
                 double rBL = Math.min(bottomLeft, Math.min((x2 - x) / 2, (y2 - y) / 2));
 
                 double maxR = Math.max(Math.max(rTL, rTR), Math.max(rBR, rBL));
-                
-                // Fill body
                 context.fill((int)x, (int)(y + maxR), (int)x2, (int)(y2 - maxR), color);
                 context.fill((int)(x + maxR), (int)y, (int)(x2 - maxR), (int)(y + maxR), color);
                 context.fill((int)(x + maxR), (int)(y2 - maxR), (int)(x2 - maxR), (int)y2, color);
 
-                // Corners
                 if (rTL > 0) renderRoundedCorner(context, c, x + rTL, y + rTL, rTL, 180, samples);
                 if (rTR > 0) renderRoundedCorner(context, c, x2 - rTR, y + rTR, rTR, 270, samples);
                 if (rBR > 0) renderRoundedCorner(context, c, x2 - rBR, y2 - rBR, rBR, 0, samples);
@@ -105,12 +196,10 @@ public final class RenderUtils {
 
         public static void renderRoundedOutline(GuiGraphicsExtractor context, Color c, double x, double y, double x2, double y2, double topLeft, double topRight, double bottomRight, double bottomLeft, double width, double samples) {
                 int color = c.getRGB();
-                // Straight sides
                 context.fill((int)x, (int)(y + topLeft), (int)(x + width), (int)(y2 - bottomLeft), color);
                 context.fill((int)(x2 - width), (int)(y + topRight), (int)x2, (int)(y2 - bottomRight), color);
                 context.fill((int)(x + topLeft), (int)y, (int)(x2 - topRight), (int)(y + width), color);
                 context.fill((int)(x + bottomLeft), (int)(y2 - width), (int)(x2 - bottomRight), (int)y2, color);
-                // Corner arcs approximated with fills
                 double step = 90.0 / samples;
                 double[][] corners = {
                         {x2 - bottomRight, y2 - bottomRight, bottomRight, 0},
@@ -131,85 +220,30 @@ public final class RenderUtils {
                 }
         }
 
-        public static void renderCircle(org.joml.Matrix3x2fStack matrices, Color c, double originX, double originY, double rad, int segments) {
-                // No-op: full 3D/VBO circle rendering removed in MC 26.1.2
-        }
-
-        public static void renderLine(PoseStack matrices, Color color, Vec3 start, Vec3 end) {
-                // No-op: RenderType.debugLineStrip removed in MC 26.1.2 rendering overhaul
-        }
-
-        public static void renderFilledBox(PoseStack matrices, double x1, double y1, double z1, double x2, double y2, double z2, Color color) {
-                // No-op: RenderType.debugFilledBox removed in MC 26.1.2 rendering overhaul
-        }
-
-        public static void drawOutlinedBox(PoseStack matrices, net.minecraft.world.phys.AABB box, Color color) {
-                // No-op: RenderType.lines and DebugRenderer.renderFilledBox removed in MC 26.1.2
-        }
-
-        public static void renderBoxWithTracers(PoseStack matrices, net.minecraft.world.entity.Entity entity, Color color) {
-                net.minecraft.world.phys.AABB box = entity.getBoundingBox();
-                drawOutlinedBox(matrices, box, color);
-                renderFilledBox(matrices, box.minX, box.minY, box.minZ, box.maxX, box.maxY, box.maxZ, new Color(color.getRed(), color.getGreen(), color.getBlue(), 50));
-                drawTracer(matrices, entity.getBoundingBox().getCenter(), color);
-        }
-
-        public static void drawTracer(PoseStack matrices, Vec3 end, Color color) {
-                // Do NOT start from the exact camera position: in perspective projection
-                // a vertex at the eye origin has w_clip = 0 (perspective divide by zero),
-                // which the GPU treats as a degenerate point and may discard the primitive.
-                // Shift 0.1 blocks forward along the look direction so z_view < 0.
-                net.minecraft.client.Camera cam = mc.gameRenderer.getMainCamera();
-                Vec3 forward = Vec3.directionFromRotation(cam.xRot(), cam.yRot());
-                Vec3 origin = cam.position().add(forward.scale(0.1));
-                renderLine(matrices, color, origin, end);
-        }
-
-        public static void setScissorRegion(GuiGraphicsExtractor context, int x, int y, int width, int height) {
-                context.enableScissor(x, y, x + width, y + height);
-        }
-
-        public static void disableScissor(GuiGraphicsExtractor context) {
-                context.disableScissor();
-        }
-
         public static void renderNeonQuad(GuiGraphicsExtractor context, Color base, Color glow, double x, double y, double x2, double y2, double radius) {
-                // Subtle Glow (Single layer)
                 renderRoundedOutline(context, new Color(glow.getRed(), glow.getGreen(), glow.getBlue(), 30), x - 1, y - 1, x2 + 1, y2 + 1, radius + 1, radius + 1, radius + 1, radius + 1, 1.5, 15);
-                
-                // Base Quad
                 renderRoundedQuad(context, base, x, y, x2, y2, radius, 15);
-                
-                // Subtle Border
                 renderRoundedOutline(context, new Color(255, 255, 255, 15), x, y, x2, y2, radius, radius, radius, radius, 0.5, 15);
         }
 
         public static void renderPremiumShadow(GuiGraphicsExtractor context, double x, double y, double x2, double y2, double radius) {
-                // Single soft shadow layer
                 renderRoundedQuad(context, new Color(0, 0, 0, 40), x + 2, y + 2, x2 + 4, y2 + 4, radius + 2, 10);
         }
 
         public static void renderAccentLine(GuiGraphicsExtractor context, Color start, Color end, double x, double y, double x2, double y2) {
                 context.fillGradient((int)x, (int)y, (int)x2, (int)y2, start.getRGB(), end.getRGB());
-                // Glow for the line
                 context.fillGradient((int)x - 1, (int)y, (int)x, (int)y2, new Color(start.getRed(), start.getGreen(), start.getBlue(), 40).getRGB(), new Color(end.getRed(), end.getGreen(), end.getBlue(), 40).getRGB());
                 context.fillGradient((int)x2, (int)y, (int)x2 + 1, (int)y2, new Color(start.getRed(), start.getGreen(), start.getBlue(), 40).getRGB(), new Color(end.getRed(), end.getGreen(), end.getBlue(), 40).getRGB());
         }
 
         public static void renderSwitch(GuiGraphicsExtractor context, boolean enabled, float animation, double x, double y, double width, double height, Color accent) {
-                // Track
                 Color trackColor = enabled ? new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), (int)(100 + 100 * animation)) : new Color(50, 50, 55, 200);
                 renderRoundedQuad(context, trackColor, x, y, x + width, y + height, height / 2, 15);
-                
-                // Thumb
                 double thumbSize = height - 4;
                 double thumbX = x + 2 + (width - thumbSize - 4) * animation;
                 Color thumbColor = enabled ? Color.WHITE : new Color(180, 185, 195);
-                
                 renderRoundedQuad(context, thumbColor, thumbX, y + 2, thumbX + thumbSize, y + height - 2, thumbSize / 2, 15);
-                
                 if (enabled && animation > 0.5) {
-                        // Subtle glow for enabled thumb
                         renderRoundedOutline(context, new Color(accent.getRed(), accent.getGreen(), accent.getBlue(), (int)(50 * (animation - 0.5) * 2)), thumbX - 1, y + 1, thumbX + thumbSize + 1, y + height - 1, thumbSize / 2, thumbSize / 2, thumbSize / 2, thumbSize / 2, 1, 15);
                 }
         }

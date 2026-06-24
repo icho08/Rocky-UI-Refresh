@@ -5,7 +5,6 @@ import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.*;
 import dev.i726.rocky.module.modules.misc.FastUse;
-import dev.i726.rocky.module.modules.misc.Timer;
 import dev.i726.rocky.utils.MouseSimulation;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -17,10 +16,8 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyArg;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
-import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 
 @Mixin(Minecraft.class)
 public class MinecraftClientMixin {
@@ -106,24 +103,6 @@ public class MinecraftClientMixin {
                                 rightClickDelay = Math.min(mainCooldown, offCooldown);
                         }
                 }
-        }
-
-        /**
-         * Scales the wall-clock time argument that MinecraftClient passes to
-         * RenderTickCounter.beginRenderTick so the tick counter thinks more (or less)
-         * time has elapsed — effectively multiplying the game's tick rate by Timer.speed.
-         */
-        @ModifyArg(
-                method = "runTick",
-                at = @At(value = "INVOKE",
-                         target = "Lnet/minecraft/client/DeltaTracker;beginRenderTick(JZ)I"),
-                index = 0
-        )
-        private long rocky$modifyTimerSpeed(long timeMillis) {
-                if (Rocky.INSTANCE == null || Rocky.INSTANCE.getModuleManager() == null) return timeMillis;
-                Timer timer = Rocky.INSTANCE.getModuleManager().getModule(Timer.class);
-                if (timer == null || !timer.isEnabled()) return timeMillis;
-                return timer.transformTime(timeMillis);
         }
 
 }

@@ -37,6 +37,7 @@
     "KeyBindingMixin",
     "KeyboardMixin",
     "MinecraftClientAccessor",
+    "DeltaTrackerTimerMixin",
     "MinecraftClientMixin",
     "MouseHandlerAccessor",
     "MouseMixin",

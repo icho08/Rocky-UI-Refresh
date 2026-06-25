@@ -30,8 +30,7 @@ public class WorldRendererMixin {
         matrices.last().pose().rotate(viewRot);
 
         EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getGameTimeDeltaPartialTick(true)));
-
-        net.minecraft.client.Minecraft.getInstance()
-                .renderBuffers().bufferSource().endBatch();
+        // NOTE: do NOT call endBatch() here — it forces a full GPU buffer flush every frame
+        // and causes sky flicker + severe lag. Modules that need a flush must call it themselves.
     }
 }

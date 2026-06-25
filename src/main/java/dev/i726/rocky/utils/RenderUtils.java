@@ -71,35 +71,27 @@ public final class RenderUtils {
         }
 
         /**
-         * Draws a 1-pixel wide line between two screen points using Bresenham's algorithm.
-         * Works with GuiGraphicsExtractor.fill() which only supports axis-aligned rects.
+         * Draws a 1-pixel wide line using a 2D matrix rotation — one fill call total.
+         * Replaces the old per-pixel Bresenham loop which cost O(length) fill calls.
          */
         public static void drawLine2D(GuiGraphicsExtractor ctx, int x1, int y1, int x2, int y2, int color) {
-                int dx = Math.abs(x2 - x1);
-                int dy = Math.abs(y2 - y1);
-                int sx = x1 < x2 ? 1 : -1;
-                int sy = y1 < y2 ? 1 : -1;
-                int err = dx - dy;
-                int steps = 0;
-                // Safety cap so we never fill more than ~1000 pixels for a single line
-                int maxSteps = Math.max(dx, dy) + 1;
-                while (steps++ <= maxSteps) {
-                        ctx.fill(x1, y1, x1 + 1, y1 + 1, color);
-                        if (x1 == x2 && y1 == y2) break;
-                        int e2 = 2 * err;
-                        if (e2 > -dy) { err -= dy; x1 += sx; }
-                        if (e2 < dx)  { err += dx; y1 += sy; }
-                }
+                float dx  = x2 - x1;
+                float dy  = y2 - y1;
+                float len = (float) Math.sqrt(dx * dx + dy * dy);
+                if (len < 1f) return;
+                org.joml.Matrix3x2fStack pose = ctx.pose();
+                pose.pushMatrix();
+                pose.translate(x1, y1);
+                pose.rotate((float) Math.atan2(dy, dx));
+                ctx.fill(0, -1, (int) len, 1, color);
+                pose.popMatrix();
         }
 
         /**
-         * Draws a hollow rectangle outline using four drawLine2D calls.
+         * Draws a hollow rectangle outline — one native call instead of four Bresenham loops.
          */
         public static void drawRect2D(GuiGraphicsExtractor ctx, int x1, int y1, int x2, int y2, int color) {
-                drawLine2D(ctx, x1, y1, x2, y1, color);
-                drawLine2D(ctx, x2, y1, x2, y2, color);
-                drawLine2D(ctx, x2, y2, x1, y2, color);
-                drawLine2D(ctx, x1, y2, x1, y1, color);
+                ctx.outline(x1, y1, x2, y2, color);
         }
 
         // ── Legacy 3D helpers (no-ops – RenderType.lines/debugLineStrip removed in 26.1.2) ──

@@ -55,6 +55,8 @@ public final class TriggerBot extends Module implements TickListener {
             .setDescription(EncryptedString.of("Only hits the player you are currently attacking (good for FFA)"));
     private final BooleanSetting ignoreNpcs       = new BooleanSetting(EncryptedString.of("Ignore NPCs"), true)
             .setDescription(EncryptedString.of("Prevents attacking fake players/bots (e.g. Citizens NPCs)"));
+    private final BooleanSetting skipSameColor    = new BooleanSetting(EncryptedString.of("Skip Same Color"), false)
+            .setDescription(EncryptedString.of("Skip players whose scoreboard team color matches yours (useful on team servers)"));
 
     private final TimerUtils timer       = new TimerUtils();
     private final TimerUtils switchTimer = new TimerUtils();
@@ -70,7 +72,7 @@ public final class TriggerBot extends Module implements TickListener {
         addSettings(inScreen, whileUse, weaponOnly,
                 swordDelay, axeDelay, checkShield, swing, allEntities,
                 aimJitter, jitterYaw, jitterPitch,
-                maxReach, respectHurtTime, targetSwitchDelay, missChance, sticky, ignoreNpcs);
+                maxReach, respectHurtTime, targetSwitchDelay, missChance, sticky, ignoreNpcs, skipSameColor);
     }
 
     @Override
@@ -170,6 +172,13 @@ public final class TriggerBot extends Module implements TickListener {
         if (ignoreNpcs.getValue() && entity instanceof Player pt && mc.getConnection() != null) {
             var entry = mc.getConnection().getPlayerInfo(pt.getUUID());
             if (entry == null || entry.getLatency() <= 0) return;
+        }
+
+        if (skipSameColor.getValue() && entity instanceof Player target) {
+            var myTeam     = mc.player.getTeam();
+            var targetTeam = target.getTeam();
+            if (myTeam != null && targetTeam != null
+                    && myTeam.getColor() == targetTeam.getColor()) return;
         }
 
         if (entity instanceof Player player && checkShield.getValue()

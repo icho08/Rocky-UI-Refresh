@@ -11,7 +11,6 @@ import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.vertex.PoseStack;
 import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
-import org.joml.Quaternionf;
 import org.joml.Vector4f;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -26,16 +25,14 @@ public class WorldRendererMixin {
                           CameraRenderState cameraRenderState, Matrix4fc projMatrix,
                           GpuBufferSlice gpuBufferSlice, Vector4f fogColor, boolean bl,
                           ChunkSectionsToRender sectionsToRender, CallbackInfo ci) {
+        // Use the matrices MC already computed for this frame — no manual quaternion math.
+        // viewRotationMatrix = world-relative → eye space rotation (camera's view rotation).
+        // projectionMatrix   = the actual GPU projection matrix (handles sprint FOV, bow zoom, etc.).
         PoseStack matrices = new PoseStack();
-        Quaternionf viewRot = new Quaternionf(cameraRenderState.orientation).conjugate();
-        matrices.last().pose().rotate(viewRot);
+        matrices.last().pose().set(cameraRenderState.viewRotationMatrix);
 
-        // Capture the real GPU projection matrix so ESP/tracer modules can use it
-        // for accurate world-to-screen projection (handles sprint zoom, FOV effects, etc.)
-        Matrix4f proj = new Matrix4f(projMatrix);
+        Matrix4f proj = new Matrix4f(cameraRenderState.projectionMatrix);
 
         EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getGameTimeDeltaPartialTick(true), proj));
-        // NOTE: do NOT call endBatch() here — it forces a full GPU buffer flush every frame
-        // and causes sky flicker + severe lag. Modules that need a flush must call it themselves.
     }
 }

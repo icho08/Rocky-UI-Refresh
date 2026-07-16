@@ -95,8 +95,9 @@ public class MinecraftClientMixin {
         @Inject(method = "startUseItem", at = @At("RETURN"))
         private void onDoItemUsePost(CallbackInfo ci) {
                 if (Rocky.INSTANCE != null) {
-                        FastUse fastUse = Rocky.INSTANCE.getModuleManager().getModule(FastUse.class);
                         Minecraft mc = (Minecraft)(Object)this;
+                        if (mc.screen != null) return;
+                        FastUse fastUse = Rocky.INSTANCE.getModuleManager().getModule(FastUse.class);
                         if (fastUse != null && fastUse.isEnabled() && mc.player != null) {
                                 int mainCooldown = fastUse.getItemUseCooldown(mc.player.getMainHandItem());
                                 int offCooldown = fastUse.getItemUseCooldown(mc.player.getOffhandItem());

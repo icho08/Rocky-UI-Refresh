@@ -5,10 +5,15 @@ import dev.i726.rocky.Rocky;
 import dev.i726.rocky.event.EventManager;
 import dev.i726.rocky.event.events.*;
 import dev.i726.rocky.gui.ClickGuiScreen;
+import dev.i726.rocky.mixin.MinecraftClientAccessor;
 import dev.i726.rocky.module.Module;
 import dev.i726.rocky.module.modules.client.SelfDestruct;
+import dev.i726.rocky.module.modules.misc.FastUse;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
@@ -73,6 +78,14 @@ public final class AgentTarget {
                         }
                         new Main().onInitializeClient();
 
+                        // Reload profile so saved module toggle states are applied.
+                        // Rocky() constructor calls loadProfile too, but mc might not
+                        // have been set yet at that point — this guarantees it works.
+                        try {
+                            if (Rocky.INSTANCE != null)
+                                Rocky.INSTANCE.getProfileManager().loadProfile("default");
+                        } catch (Throwable ignored) {}
+
                         // Wire Fabric API events → Rocky EventManager.
                         // Rocky's own events are fired by mixin bytecode applied at class-load
                         // time — those transforms are absent when we inject at runtime.
@@ -123,8 +136,44 @@ public final class AgentTarget {
             if (client.player != null) {
                 try { EventManager.fire(new PlayerTickListener.PlayerTickEvent()); }
                 catch (Throwable ignored) {}
+
+                // BlockBreaking bridge — fires every tick while in-game, same cadence
+                // as the mixin-injected continueAttack hook.
+                try { EventManager.fire(new BlockBreakingListener.BlockBreakingEvent()); }
+                catch (Throwable ignored) {}
+
+                // FastUse bridge — re-arm rightClickDelay each tick so the module's
+                // custom cooldown is enforced even though the mixin @Inject(RETURN)
+                // on startUseItem never ran at runtime.
+                // Skip while a screen is open (inventory, HUD editor, etc.) so item
+                // swapping / UI interactions aren't accelerated.
+                if (client.screen == null) {
+                    try {
+                        FastUse fastUse = Rocky.INSTANCE.getModuleManager().getModule(FastUse.class);
+                        if (fastUse != null && fastUse.isEnabled()) {
+                            int mainCooldown = fastUse.getItemUseCooldown(client.player.getMainHandItem());
+                            int offCooldown = fastUse.getItemUseCooldown(client.player.getOffhandItem());
+                            ((MinecraftClientAccessor) client).setItemUseCooldown(Math.min(mainCooldown, offCooldown));
+                        }
+                    } catch (Throwable ignored) {}
+                }
             }
         });
+
+        // ── HUD ──────────────────────────────────────────────────────────────────
+        // Register a Fabric HudElement that dispatches Rocky's HudEvent so that
+        // HUD / NameTags / ESP etc. render even without the InGameHudMixin.
+        HudElementRegistry.attachElementAfter(
+                VanillaHudElements.MISC_OVERLAYS,
+                Identifier.withDefaultNamespace("rocky/hud_bridge"),
+                (context, delta) -> {
+                    if (Rocky.INSTANCE == null) return;
+                    try {
+                        EventManager.fire(new HudListener.HudEvent(context,
+                                delta.getGameTimeDeltaPartialTick(true)));
+                    } catch (Throwable ignored) {}
+                }
+        );
 
         // ── Keyboard (GUI toggle, module keybinds) ──────────────────────────────
         // Chain onto the existing GLFW key callback so nothing is lost.
@@ -139,7 +188,7 @@ public final class AgentTarget {
         };
         chain[0] = GLFW.glfwSetKeyCallback(windowHandle, newKeyCallback);
 
-        System.out.println("[Rocky] Fabric bridge: tick / HUD / keyboard wired. (3D-render needs mixin — ESP/Tracers off in inject mode)");
+        System.out.println("[Rocky] Fabric bridge: tick / HUD / BlockBreaking / FastUse / keyboard wired. (3D-render needs mixin — ESP/Tracers off in inject mode)");
     }
 
     private static void startInputLoop() {

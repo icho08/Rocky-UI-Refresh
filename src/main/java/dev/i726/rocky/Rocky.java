@@ -30,24 +30,21 @@ public final class Rocky {
         public long lastModified;
         public File rockyJar;
 
-        public Rocky() throws InterruptedException, IOException {
-                INSTANCE = this;
-                // Load saved accent color before any GUI renders — completely independent
-                // of the module/profile system so it is always correct on startup.
-                GuiTheme.loadTheme();
-                this.eventManager = new EventManager();
-                this.moduleManager = new ModuleManager();
-                this.combatManager = new CombatManager();
-                this.rotatorManager = new RotatorManager();
-                this.profileManager = new ProfileManager();
-                this.friendManager = new FriendManager();
+	public Rocky() throws InterruptedException, IOException {
+		INSTANCE = this;
+		mc = Minecraft.getInstance();
+		GuiTheme.loadTheme();
+		this.eventManager = new EventManager();
+		this.moduleManager = new ModuleManager();
+		this.combatManager = new CombatManager();
+		this.rotatorManager = new RotatorManager();
+		this.profileManager = new ProfileManager();
+		this.friendManager = new FriendManager();
 
-                this.getProfileManager().loadProfile("default");
-                this.setLastModified();
-
-                this.guiInitialized = false;
-                mc = Minecraft.getInstance();
-        }
+		this.getProfileManager().loadProfile("default");
+		this.setLastModified();
+		this.guiInitialized = false;
+	}
 
         public ProfileManager getProfileManager() {
                 return profileManager;

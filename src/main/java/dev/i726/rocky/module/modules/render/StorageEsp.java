@@ -36,14 +36,14 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
     }
 
     private static final class ScreenData {
-        final int minX, minY, maxX, maxY, outlineColor, fillColor;
-        final boolean doFill, doTracer;
+        final int minX, minY, maxX, maxY, outlineColor, tracerColor;
+        final boolean doTracer, doGlow;
         final int cx, cy;
-        ScreenData(int x1, int y1, int x2, int y2, int out, int fill,
-                   boolean doFill, boolean doTracer, int cx, int cy) {
+        ScreenData(int x1, int y1, int x2, int y2, int out, int tracerCol,
+                   boolean doTracer, boolean doGlow, int cx, int cy) {
             minX = x1; minY = y1; maxX = x2; maxY = y2;
-            outlineColor = out; fillColor = fill;
-            this.doFill = doFill; this.doTracer = doTracer;
+            outlineColor = out; tracerColor = tracerCol;
+            this.doTracer = doTracer; this.doGlow = doGlow;
             this.cx = cx; this.cy = cy;
         }
     }
@@ -54,6 +54,9 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
 
     private ScheduledExecutorService scheduler;
     private ScheduledFuture<?> scanTask;
+    private int lastScanChunkX = Integer.MIN_VALUE;
+    private int lastScanChunkZ = Integer.MIN_VALUE;
+    private int lastScanRange;
 
     private final BooleanSetting chests = new BooleanSetting(
             EncryptedString.of("Chests"), true
@@ -75,14 +78,6 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
             EncryptedString.of("Hoppers"), false
     ).setDescription(EncryptedString.of("Highlight hopper and dropper blocks"));
 
-    private final BooleanSetting fill = new BooleanSetting(
-            EncryptedString.of("Fill"), true
-    ).setDescription(EncryptedString.of("Fill the bounding box"));
-
-    private final NumberSetting fillOpacity = new NumberSetting(
-            EncryptedString.of("Fill Opacity"), 0, 255, 40, 5
-    ).setDescription(EncryptedString.of("Transparency of the box fill (0 = invisible, 255 = solid)"));
-
     private final NumberSetting outlineOpacity = new NumberSetting(
             EncryptedString.of("Outline Opacity"), 0, 255, 220, 5
     ).setDescription(EncryptedString.of("Transparency of the box outline (0 = invisible, 255 = solid)"));
@@ -90,6 +85,10 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
     private final BooleanSetting tracers = new BooleanSetting(
             EncryptedString.of("Tracers"), false
     ).setDescription(EncryptedString.of("Draw tracer lines to storage blocks"));
+
+    private final BooleanSetting glow = new BooleanSetting(
+            EncryptedString.of("Glow"), false
+    ).setDescription(EncryptedString.of("Glowing effect on storage blocks like Chams"));
 
     private final NumberSetting maxRange = new NumberSetting(
             EncryptedString.of("Range"), 10, 128, 64, 8
@@ -102,12 +101,13 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
                 -1,
                 CategoryManager.ESP
         );
-        addSettings(chests, barrels, shulkers, furnaces, hoppers, fill, fillOpacity, outlineOpacity, tracers, maxRange);
+        addSettings(chests, barrels, shulkers, furnaces, hoppers, outlineOpacity, tracers, glow, maxRange);
     }
 
     @Override
     public void onEnable() {
         cached.clear();
+        lastScanChunkX = Integer.MIN_VALUE;
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "StorageESP-Scanner");
             t.setDaemon(true);
@@ -136,10 +136,17 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
 
             BlockPos center = mc.player.blockPosition();
             int r = maxRange.getValueInt();
-            int chunkR = (r >> 4) + 1;
             int cx = center.getX() >> 4;
             int cz = center.getZ() >> 4;
 
+            // Skip re-scan if player is still in the same chunk area — storage blocks don't move
+            if (cx == lastScanChunkX && cz == lastScanChunkZ && r == lastScanRange)
+                return;
+            lastScanChunkX = cx;
+            lastScanChunkZ = cz;
+            lastScanRange = r;
+
+            int chunkR = (r >> 4) + 1;
             List<StorageEntry> found = new ArrayList<>();
 
             for (int dx = -chunkR; dx <= chunkR; dx++) {
@@ -179,9 +186,7 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
         Matrix4f projMat  = event.projMatrix;
 
         Color accent  = GuiTheme.accent();
-        int   fA      = (int) fillOpacity.getValue();
         int   oA      = (int) outlineOpacity.getValue();
-        int   fillCol = GuiTheme.rgba(accent.getRed(), accent.getGreen(), accent.getBlue(), fA);
         int   outCol  = GuiTheme.rgba(accent.getRed(), accent.getGreen(), accent.getBlue(), oA);
 
         for (StorageEntry entry : cached) {
@@ -221,8 +226,9 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
             int cx = centre != null ? centre[0] : (minSX + maxSX) / 2;
             int cy = centre != null ? centre[1] : (minSY + maxSY) / 2;
 
-            pending.add(new ScreenData(minSX, minSY, maxSX, maxSY, outCol, fillCol,
-                    fill.getValue(), tracers.getValue(), cx, cy));
+            int tracerCol = GuiTheme.rgba(accent.getRed(), accent.getGreen(), accent.getBlue(), 200);
+            pending.add(new ScreenData(minSX, minSY, maxSX, maxSY, outCol, tracerCol,
+                    tracers.getValue(), glow.getValue(), cx, cy));
         }
     }
 
@@ -232,11 +238,20 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
         GuiGraphicsExtractor ctx = event.context;
 
         for (ScreenData d : pending) {
-            RenderUtils.drawRect2D(ctx, d.minX, d.minY, d.maxX, d.maxY, d.outlineColor);
-            if (d.doFill) ctx.fill(d.minX + 1, d.minY + 1, d.maxX, d.maxY, d.fillColor);
             if (d.doTracer) {
-                RenderUtils.drawLine2D(ctx, screenOriginX, screenOriginY, d.cx, d.cy, d.outlineColor);
+                RenderUtils.drawLine2D(ctx, screenOriginX, screenOriginY, d.cx, d.cy, d.tracerColor);
             }
+            if (d.doGlow) {
+                Color accent = GuiTheme.accent();
+                int r = accent.getRed(), g = accent.getGreen(), b = accent.getBlue();
+                int pad = 4;
+                int alpha = 60;
+                ctx.fill(d.minX - pad, d.minY - pad, d.maxX + pad, d.minY, GuiTheme.rgba(r, g, b, alpha));
+                ctx.fill(d.minX - pad, d.maxY, d.maxX + pad, d.maxY + pad, GuiTheme.rgba(r, g, b, alpha));
+                ctx.fill(d.minX - pad, d.minY, d.minX, d.maxY, GuiTheme.rgba(r, g, b, alpha));
+                ctx.fill(d.maxX, d.minY, d.maxX + pad, d.maxY, GuiTheme.rgba(r, g, b, alpha));
+            }
+            RenderUtils.drawRect2D(ctx, d.minX, d.minY, d.maxX, d.maxY, d.outlineColor);
         }
     }
 

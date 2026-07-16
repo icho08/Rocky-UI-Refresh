@@ -101,15 +101,10 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
         int    winH   = mc.getWindow().getGuiScaledHeight();
         float  maxD   = (float) maxDist.getValue();
 
-        // event.matrices.peek().getPositionMatrix() is the view-rotation matrix
-        // (conjugate of camera.getRotation() applied to an identity MatrixStack).
-        // Transforming a camera-relative world vector with it yields eye space.
+        // View-rotation matrix: conjugate of camera orientation → world-to-eye transform.
         Matrix4f viewRot = event.matrices.last().pose();
-
-        // FOV from player settings — used for the perspective divide.
-        double fovYRad     = Math.toRadians(mc.options.fov().get());
-        double tanHalfFovY = Math.tan(fovYRad / 2.0);
-        double aspect      = (double) winW / winH;
+        // Real GPU projection matrix (includes sprint-FOV, bow-zoom, etc.)
+        Matrix4f projMat = event.projMatrix;
 
         for (var entity : mc.level.entitiesForRendering()) {
             if (!(entity instanceof Player target)) continue;
@@ -123,18 +118,13 @@ public final class NameTags extends Module implements GameRenderListener, HudLis
             float ry = (float)(lerp.y + target.getBbHeight() + 0.35 - camPos.y);
             float rz = (float)(lerp.z - camPos.z);
 
-            // Transform to eye space using the view-rotation matrix.
-            // w component stays 1 (no translation in this matrix).
-            Vector4f eye = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
+            // Transform to eye space, then clip space via the real GPU projection matrix.
+            Vector4f eye  = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
+            Vector4f clip = new org.joml.Matrix4f(projMat).transform(eye);
+            if (clip.w <= 0.001f) continue;
 
-            // In this coordinate frame, "forward" is the -Z axis (OpenGL eye space).
-            // eye.z < 0 means the point is in front of the camera.
-            if (eye.z >= -0.001f) continue;
-
-            float fwdDepth = -eye.z;   // positive depth
-
-            float ndcX = (float)(eye.x  / (fwdDepth * tanHalfFovY * aspect));
-            float ndcY = (float)(eye.y  / (fwdDepth * tanHalfFovY));
+            float ndcX = clip.x / clip.w;
+            float ndcY = clip.y / clip.w;
 
             // Cull if off-screen (with a small margin)
             if (ndcX < -1.15f || ndcX > 1.15f || ndcY < -1.15f || ndcY > 1.15f) continue;

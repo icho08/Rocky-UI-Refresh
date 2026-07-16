@@ -9,6 +9,7 @@ import net.minecraft.client.renderer.state.level.CameraRenderState;
 import com.mojang.blaze3d.buffers.GpuBufferSlice;
 import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.vertex.PoseStack;
+import org.joml.Matrix4f;
 import org.joml.Matrix4fc;
 import org.joml.Quaternionf;
 import org.joml.Vector4f;
@@ -29,7 +30,11 @@ public class WorldRendererMixin {
         Quaternionf viewRot = new Quaternionf(cameraRenderState.orientation).conjugate();
         matrices.last().pose().rotate(viewRot);
 
-        EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getGameTimeDeltaPartialTick(true)));
+        // Capture the real GPU projection matrix so ESP/tracer modules can use it
+        // for accurate world-to-screen projection (handles sprint zoom, FOV effects, etc.)
+        Matrix4f proj = new Matrix4f(projMatrix);
+
+        EventManager.fire(new GameRenderListener.GameRenderEvent(matrices, tickCounter.getGameTimeDeltaPartialTick(true), proj));
         // NOTE: do NOT call endBatch() here — it forces a full GPU buffer flush every frame
         // and causes sky flicker + severe lag. Modules that need a flush must call it themselves.
     }

@@ -91,10 +91,7 @@ public final class ShowArmor extends Module implements GameRenderListener, HudLi
         float  maxD   = (float) range.getValue();
 
         Matrix4f viewRot = event.matrices.last().pose();
-
-        double fovYRad     = Math.toRadians(mc.options.fov().get());
-        double tanHalfFovY = Math.tan(fovYRad / 2.0);
-        double aspect      = (double) winW / winH;
+        Matrix4f projMat = event.projMatrix;
 
         for (Player player : mc.level.players()) {
             if (player == mc.player || !player.isAlive()) continue;
@@ -108,14 +105,12 @@ public final class ShowArmor extends Module implements GameRenderListener, HudLi
             float ry = (float)(lerp.y + player.getBbHeight() + 0.35 - camPos.y);
             float rz = (float)(lerp.z - camPos.z);
 
-            Vector4f eye = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
+            Vector4f eye  = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
+            Vector4f clip = new org.joml.Matrix4f(projMat).transform(eye);
+            if (clip.w <= 0.001f) continue;
 
-            if (eye.z >= -0.001f) continue;
-
-            float fwdDepth = -eye.z;
-
-            float ndcX = (float)(eye.x / (fwdDepth * tanHalfFovY * aspect));
-            float ndcY = (float)(eye.y / (fwdDepth * tanHalfFovY));
+            float ndcX = clip.x / clip.w;
+            float ndcY = clip.y / clip.w;
 
             if (ndcX < -1.15f || ndcX > 1.15f || ndcY < -1.15f || ndcY > 1.15f) continue;
 

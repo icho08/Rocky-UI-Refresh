@@ -44,26 +44,33 @@ public final class RenderUtils {
         public static void scaledProjection() {}
 
         /**
-         * Projects a world-space position to GUI screen coordinates.
+         * Projects a world-space position to GUI screen coordinates using the real GPU
+         * projection matrix captured from renderLevel — this handles sprint-FOV, bow-zoom,
+         * cinematic camera, and any other in-game FOV modifiers that mc.options.fov() misses.
          *
-         * Uses the same math as NameTags (confirmed working in MC 26.1.2):
-         *   viewRot  = event.matrices.last().pose()  (conjugate of camera rotation)
-         *   fovYRad  = Math.toRadians(mc.options.fov().get())
-         *
+         * @param worldPos   world-space position to project
+         * @param viewRot    view-rotation matrix from event.matrices.last().pose()
+         * @param projMatrix real projection matrix from event.projMatrix
+         * @param camPos     camera position from mc.gameRenderer.getMainCamera().position()
+         * @param winW       GUI-scaled window width
+         * @param winH       GUI-scaled window height
          * @return int[2] {screenX, screenY} in GUI-scaled pixels, or null if behind the camera.
          */
-        public static int[] projectToScreen(Vec3 worldPos, Matrix4f viewRot, Vec3 camPos,
-                                            int winW, int winH, double tanHalfFovY, double aspect) {
+        public static int[] projectToScreen(Vec3 worldPos, Matrix4f viewRot, Matrix4f projMatrix,
+                                            Vec3 camPos, int winW, int winH) {
                 float rx = (float)(worldPos.x - camPos.x);
                 float ry = (float)(worldPos.y - camPos.y);
                 float rz = (float)(worldPos.z - camPos.z);
 
+                // Camera-relative → eye space
                 Vector4f eye = viewRot.transform(new Vector4f(rx, ry, rz, 1f));
-                if (eye.z >= -0.001f) return null;
 
-                float fwd  = -eye.z;
-                float ndcX = (float)(eye.x / (fwd * tanHalfFovY * aspect));
-                float ndcY = (float)(eye.y / (fwd * tanHalfFovY));
+                // Eye space → clip space using the real projection matrix
+                Vector4f clip = new Matrix4f(projMatrix).transform(eye);
+                if (clip.w <= 0.001f) return null;
+
+                float ndcX = clip.x / clip.w;
+                float ndcY = clip.y / clip.w;
 
                 int sx = (int)((ndcX + 1f) * 0.5f * winW);
                 int sy = (int)((1f - ndcY) * 0.5f * winH);

@@ -157,10 +157,8 @@ public final class OreESP extends Module implements GameRenderListener, HudListe
         screenOriginX = winW / 2;
         screenOriginY = winH;
 
-        Matrix4f viewRot     = event.matrices.last().pose();
-        double   fovYRad     = Math.toRadians(mc.options.fov().get());
-        double   tanHalfFovY = Math.tan(fovYRad / 2.0);
-        double   aspect      = (double) winW / winH;
+        Matrix4f viewRot  = event.matrices.last().pose();
+        Matrix4f projMat  = event.projMatrix;
 
         for (OreEntry entry : cachedOres) {
             AABB box = new AABB(
@@ -184,7 +182,7 @@ public final class OreESP extends Module implements GameRenderListener, HudListe
             boolean any = false;
 
             for (Vec3 corner : corners) {
-                int[] sc = RenderUtils.projectToScreen(corner, viewRot, camPos, winW, winH, tanHalfFovY, aspect);
+                int[] sc = RenderUtils.projectToScreen(corner, viewRot, projMat, camPos, winW, winH);
                 if (sc == null) continue;
                 any = true;
                 if (sc[0] < minSX) minSX = sc[0];
@@ -198,7 +196,7 @@ public final class OreESP extends Module implements GameRenderListener, HudListe
             int outC  = GuiTheme.rgba(entry.color.getRed(), entry.color.getGreen(), entry.color.getBlue(), 220);
             int fillC = GuiTheme.rgba(entry.color.getRed(), entry.color.getGreen(), entry.color.getBlue(), 35);
 
-            int[] centre = RenderUtils.projectToScreen(box.getCenter(), viewRot, camPos, winW, winH, tanHalfFovY, aspect);
+            int[] centre = RenderUtils.projectToScreen(box.getCenter(), viewRot, projMat, camPos, winW, winH);
             int cx = centre != null ? centre[0] : (minSX + maxSX) / 2;
             int cy = centre != null ? centre[1] : (minSY + maxSY) / 2;
 

@@ -175,10 +175,8 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
         screenOriginX = winW / 2;
         screenOriginY = winH;
 
-        Matrix4f viewRot     = event.matrices.last().pose();
-        double   fovYRad     = Math.toRadians(mc.options.fov().get());
-        double   tanHalfFovY = Math.tan(fovYRad / 2.0);
-        double   aspect      = (double) winW / winH;
+        Matrix4f viewRot  = event.matrices.last().pose();
+        Matrix4f projMat  = event.projMatrix;
 
         Color accent  = GuiTheme.accent();
         int   fA      = (int) fillOpacity.getValue();
@@ -208,7 +206,7 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
             boolean any = false;
 
             for (Vec3 corner : corners) {
-                int[] sc = RenderUtils.projectToScreen(corner, viewRot, camPos, winW, winH, tanHalfFovY, aspect);
+                int[] sc = RenderUtils.projectToScreen(corner, viewRot, projMat, camPos, winW, winH);
                 if (sc == null) continue;
                 any = true;
                 if (sc[0] < minSX) minSX = sc[0];
@@ -219,7 +217,7 @@ public final class StorageEsp extends Module implements GameRenderListener, HudL
 
             if (!any) continue;
 
-            int[] centre = RenderUtils.projectToScreen(box.getCenter(), viewRot, camPos, winW, winH, tanHalfFovY, aspect);
+            int[] centre = RenderUtils.projectToScreen(box.getCenter(), viewRot, projMat, camPos, winW, winH);
             int cx = centre != null ? centre[0] : (minSX + maxSX) / 2;
             int cy = centre != null ? centre[1] : (minSY + maxSY) / 2;
 

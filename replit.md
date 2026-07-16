@@ -4,7 +4,10 @@ A Minecraft Fabric mod for version 26.1.2 with a custom in-game GUI.
 
 ## Build
 
-- `./gradlew build` — build the mod (requires Java 21 + Fabric toolchain, run locally or via Replit shell)
+- Use the **"Build mod"** workflow in Replit, or run `./gradlew build` in the shell.
+- **JDK 25 is required** (MC 26.1.2 class files require it). JDK 25.0.3 was downloaded to `/home/runner/.jdks/jdk-25.0.3+9` and `gradle.properties` points `org.gradle.java.home` there. If the environment is reset, re-download with: `mkdir -p /home/runner/.jdks && cd /home/runner/.jdks && curl -L "https://github.com/adoptium/temurin25-binaries/releases/download/jdk-25.0.3%2B9/OpenJDK25U-jdk_x64_linux_hotspot_25.0.3_9.tar.gz" | tar -xz`
+- Output JAR: `build/libs/rocky-b26.1.2.jar`
+- Obfuscated JAR (optional): `./gradlew obfuscate` → `build/libs/rocky-b26.1.2-obf.jar`
 
 ## Stack
 

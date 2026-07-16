@@ -110,10 +110,8 @@ public final class PlayerESP extends Module implements GameRenderListener, HudLi
         originX = winW / 2;
         originY = winH;
 
-        Matrix4f viewRot     = event.matrices.last().pose();
-        double   fovYRad     = Math.toRadians(mc.options.fov().get());
-        double   tanHalfFovY = Math.tan(fovYRad / 2.0);
-        double   aspect      = (double) winW / winH;
+        Matrix4f viewRot  = event.matrices.last().pose();
+        Matrix4f projMat  = event.projMatrix;
 
         Color   accent  = GuiTheme.accent();
         int     fA      = (int) fillOpacity.getValue();
@@ -153,7 +151,7 @@ public final class PlayerESP extends Module implements GameRenderListener, HudLi
             boolean anyVisible = false;
 
             for (Vec3 corner : corners) {
-                int[] sc = RenderUtils.projectToScreen(corner, viewRot, camPos, winW, winH, tanHalfFovY, aspect);
+                int[] sc = RenderUtils.projectToScreen(corner, viewRot, projMat, camPos, winW, winH);
                 if (sc == null) continue;
                 anyVisible = true;
                 if (sc[0] < minSX) minSX = sc[0];
@@ -166,7 +164,7 @@ public final class PlayerESP extends Module implements GameRenderListener, HudLi
 
             // Centre for tracer
             int[] centre = RenderUtils.projectToScreen(
-                    box.getCenter(), viewRot, camPos, winW, winH, tanHalfFovY, aspect);
+                    box.getCenter(), viewRot, projMat, camPos, winW, winH);
             int tx = centre != null ? centre[0] : (minSX + maxSX) / 2;
             int ty = centre != null ? centre[1] : (minSY + maxSY) / 2;
 

@@ -104,11 +104,9 @@ public final class Tracers extends Module implements GameRenderListener, HudList
         originX = winW / 2;
         originY = winH;      // tracers originate from the bottom-centre of the screen
 
-        Matrix4f viewRot     = event.matrices.last().pose();
-        double   fovYRad     = Math.toRadians(mc.options.fov().get());
-        double   tanHalfFovY = Math.tan(fovYRad / 2.0);
-        double   aspect      = (double) winW / winH;
-        double   rangeSq     = maxRange.getValue() * maxRange.getValue();
+        Matrix4f viewRot  = event.matrices.last().pose();
+        Matrix4f projMat  = event.projMatrix;
+        double   rangeSq  = maxRange.getValue() * maxRange.getValue();
 
         Color accent = GuiTheme.accent();
         int   col    = GuiTheme.rgba(accent.getRed(), accent.getGreen(), accent.getBlue(), 200);
@@ -129,7 +127,7 @@ public final class Tracers extends Module implements GameRenderListener, HudList
             Vec3 lerpedPos = entity.getPosition(event.delta);
             Vec3 centre    = lerpedPos.add(0, entity.getBbHeight() / 2.0, 0);
 
-            int[] screen = RenderUtils.projectToScreen(centre, viewRot, camPos, winW, winH, tanHalfFovY, aspect);
+            int[] screen = RenderUtils.projectToScreen(centre, viewRot, projMat, camPos, winW, winH);
             if (screen == null) continue;
 
             pending.add(new TracerData(screen[0], screen[1], col));
